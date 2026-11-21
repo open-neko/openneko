@@ -210,8 +210,8 @@ func TestServeHoldsNoControlZoneSecrets(t *testing.T) {
 		if serve.EnvFile != nil {
 			t.Fatalf("%s: openneko-serve reads an env_file", name)
 		}
-		if len(serve.Secrets) != 0 {
-			t.Fatalf("%s: openneko-serve mounts secrets %v; the main database URL stays out of serve", name, serve.Secrets)
+		if !onlySandboxKey(serve.Secrets) {
+			t.Fatalf("%s: openneko-serve mounts secrets %v; only the sandbox key goes to serve", name, serve.Secrets)
 		}
 		for key, value := range serve.Environment {
 			if forbidden(key) {
@@ -233,6 +233,31 @@ func TestServeHoldsNoControlZoneSecrets(t *testing.T) {
 			}
 			if _, ok := doc.Services["openneko-serve-init"]; !ok {
 				t.Fatalf("%s has no openneko-serve-init step", name)
+			}
+		}
+	}
+}
+
+func TestWebAndServeReadTheirKeysFromSecretFiles(t *testing.T) {
+	root := repoRootForTest(t)
+	for _, name := range []string{"compose.yml", "compose.dev.yml", "apps/openneko/assets/compose/core.yml", "recipes/sandbox/compose.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Services map[string]struct {
+				Environment map[string]any `yaml:"environment"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, service := range []string{"web", "openneko-serve"} {
+			for _, key := range []string{"OPENNEKO_SANDBOX_KEY", "NEKO_EMBEDDING_API_KEY"} {
+				if _, ok := doc.Services[service].Environment[key]; ok {
+					t.Errorf("%s: %s gets %s in its environment; give it %s_FILE", name, service, key, key)
+				}
 			}
 		}
 	}

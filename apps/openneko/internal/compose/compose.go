@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -332,6 +333,21 @@ func (s *Supervisor) WriteImageVersion(version string) error {
 	return os.WriteFile(filepath.Join(rt, imageVersionMarker), []byte(strings.TrimSpace(version)+"\n"), 0o644)
 }
 
+// optionalSecrets feed compose secrets that may be empty. Compose refuses
+// to start a service whose secret variable is unset.
+var optionalSecrets = []string{"OPENNEKO_SANDBOX_KEY", "NEKO_EMBEDDING_API_KEY"}
+
+// ComposeEnv sets each optional secret variable that env lacks to empty.
+func ComposeEnv(env []string) []string {
+	out := slices.Clip(env)
+	for _, name := range optionalSecrets {
+		if !slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, name+"=") }) {
+			out = append(out, name+"=")
+		}
+	}
+	return out
+}
+
 // Run shells out to `docker compose -p <project> -f <files…> <args…>`,
 // forwarding I/O and signals. Returns the child's exit code. Pass
 // projectName as the empty string to let docker compose default to the
@@ -352,6 +368,7 @@ func (s *Supervisor) RunIO(ctx context.Context, projectName string, files, args 
 	}
 	dockerArgs = append(dockerArgs, args...)
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	cmd.Env = ComposeEnv(os.Environ())
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Stdin = stdin

@@ -3,9 +3,9 @@
 #   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
 # The sandbox keeps each run's files in its own volume and shares one volume
 # with web and serve: openneko-sandbox-socket, which holds only its socket.
+# Web and serve read the key from the sandbox-key secret of the core file.
 x-sandbox-env: &sandbox-env
   OPENNEKO_SANDBOX_URL: unix:///run/openneko-sandbox/sandbox.sock
-  OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:?set OPENNEKO_SANDBOX_KEY to a random key of at least 32 characters, for example from openssl rand -hex 32}
 
 services:
   openneko-sandbox:

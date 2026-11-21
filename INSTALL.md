@@ -610,7 +610,8 @@ the token, puts the real key on the call and forwards it to the provider.
 for each provider.
 
 Give model keys only to web: in Admin, Settings, Models, and
-`NEKO_EMBEDDING_API_KEY` in web's environment. Give `openneko-serve` no
+`NEKO_EMBEDDING_API_KEY` in the environment of `openneko start`, which
+gives it to web as the secret file `/run/secrets/embedding-api-key`. Give `openneko-serve` no
 `*_API_KEY` variable, no cloud credential, no database URL and no
 `NEKO_SECRET_KEY`. Serve removes each such variable at start and logs a
 warning that names it. [AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-key-door)
@@ -658,14 +659,15 @@ OpenNeko runs no command for the agent. To give the agent a terminal, and to
 turn on workflow script steps and the bundled skills that run scripts
 (`xlsx`, `docx`, `pptx`, `pdf` and `skill-creator`), connect
 a sandbox service.
-Give `web` and `openneko-serve` its URL and key, then run
-`openneko stop` and `openneko start`:
+Give `web` and `openneko-serve` its URL, set `OPENNEKO_SANDBOX_KEY` to a
+long random string in the environment of `openneko start`, then run
+`openneko stop` and `openneko start`. Web and serve read the key from the
+secret file `/run/secrets/sandbox-key`, not from their environment:
 
 ```yaml
 # ~/.config/openneko/compose.override.yml
 x-sandbox: &sandbox
   OPENNEKO_SANDBOX_URL: unix:///run/openneko-sandbox/sandbox.sock   # or http(s)://host:port
-  OPENNEKO_SANDBOX_KEY: <a long random string>
 services:
   openneko-serve:
     environment: *sandbox
@@ -785,14 +787,15 @@ new skill, delete the changed copy in Skills.
 
 OpenNeko finds memories and skills with Postgres full-text search. To find
 them by meaning as well, connect an OpenAI-compatible embedding service. Give
-`web` these values, then run `openneko stop` and `openneko start`:
+`web` these values, then run `openneko stop` and `openneko start`. Set the
+key, if the service needs one, in `NEKO_EMBEDDING_API_KEY` in the
+environment of `openneko start`; web reads it from a secret file:
 
 ```yaml
 # ~/.config/openneko/compose.override.yml
 x-embedding: &embedding
   NEKO_EMBEDDING_URL: https://embeddings.example/v1   # OpenNeko calls <url>/embeddings
   NEKO_EMBEDDING_MODEL: text-embedding-3-small
-  NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY}   # optional
   NEKO_EMBEDDING_DIMENSIONS: "768"                    # optional
 services:
   web:
@@ -1396,8 +1399,13 @@ uses the folders of a source checkout.
 these ports free. The embedding service and the sandbox stay external. Set
 `NEKO_EMBEDDING_URL`, `NEKO_EMBEDDING_MODEL` and `NEKO_EMBEDDING_API_KEY`,
 and `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY`, in the shell before
-`openneko start --native`. Both processes get the environment of that shell. Serve removes the model
-key variables from its copy ([Model keys](#model-keys)).
+`openneko start --native`. Web gets the variables of that shell whose names
+hold no `KEY`, `TOKEN`, `SECRET`, `PASS`, `CREDENTIAL`, `DATABASE_URL`,
+`DSN` or `AUTH`, and of the others only the ones it reads. Serve gets none
+of the others: `openneko start` gives it the sandbox key and the bucket
+login on its stdin ([Model keys](#model-keys)). A variable `NAME_FILE`
+that names a file can stand in for each of the sandbox key, the embedding
+key and the bucket login.
 
 `openneko start --native` makes the sandbox socket folder
 `~/.local/share/openneko-sandbox`, mode 0700. Keep the sandbox out of

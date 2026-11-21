@@ -98,7 +98,15 @@ services:
       NEKO_PG_USER: neko
       NEKO_PG_PASSWORD: secret
       NEKO_PG_DATABASE: neko
-    secrets: !reset []
+    secrets: !override
+      - source: sandbox-key
+        uid: "1001"
+        gid: "1001"
+        mode: 0400
+      - source: embedding-api-key
+        uid: "1001"
+        gid: "1001"
+        mode: 0400
 
 volumes:
   neko-db-data:

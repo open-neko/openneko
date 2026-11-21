@@ -29,7 +29,7 @@ services:
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/check/check.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
-      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+      OPENNEKO_SANDBOX_KEY_FILE: /run/secrets/sandbox-key
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
     volumes: !override

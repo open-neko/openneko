@@ -15,7 +15,7 @@ x-neko-app-env: &neko-app-env
   OPENNEKO_SERVE_URL: http://openneko-serve:8090
   NEKO_EMBEDDING_URL: ${NEKO_EMBEDDING_URL:-}
   NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
-  NEKO_EMBEDDING_API_KEY: ${NEKO_EMBEDDING_API_KEY:-}
+  NEKO_EMBEDDING_API_KEY_FILE: /run/secrets/embedding-api-key
   OPENNEKO_METRICS_REFRESH: ${OPENNEKO_METRICS_REFRESH:-off}
   NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
   NO_PROXY: localhost,127.0.0.1,::1,neko-db,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
@@ -26,6 +26,18 @@ x-database-url: &database-url
     uid: "1001"
     gid: "1001"
     mode: 0400
+
+x-sandbox-key: &sandbox-key
+  source: sandbox-key
+  uid: "1001"
+  gid: "1001"
+  mode: 0400
+
+x-embedding-api-key: &embedding-api-key
+  source: embedding-api-key
+  uid: "1001"
+  gid: "1001"
+  mode: 0400
 
 services:
   # Start steps. Services in the "steps" profile are not part of `up`.
@@ -143,6 +155,8 @@ services:
     expose:
       - "8080"
       - "8089"
+    secrets:
+      - *sandbox-key
     environment:
       OPENNEKO_SERVE_CREDENTIALS: /credentials
       OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
@@ -151,7 +165,7 @@ services:
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/check/check.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
-      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+      OPENNEKO_SANDBOX_KEY_FILE: /run/secrets/sandbox-key
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
       OPENNEKO_SUBSCRIPTIONS_ADDR: 0.0.0.0:8089
@@ -168,7 +182,13 @@ services:
     depends_on:
       openneko-serve:
         condition: service_started
-    secrets: *database-url
+    secrets:
+      - source: database-url
+        uid: "1001"
+        gid: "1001"
+        mode: 0400
+      - *sandbox-key
+      - *embedding-api-key
     environment:
       <<: *neko-app-env
       OPENNEKO_WEB_ADMIN_SOCKET: /tmp/openneko-web-admin.sock
@@ -182,7 +202,7 @@ services:
       OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
       OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/check/check.sock
       OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
-      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+      OPENNEKO_SANDBOX_KEY_FILE: /run/secrets/sandbox-key
       OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     ports:
       # Web is the intentional server boundary. Operators can restrict it to
@@ -210,3 +230,9 @@ volumes:
 secrets:
   database-url:
     environment: OPENNEKO_DATABASE_URL
+  # `openneko` sets these two to empty when they are unset; an empty secret
+  # mounts no file, and web and serve read that as off.
+  sandbox-key:
+    environment: OPENNEKO_SANDBOX_KEY
+  embedding-api-key:
+    environment: NEKO_EMBEDDING_API_KEY
