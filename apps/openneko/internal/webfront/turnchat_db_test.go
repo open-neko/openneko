@@ -210,7 +210,7 @@ func TestChatTurnThroughServe(t *testing.T) {
 		`select rule->>'mode' || ':' || status from action_policy_proposal where org_id = 'org' and name = 'Ask before email'`:                                       "approval_required:pending",
 		`select count(*)::text from action_policy where org_id = 'org' and name = 'Ask before email'`:                                                                "0",
 		`select count(*)::text from work_memory where text = 'Stock counts come from the ERP'`:                                                                       "0",
-		`select kind || ':' || status || ':' || (after->>'pinned') from team_item_proposal where after->>'text' = 'Stock counts come from the ERP'`:                 "memory:pending:true",
+		`select kind || ':' || status || ':' || (after->>'pinned') from team_item_proposal where after->>'text' = 'Stock counts come from the ERP'`:                  "memory:pending:true",
 		`select string_agg(event, ',') from audit_chain where entity_id = '` + runAdmin + `'`:                                                                        "run:completed",
 	} {
 		if got := rowText(t, db, sql); got != want {
