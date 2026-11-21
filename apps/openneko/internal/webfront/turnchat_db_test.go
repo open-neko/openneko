@@ -184,7 +184,7 @@ func TestChatTurnThroughServe(t *testing.T) {
 	}
 	for _, want := range []string{
 		`{"type":"artifact","artifact":{"path":"runs/` + runAdmin + `/artifacts/stock.csv","label":"stock.csv"}}`,
-		`"type":"action_request_emit"`, `"kind":"slack_post","scope":"external","decision":"auto_approved","intent":"Post the stock summary","summary":"Post the stock summary","facts":{"headline":"Slack post: C1","lines":["text: Stock is fine"],"flags":[]}}`,
+		`"type":"action_request_emit"`, `"kind":"slack_post","scope":"external","decision":"auto_approved","intent":"Post the stock summary","summary":"Post the stock summary","facts":{"headline":"Slack post","lines":["text: Stock is fine"],"flags":[]}}`,
 		`"surfaceId":"workflow-save-`, `"surfaceId":"policy-proposal-`,
 		`{"type":"followups","items":["By region?"]}`, `{"type":"vitals","items":[{"label":"SKUs low","value":"3"}]}`,
 	} {
