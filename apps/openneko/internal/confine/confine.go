@@ -1,6 +1,6 @@
 // Package confine limits the calling process, its threads and its children
-// to the paths of a spec, for good. Linux uses Landlock; other systems
-// report that confinement is not built yet.
+// to the paths of a spec, for good. Linux uses Landlock and seccomp; macOS
+// confines the agent runner with a Seatbelt profile.
 package confine
 
 import (
