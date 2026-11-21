@@ -718,6 +718,13 @@ func (a *API) wfAdmit(ctx context.Context, workflowID, token, rawKey, mode strin
 		if !access.workflowEnabled {
 			return wfErr(409, "workflow_disabled", "The workflow is disabled.")
 		}
+		owner, err := a.apiRunPrincipal(ctx, access.orgID, access.workflowID)
+		if refusal := workflowRefusal(""); errors.As(err, &refusal) {
+			return wfErr(409, "workflow_not_runnable", refusal.Error())
+		}
+		if err != nil {
+			return err
+		}
 		v, err := wfValidate(value, mode, access.limits, access.outputContract)
 		if err != nil {
 			return err
@@ -779,7 +786,7 @@ func (a *API) wfAdmit(ctx context.Context, workflowID, token, rawKey, mode strin
 		}
 		if _, err := tx.Exec(ctx, `insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role, created_at, updated_at)
 		     values ($1, $2, $3, coalesce((select config->>'backend' from llm_provider_config where org_id = $2 and scope = 'agent'), 'ax'),
-		             'queued', null, 'service', $4, $4)`, workRunID, access.orgID, threadID, now); err != nil {
+		             'queued', $5, $6, $4, $4)`, workRunID, access.orgID, threadID, now, nullable(owner.userID), owner.role); err != nil {
 			return err
 		}
 		if err := admitRunSpend(ctx, tx, access.orgID, access.workflowID, workRunID, "api", now); err != nil {

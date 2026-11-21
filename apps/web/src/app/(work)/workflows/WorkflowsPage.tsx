@@ -33,6 +33,7 @@ type WorkflowListItem = {
   steps: { id: string; description: string }[];
   createdAt: string;
   updatedAt: string;
+  accessHeld?: boolean;
 };
 
 type Subscription = {
@@ -628,6 +629,11 @@ function WorkflowRow({
                 </>
               )}
             </div>
+            {w.accessHeld && (
+              <div className="text-ui-body-sm text-text2 mt-1">
+                API runs wait for an admin to approve this version.
+              </div>
+            )}
           </div>
         </button>
         <IconButton

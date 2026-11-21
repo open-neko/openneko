@@ -12100,7 +12100,7 @@ paths:
       operationId: patchWorkflowsByWorkflowId
       tags:
       - workflows
-      summary: Enable, disable, or pause a workflow, or assign an owner
+      summary: Enable, disable, or pause a workflow, assign an owner, or approve its changed content
       x-access: signed-in
       security:
       - session: []
@@ -12129,6 +12129,9 @@ paths:
                 ownerUserId:
                   type: string
                   description: Admin only. Assigns an owner to a workflow that has none; the workflow then runs with the owner's access
+                approveChanges:
+                  type: boolean
+                  description: Admin only. Lifts the hold on API and webhook runs that a run's edit of the workflow put on it
       responses:
         '200':
           description: The workflow is updated

@@ -63,7 +63,7 @@ func TestWorkflowList(t *testing.T) {
 	want := `{"id":"` + wfHeld + `","name":"Held flow","description":"Daily","goal":"Find late orders","enabled":true,"status":"active",` +
 		`"cron":"0 7 * * *","cronTimezone":"Asia/Kolkata","cronEnabled":true,"steps":[{"n":1.5,"id":"s1","description":"Check"}],` +
 		`"createdAt":"`
-	if !strings.Contains(w.Body.String(), want) || !strings.Contains(w.Body.String(), `"updatedAt":"2026-11-01T02:00:00.000Z","needsOwner":true}`) {
+	if !strings.Contains(w.Body.String(), want) || !strings.Contains(w.Body.String(), `"updatedAt":"2026-11-01T02:00:00.000Z","needsOwner":true,"accessHeld":false}`) {
 		t.Errorf("admin body: %s", w.Body)
 	}
 }

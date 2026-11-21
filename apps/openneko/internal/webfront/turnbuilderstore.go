@@ -163,7 +163,9 @@ func (a *API) saveWorkflowDefinition(ctx context.Context, in *jsObj, owner strin
 		}
 		saved, err := scanWorkflowRecord(a.DB.QueryRow(ctx, `update workflow_definition set description = coalesce($2, description),
 			system_prompt_overlay = coalesce($3, system_prompt_overlay), steps = $4::jsonb, goal = coalesce($5, goal), cron = $6,
-			cron_timezone = $7, cron_enabled = $8, output_contract = $9::jsonb, updated_at = now()
+			cron_timezone = $7, cron_enabled = $8, output_contract = $9::jsonb, updated_at = now(),
+			access_held_at = case when exists (select 1 from workflow_api_access x where x.workflow_id = $1 and x.enabled)
+			  then coalesce(access_held_at, now()) else access_held_at end
 			where id = $1 returning `+workflowRecordColumns,
 			existing.ID, description, overlay, steps, goal, cron, timezone, cronEnabled, nullableJSON(contract)))
 		return saved, "updated", err

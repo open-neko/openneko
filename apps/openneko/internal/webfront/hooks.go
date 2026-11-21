@@ -370,6 +370,13 @@ func (a *API) admit(ctx context.Context, h *compatWebhook, mode string, params *
 	if !workflowOn {
 		return nil, hookErr(409, 0, "error", "workflow_disabled")
 	}
+	owner, err := a.apiRunPrincipal(ctx, h.orgID, h.workflowID)
+	if refusal := workflowRefusal(""); errors.As(err, &refusal) {
+		return nil, hookErr(409, 0, "error", "workflow_not_runnable", "message", refusal.Error())
+	}
+	if err != nil {
+		return nil, err
+	}
 
 	limits := readHookLimits()
 	var total, perWorkflow int64
@@ -404,7 +411,7 @@ func (a *API) admit(ctx context.Context, h *compatWebhook, mode string, params *
 	}
 	if _, err := tx.Exec(ctx, `insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role, created_at, updated_at)
 	     values ($1, $2, $3, coalesce((select config->>'backend' from llm_provider_config where org_id = $2 and scope = 'agent'), 'ax'),
-	             'queued', null, 'service', $4, $4)`, workRunID, h.orgID, threadID, now); err != nil {
+	             'queued', $5, $6, $4, $4)`, workRunID, h.orgID, threadID, now, nullable(owner.userID), owner.role); err != nil {
 		return nil, err
 	}
 	if err := admitRunSpend(ctx, tx, h.orgID, h.workflowID, workRunID, "webhook", now); err != nil {
