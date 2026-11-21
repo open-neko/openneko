@@ -488,7 +488,7 @@ func (a *API) ruleSaveRefusal(ctx context.Context, orgID, runID, name string) er
 	}
 	var pack string
 	err = a.DB.QueryRow(ctx, `select i.pack_id from pack_artifact p join pack_install i on i.id = p.pack_install_id
-		where p.org_id = $1 and p.artifact_kind = 'policy' and p.target_ref = $2 order by i.pack_id limit 1`, orgID, name).Scan(&pack)
+		where p.org_id = $1 and p.artifact_kind = 'policy' and coalesce(p.metadata->'locator'->>'name', p.target_ref) = $2 order by i.pack_id limit 1`, orgID, name).Scan(&pack)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}

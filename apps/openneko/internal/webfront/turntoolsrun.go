@@ -395,7 +395,8 @@ func (a *API) entitlementActorForRun(ctx context.Context, orgID, runID string) (
 	var packID string
 	err = a.DB.QueryRow(ctx, `select i.pack_id from workflow_run r
 		join workflow_definition w on w.id = r.workflow_id
-		join pack_artifact a on a.org_id = w.org_id and a.artifact_kind = 'workflow' and a.target_ref = w.name and a.ownership <> 'detached'
+		join pack_artifact a on a.org_id = w.org_id and a.artifact_kind = 'workflow'
+		  and coalesce(a.metadata->'locator'->>'name', a.target_ref) = w.name and a.ownership <> 'detached'
 		join pack_install i on i.id = a.pack_install_id and i.status <> 'removed'
 		where r.work_run_id::text = $1 and r.org_id = $2
 		order by i.pack_id limit 1`, runID, orgID).Scan(&packID)
