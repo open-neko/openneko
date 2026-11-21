@@ -358,30 +358,60 @@ shares the stack network with the database and `openneko web`. The
 database grants and the broker's per-run tokens stop serve from acting
 outside its zone.
 
-## Serve confines itself (Linux)
+## Serve confines itself (Linux and macOS)
 
-On Linux, `openneko serve` confines itself with Landlock before it listens
-and before any agent code runs. The confinement holds for good, for every
-thread and every child (GraphJin, DuckDB). It needs no root, no admin right
-and no cgo. Serve reads its credentials and opens its database pool first,
-then keeps only these paths:
+`openneko serve` runs as two processes. The turn part listens on the agent
+socket and starts an agent runner for each turn. The network part is a
+child, `openneko serve-network`, that runs the files service, the customer
+GraphJin, the subscriptions GraphJin and the config check. It holds the
+network and the database logins of serve.
+
+The turn part reads the serve credentials folder at start. It gives the
+network part the derived token key, the files role database URL and the
+subscriptions URL on its stdin, then forgets the key. The network part gets
+no credentials path, no sandbox key and no variable that can hold a model
+key, a database URL or the secret key. It confines itself before it opens
+its database pool or listens, and it tells the turn part its state in one
+line. When the network part stops, serve stops, and the supervisor starts
+both again. When serve stops, it closes the network part's stdin, and the
+network part stops.
+
+In production mode, serve refuses to start without `--credentials`, so no
+part of serve holds the secret key or the main database login. After
+`openneko serve-init` writes new logins, restart serve.
+
+The network part keeps only these paths:
 
 - read and run: the `openneko` program, the DuckDB program, and the loader
   and library folders that DuckDB needs.
 - read: the TLS certificate folders, `/etc/resolv.conf`, `/etc/hosts` and
   the other name files, the time zone files, `/proc`, `/sys/fs/cgroup`,
-  `~/.postgresql` and the certificate files named in the database URL, and
-  the subscriptions URL file in the serve credentials folder.
-- read and write: the files folder, the file index, the agent runs folder,
-  the subscriptions folder, the GraphJin config folder, the folders of its
-  own sockets, its temp folder (`TMPDIR`) and `/dev/null`.
+  `~/.postgresql` and the certificate files named in the database URL.
+- read and write: the files folder, the file index, the subscriptions
+  folder, the GraphJin config folder, its temp folder (`TMPDIR`) and
+  `/dev/null`.
+- listen: the config check socket and the sockets of its two GraphJin
+  children.
 
-Serve loses the config folder (the secret key, `config.json` with the
-database login, `secrets.json`), the web admin socket token, the rest of the
-home folder and every other path. It cannot run a file that it wrote. It
-cannot read the memory or the environment of a process outside its domain,
-or trace one. A native install gives serve its own temp folder,
-`<data>/tmp`.
+The turn part keeps the `openneko` program, the same system files, the
+agent runs folder, its temp folder, its own socket, the key door socket and
+the sandbox socket. On macOS the turn part is not confined: a process under
+a Seatbelt profile cannot start a runner that applies its own profile. Each
+runner there confines itself (see "The runner confines itself (macOS)").
+
+Neither part can read the config folder (the secret key, `config.json` with
+the database login, `secrets.json`), the serve credentials folder, the web
+admin socket token, the rest of the home folder or the other part's
+folders. Neither can run a file that it wrote, or read the memory or the
+environment of a process outside its domain. A native install gives serve
+its own temp folder, `<data>/tmp`.
+
+### Linux
+
+Both parts use Landlock. The confinement holds for good, for every thread
+and every child (GraphJin, DuckDB, the agent runners). It needs no root, no
+admin right and no cgo. Landlock domains stack, so each agent runner adds
+its own confinement to the turn part's.
 
 Each Landlock ABI adds rights. Serve uses the newest ABI that the kernel
 has:
@@ -401,20 +431,52 @@ has:
 Serve uses any ABI from 1. Below ABI 9, Landlock cannot refuse a connect
 to a named socket, so the web admin socket also needs a token that `openneko
 web` writes beside it (`web-admin.sock.token`, mode 0600). Serve cannot read
-that file. From ABI 9, serve may connect only to the key door socket and the
-sandbox socket.
+that file. From ABI 9, the turn part may connect only to the key door socket
+and the sandbox socket, and the network part only to its own sockets. The
+config check socket shares the run folder with the agent socket, so below
+ABI 9 the network part could also replace the agent socket.
 
-On a Linux kernel with no Landlock, serve starts unconfined and says so, so
-that data reads, the web app and workflows without an agent step still
-work. In production mode it then refuses every agent turn (see the next
-section). `OPENNEKO_SERVE_CONFINE=off` turns the confinement off in
-development mode only. `openneko release-check --serve-socket` prints
-`serve_confinement=landlock ABI <n>` and fails when serve runs unconfined in
-production mode. The status page shows the state under "Agent confinement".
-On macOS and Windows the confinement is not built yet: serve starts and the
-status page says so.
+On a Linux kernel with no Landlock, both parts start unconfined and say so,
+so that data reads, the web app and workflows without an agent step still
+work. In production mode serve then refuses every agent turn (see the next
+section). A kernel that has Landlock and fails to apply it stops serve in
+production mode.
 
 Serve's network does not change: Landlock here governs files only.
+
+### macOS
+
+The network part applies a Seatbelt profile to itself with `sandbox_init`,
+as the agent runner does. The profile refuses by default. It keeps the
+paths above, TCP and UDP to any host, listening on any local address, its
+own Unix sockets, the name service socket, and the Mach services that name
+lookup and TLS certificate checks use (`com.apple.dnssd.service`,
+`com.apple.trustd`, `com.apple.SystemConfiguration.DNSConfiguration` and a
+few logging and directory services). It can fork, run the `openneko` and
+DuckDB programs, and signal its own children. It cannot read another
+process's arguments or environment. It can read the metadata of a path
+that it names.
+
+When macOS has no `sandbox_init`, the network part starts unconfined and
+says so, as on a Linux kernel with no Landlock. When macOS refuses the
+profile, serve stops in production mode. The proof tests
+(`TestConfinedServeNetworkPart`, `TestServeNetworkPartFailsClosed`) run on
+macOS 15 on every push.
+
+### On every system
+
+`OPENNEKO_SERVE_CONFINE=off` turns the confinement off in development mode
+only. `openneko release-check --serve-socket` prints `serve_confinement`
+(the turn part), `serve_network_confinement` and `runner_confinement`, and
+fails when a part that the system can confine runs unconfined in production
+mode. The status page shows the state under "Agent confinement". On
+Windows the confinement is not built yet: serve starts, and the status page
+and release-check say "agent confinement: not available on this system
+yet".
+
+Neither OS can limit the network part to the hosts that the install's
+configuration names without root or admin rights. A root-installed systemd
+unit can add `IPAddressAllow=`.
 
 ## The agent runner (Linux and macOS)
 
@@ -724,8 +786,10 @@ points the same services at it.
 
 ## The customer GraphJin
 
-Serve runs the customer GraphJin from the pinned GraphJin module (v3.21.18)
-as a child process of the same executable: `openneko graphjin serve --child`.
+The network part of serve runs the customer GraphJin from the pinned
+GraphJin module (v3.21.18) as a child process of the same executable:
+`openneko graphjin serve --child`. The child keeps the network part's
+confinement.
 A GraphJin crash ends only the child. Serve listens on port 8080 and answers as `graphjin` on the
 stack network, so stored endpoints such as `http://graphjin:8080` keep
 working. Its config, `agentic.yml`, holds the customer's source logins and the
@@ -769,11 +833,11 @@ subscriptions of `openneko web`, on port 8089. It is a second child process of t
 with the same restarts, 503 answer and state file.
 
 - It connects as `neko_subscriptions_<database>`. Serve reads the role's URL from
-  `subscriptions.url` in the credentials folder and writes the GraphJin config
-  into a private folder (`OPENNEKO_SUBSCRIPTIONS_DIR`, default
-  `$TMPDIR/openneko-subscriptions`, mode 0700). When the URL changes, serve
-  restarts the child. A URL for another role is refused, and the running
-  child stays.
+  `subscriptions.url` in the credentials folder at start and gives it to the
+  network part, which writes the GraphJin config into a private folder
+  (`OPENNEKO_SUBSCRIPTIONS_DIR`, default `$TMPDIR/openneko-subscriptions`,
+  mode 0700). A new URL takes effect when serve restarts. A URL for another
+  role is refused.
 - The child gets no `GJ_*` variables and no `GO_ENV`, because those are for
   the customer GraphJin.
 - `openneko graphjin status --subscriptions` prints its state, and

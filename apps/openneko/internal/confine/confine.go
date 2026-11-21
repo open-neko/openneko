@@ -1,6 +1,6 @@
 // Package confine limits the calling process, its threads and its children
 // to the paths of a spec, for good. Linux uses Landlock and seccomp; macOS
-// confines the agent runner with a Seatbelt profile.
+// uses a Seatbelt profile.
 package confine
 
 import (
@@ -18,6 +18,9 @@ type Spec struct {
 	Exec []string
 	// Sockets holds named local sockets that it may connect to.
 	Sockets []string
+	// Listen holds named local sockets that it may create, accept on and
+	// connect to.
+	Listen []string
 	// NoTCP refuses every TCP bind and connect where Landlock can (ABI 4).
 	NoTCP bool
 }

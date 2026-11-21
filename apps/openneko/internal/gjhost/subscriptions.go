@@ -88,10 +88,12 @@ func SubscriptionsCommand(configFile string) func(socket string) *exec.Cmd {
 }
 
 // Subscriptions runs the GraphJin that serves the worker's workflow output
-// subscriptions. It renders its config in Dir from the URL in URLFile and
-// restarts the child when that URL changes.
+// subscriptions. It renders its config in Dir from URL, or from the URL in
+// URLFile, and restarts the child when that URL changes.
 type Subscriptions struct {
+	URL     string
 	URLFile string
+	Socket  string
 	Dir     string
 	Addr    string
 	Log     io.Writer
@@ -153,15 +155,19 @@ func (s *Subscriptions) Run(ctx context.Context) error {
 	if s.Command != nil {
 		command = s.Command
 	}
-	return (&Supervisor{ConfigFile: file, Addr: s.Addr, Log: s.Log, Poll: poll / 2, Command: command(file)}).Run(ctx)
+	return (&Supervisor{ConfigFile: file, Addr: s.Addr, Log: s.Log, Poll: poll / 2, Command: command(file), Socket: s.Socket}).Run(ctx)
 }
 
 func (s *Subscriptions) render(file string) (bool, error) {
-	raw, err := os.ReadFile(s.URLFile)
-	if err != nil {
-		return false, err
+	url := s.URL
+	if url == "" {
+		raw, err := os.ReadFile(s.URLFile)
+		if err != nil {
+			return false, err
+		}
+		url = string(raw)
 	}
-	conf, err := RenderSubscriptionsConfig(strings.TrimSpace(string(raw)))
+	conf, err := RenderSubscriptionsConfig(strings.TrimSpace(url))
 	if err != nil {
 		return false, err
 	}

@@ -22,7 +22,7 @@ func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 	cleanServeEnv(t)
 	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	ctx, cancel := context.WithCancel(context.Background())
-	done, err := serveAgentTurns(ctx, io.Discard, socket, 2, sandbox.Config{}, confine.State{})
+	done, err := serveAgentTurns(ctx, io.Discard, socket, 2, sandbox.Config{}, confine.State{}, confine.State{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestServeAgentTurnsAnswersOnTheSocket(t *testing.T) {
 func TestServeAgentTurnsRefusesABadSandboxURL(t *testing.T) {
 	cleanServeEnv(t)
 	socket := filepath.Join(testsock.Dir(t), "serve.sock")
-	if _, err := serveAgentTurns(context.Background(), io.Discard, socket, 1, sandbox.Config{URL: "ftp://sandbox"}, confine.State{}); err == nil {
+	if _, err := serveAgentTurns(context.Background(), io.Discard, socket, 1, sandbox.Config{URL: "ftp://sandbox"}, confine.State{}, confine.State{}); err == nil {
 		t.Fatal("serve started with a sandbox URL it cannot use")
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
@@ -101,7 +101,7 @@ func TestServeAgentTurnsWarnsWhenTheSandboxSharesItsSocketFolder(t *testing.T) {
 		socket := filepath.Join(dir, "serve.sock")
 		var out strings.Builder
 		ctx, cancel := context.WithCancel(context.Background())
-		done, err := serveAgentTurns(ctx, &out, socket, 1, sandbox.Config{URL: tc.url}, confine.State{})
+		done, err := serveAgentTurns(ctx, &out, socket, 1, sandbox.Config{URL: tc.url}, confine.State{}, confine.State{})
 		if err != nil {
 			t.Fatal(err)
 		}

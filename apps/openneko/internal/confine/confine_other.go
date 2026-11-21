@@ -11,6 +11,9 @@ func Available() State {
 	return State{Reason: fmt.Sprintf("confinement on %s is not built yet", runtime.GOOS)}
 }
 
+// Stacks is false: nothing confines a process on this system.
+const Stacks = false
+
 func Kernel() string { return runtime.GOOS }
 
 func Apply(Spec) (State, error) {

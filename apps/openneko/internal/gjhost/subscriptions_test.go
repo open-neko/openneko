@@ -20,6 +20,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func TestRenderSubscriptionsConfigNeedsTheNarrowRole(t *testing.T) {
@@ -181,5 +182,43 @@ func TestSubscriptionsServeWorkflowOutputsAsTheNarrowRole(t *testing.T) {
 	waitFor(t, "the bad URL in the log", func() bool { return strings.Contains(log.String(), "must log in as "+db.SubscriptionsRole("neko")) })
 	if _, out := graphql(t, addr, `{ workflow_output { title } }`); !strings.Contains(out, "stock is low") {
 		t.Fatalf("a bad URL must keep the running engine, got %s", out)
+	}
+}
+
+func TestSubscriptionsRenderFromTheURLGivenAtStart(t *testing.T) {
+	file := filepath.Join(t.TempDir(), SubscriptionsConfig)
+	s := &Subscriptions{URL: "postgres://neko_subscriptions_neko:given@db:5432/neko?sslmode=disable\n", URLFile: filepath.Join(t.TempDir(), "missing.url")}
+	changed, err := s.render(file)
+	if err != nil || !changed {
+		t.Fatalf("render from the URL: changed %v, err %v", changed, err)
+	}
+	if raw, _ := os.ReadFile(file); !strings.Contains(string(raw), "neko_subscriptions_neko:given@db:5432") {
+		t.Fatalf("the config does not hold the URL given at start:\n%s", raw)
+	}
+}
+
+func TestSupervisorServesOnTheSocketItIsGiven(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "agentic.yml")
+	if err := os.WriteFile(file, []byte("app_name: x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(testsock.Dir(t), "gj.sock")
+	s := &Supervisor{ConfigFile: file, Addr: freeAddr(t), Log: &syncBuffer{}, Poll: 50 * time.Millisecond, Command: testCommand(file), Socket: sock}
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	deadline := time.Now().Add(20 * time.Second)
+	for !dialable(sock) {
+		if time.Now().After(deadline) {
+			stop()
+			t.Fatalf("no GraphJin child on %s", sock)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	stop()
+	<-done
+	if _, err := os.Stat(sock); !os.IsNotExist(err) {
+		t.Fatalf("the socket stays after the supervisor stops: %v", err)
 	}
 }

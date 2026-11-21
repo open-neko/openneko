@@ -39,7 +39,7 @@ func sandboxInit(profile string) error {
 	if int32(r) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s refused the agent runner's Seatbelt profile: %s", Kernel(), cString(errbuf))
+	return fmt.Errorf("%s refused the Seatbelt profile: %s", Kernel(), cString(errbuf))
 }
 
 func cString(p *byte) string {
