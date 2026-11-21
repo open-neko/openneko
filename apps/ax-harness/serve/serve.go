@@ -38,6 +38,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
@@ -109,6 +110,8 @@ type Server struct {
 	Embed    func(context.Context, embedding.Request, string) (embedding.Result, error)
 
 	runnerStarted func(*os.Process)
+	runnerLog     io.Writer
+	runnerSeq     atomic.Int64
 	confine       func(environ []string) error
 
 	mu      sync.Mutex
@@ -293,10 +296,6 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 }
 
 func (s *Server) call(parent context.Context, reader *bufio.Reader, out *frameWriter, exit func(int, error), run func(context.Context) (any, error)) {
-	if s.TurnsOff != "" {
-		exit(2, errors.New(s.TurnsOff))
-		return
-	}
 	if !s.acquire() {
 		exit(2, errors.New("serve is at its turn limit"))
 		return

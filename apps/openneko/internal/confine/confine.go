@@ -50,5 +50,9 @@ func (s State) String() string {
 	return out
 }
 
+// NotAvailable is what the start, status, doctor and release-check say on a
+// system where this build cannot confine an agent runner yet.
+const NotAvailable = "agent confinement: not available on this system yet"
+
 // ErrUnsupported wraps the error of a system or kernel that cannot confine.
 var ErrUnsupported = errors.New("this system cannot confine openneko serve")

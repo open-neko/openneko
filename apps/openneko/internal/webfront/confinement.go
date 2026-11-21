@@ -43,6 +43,9 @@ func confinementService() externalService {
 			if !st.host.Confined && st.host.Mechanism != "" {
 				return "", "", fmt.Errorf("openneko serve runs unconfined: %s", st.host.Reason)
 			}
+			if !st.runner.Confined && st.production {
+				return "", "", errors.New(confine.NotAvailable + ": agent turns run unconfined")
+			}
 			if !st.network.Confined {
 				return fmt.Sprintf("Confinement of openneko serve on %s is not built yet: %s.", runtime.GOOS, st.network.Reason), "", nil
 			}
@@ -68,6 +71,7 @@ func confinementService() externalService {
 type serveStates struct {
 	host, network, runner confine.State
 	turnsOff              string
+	production            bool
 }
 
 // serveConfinement asks serve over its agent socket how the OS confines it
@@ -95,6 +99,6 @@ func serveConfinement(ctx context.Context, socket string) (serveStates, error) {
 	if len(status.RunnerConfinement) > 0 {
 		_ = json.Unmarshal(status.RunnerConfinement, &st.runner)
 	}
-	st.turnsOff = status.TurnsOff
+	st.turnsOff, st.production = status.TurnsOff, status.RequireDoor
 	return st, nil
 }

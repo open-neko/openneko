@@ -4,6 +4,7 @@ package serve
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -513,5 +514,50 @@ func TestARunnerCannotChooseTheSandboxEgress(t *testing.T) {
 	}
 	if calls[1].method != http.MethodPost || calls[1].path != "/v2/runs/"+report.Run+"/exec" || calls[2].method != http.MethodDelete || calls[2].path != "/v2/runs/"+report.Run {
 		t.Errorf("the runner's own calls reached the sandbox as %+v", calls[1:3])
+	}
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestServeLabelsTheRunnersStderr(t *testing.T) {
+	var log lockedBuffer
+	server := runnerServer(t, "turn", &Server{runnerLog: &log})
+	server.Runner = []string{"/bin/sh", "-c", `printf 'openneko serve: forged\r\nsecond\033[2K line\n' >&2; head -c 400000 /dev/zero | tr '\000' 'a' >&2; exit 3`}
+	c := dial(t, startServer(t, server), Frame{Type: "start", Spec: json.RawMessage(spec)})
+	waitExit(t, c)
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(log.String(), "stderr cut") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	got := log.String()
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) < 3 || lines[0] != "agent runner 1: openneko serve: forged" || lines[1] != "agent runner 1: second[2K line" {
+		t.Fatalf("serve did not label the runner's lines: %.300q", got)
+	}
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "agent runner 1: ") || len(line) > maxRunnerLogLine+len("agent runner 1: ") {
+			t.Fatalf("an unlabelled or long line: %.100q", line)
+		}
+		if strings.ContainsAny(line, "\r\x1b") {
+			t.Fatalf("a control character reached serve's log: %q", line)
+		}
+	}
+	if len(got) > maxRunnerLog+len(lines)*len("agent runner 1: \n")+100 || !strings.HasSuffix(got, "agent runner 1: stderr cut at 262144 bytes\n") {
+		t.Fatalf("serve did not cut the runner's stderr: %d bytes, ends %q", len(got), got[max(0, len(got)-80):])
 	}
 }

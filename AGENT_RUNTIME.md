@@ -501,7 +501,16 @@ In the runner:
 - a sandbox without a passed connection fails the terminal;
 - `web_fetch` calls `openneko web` over the tool bridge. Web holds the
   host list of the run, makes the fetch and logs each URL with the
-  organization and the run.
+  organization and the run. Web connects only to a public address: it
+  refuses private, loopback, link-local, shared (100.64.0.0/10) and NAT64
+  (64:ff9b::/96, 64:ff9b:1::/48) addresses. Behind a proxy, web resolves
+  the host and refuses it when any of its addresses is not public. The
+  proxy resolves the name again, so a name that changes its answer between
+  the two lookups is not covered.
+
+Serve writes each line that a runner sends to stderr into its own log as
+`agent runner <n>: <line>`, with control characters removed, lines cut at
+4 KiB and at most 256 KiB for each turn.
 
 Serve starts each runner in its own process group. On Linux the runner
 also gets `SIGKILL` when serve dies. Serve kills the whole group when web

@@ -80,6 +80,9 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 	_ = ln.Close()
 	confined := confine.State{Mechanism: "landlock", ABI: 8, Confined: true}
 	seatbelt := confine.State{Mechanism: "seatbelt", Confined: true}
+	oldRunner := runnerAvailable
+	defer func() { runnerAvailable = oldRunner }()
+	runnerAvailable = func() confine.State { return confine.State{Mechanism: "landlock+seccomp", ABI: 8, Confined: true} }
 	for i, c := range []struct {
 		env            map[string]string
 		state, network confine.State

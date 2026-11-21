@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
+
+	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 )
 
 const webAdminSocketEnv = "OPENNEKO_WEB_ADMIN_SOCKET"
@@ -39,6 +41,9 @@ func webAdminToken(socket string) string { return socket + ".token" }
 // acts as an admin.
 func serveWebAdmin(path string, handler http.Handler) (func(), error) {
 	if err := ownonly.Mkdir(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	if err := ownacl.SocketFolder(path); err != nil {
 		return nil, err
 	}
 	raw := make([]byte, 32)
