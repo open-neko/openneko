@@ -15,7 +15,7 @@ const screens: Array<[path: string, heading: string, wideText?: string]> = [
   ["/skills", "Skills"],
   ["/profile", "Your account"],
   ["/actions", "Approvals"],
-  [`/actions/${F.adminActionRequestId}`, "Write a note"],
+  [`/actions/${F.adminActionRequestId}`, "Contract note"],
   ["/business-profile", "Business profile"],
   ["/runs", "Run history"],
   [`/runs/${F.adminWorkflowRunId}`, "Contract workflow of contract-admin"],

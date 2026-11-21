@@ -41,10 +41,10 @@ test.describe("4.5 passkey action approval on the phone", () => {
       await client.query(
         `insert into action_request (id, org_id, workflow_run_id, scope, kind, target, summary, payload, status)
          values
-           ($1, $3, $4, 'org', 'note', 'warehouse-eu-west', 'Hold inbound shipment #451 for inspection', '{"lot":"LOT-451","hold":true}'::jsonb, 'pending_approval'),
-           ($2, $3, $4, 'org', 'note', 'warehouse-eu-west', 'Release safety stock batch #452', '{"lot":"LOT-452","release":true}'::jsonb, 'pending_approval'),
-           ($5, $3, $4, 'org', 'note', 'warehouse-eu-west', 'Recount bin A-453', '{"bin":"A-453"}'::jsonb, 'pending_approval'),
-           ($6, $3, $4, 'org', 'note', 'warehouse-eu-west', 'Move pallet #454 to quarantine', '{"pallet":"454"}'::jsonb, 'pending_approval')
+           ($1, $3, $4, 'org', 'hold_shipment', 'warehouse-eu-west', 'Hold inbound shipment #451 for inspection', '{"lot":"LOT-451","hold":true}'::jsonb, 'pending_approval'),
+           ($2, $3, $4, 'org', 'release_stock', 'warehouse-eu-west', 'Release safety stock batch #452', '{"lot":"LOT-452","release":true}'::jsonb, 'pending_approval'),
+           ($5, $3, $4, 'org', 'recount_bin', 'warehouse-eu-west', 'Recount bin A-453', '{"bin":"A-453"}'::jsonb, 'pending_approval'),
+           ($6, $3, $4, 'org', 'move_pallet', 'warehouse-eu-west', 'Move pallet #454 to quarantine', '{"pallet":"454"}'::jsonb, 'pending_approval')
          on conflict (id) do update
            set status = 'pending_approval',
                approved_by_user_id = null,
@@ -80,9 +80,8 @@ test.describe("4.5 passkey action approval on the phone", () => {
       // Because the user has no passkey yet, this enrolls a passkey on the virtual authenticator
       // and then signs the approval challenge with it.
       await page.goto(`${origin}/actions/${AR_DETAIL_ID}`, { waitUntil: "networkidle" });
-      await expect(
-        page.getByRole("heading", { name: "Hold inbound shipment #451 for inspection" }),
-      ).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Hold shipment", exact: true })).toBeVisible();
+      await expect(page.getByText("Hold inbound shipment #451 for inspection")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= 400)).toBe(true);
       expect(await page.evaluate(() => window.scrollX)).toBe(0);
 
@@ -111,7 +110,7 @@ test.describe("4.5 passkey action approval on the phone", () => {
       expect(await page.evaluate(() => window.scrollX)).toBe(0);
 
       const secondRow = page.locator("li", {
-        hasText: "Release safety stock batch #452",
+        hasText: "Release stock",
       });
       await expect(secondRow).toBeVisible();
       await secondRow.getByRole("button", { name: "Approve with passkey", exact: true }).click();
@@ -133,14 +132,15 @@ test.describe("4.5 passkey action approval on the phone", () => {
       // F3b: with a passkey registered, the plain Approve button gets 403 passkey_required,
       // and the client then signs the approval challenge with the passkey.
       await page.goto(`${origin}/actions/${AR_PLAIN_ID}`, { waitUntil: "networkidle" });
-      await expect(page.getByRole("heading", { name: "Recount bin A-453" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Recount bin", exact: true })).toBeVisible();
+      await expect(page.getByText("Recount bin A-453")).toBeVisible();
       await page.getByRole("button", { name: "Approve", exact: true }).click();
       await expect.poll(() => status(AR_PLAIN_ID)).toBe("approved");
 
       // On the queue, the approval waits for the undo window; the 403 then shows a notice
       // with a button that asks for the passkey.
       await page.goto(`${origin}/actions`, { waitUntil: "networkidle" });
-      const toastRow = page.locator("li", { hasText: "Move pallet #454 to quarantine" });
+      const toastRow = page.locator("li", { hasText: "Move pallet" });
       await expect(toastRow).toBeVisible();
       await toastRow.getByRole("button", { name: "Approve", exact: true }).click();
       await expect(page.getByText("This approval needs your passkey")).toBeVisible({ timeout: 15000 });
@@ -202,7 +202,7 @@ test.describe("4.5 passkey action approval on the phone", () => {
         const row = audit.rows[0]!;
         expect(row.event).toBe("approved");
         expect(row.payload).toMatchObject({
-          kind: "note",
+          kind: { [AR_DETAIL_ID]: "hold_shipment", [AR_QUEUE_ID]: "release_stock", [AR_PLAIN_ID]: "recount_bin", [AR_TOAST_ID]: "move_pallet" }[actionId],
           method: "passkey",
           passkeyCredentialId: pk.credential_id,
           passkeyName: "This device",

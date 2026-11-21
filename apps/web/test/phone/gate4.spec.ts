@@ -1296,9 +1296,10 @@ test.describe("Phase 4 gate check (G4)", () => {
         waitUntil: "networkidle",
       });
       await expect(
-        page.getByRole("heading", {
-          name: "Hold $48,500 wire to Acme Industrial Supplies for SKU-999",
-        }),
+        page.getByRole("heading", { name: "Gate4 supplier hold", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Hold $48,500 wire to Acme Industrial Supplies for SKU-999"),
       ).toBeVisible();
       await assertNoHorizontalOverflow(page, "/actions/:id");
 
