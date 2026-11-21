@@ -492,7 +492,26 @@ The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
 small gaps: rename and link between folders (Linux 5.19) and ioctl on a
 device (Linux 6.10). On every kernel, the runner can read the metadata (size,
 times, extended attributes) of a path that it names. `openneko doctor` prints
-the active security modules and the state. To check by hand:
+the active security modules and the state.
+
+The network part of serve opens sockets, and Landlock below ABI 9 cannot
+refuse a connect to a named socket. On a desktop login this includes the
+session bus, `/run/user/UID/bus`, through which `systemd --user` can start a
+program outside the confinement. `openneko doctor` lists it as a gap when
+the bus exists. A server install runs as the system user `openneko`, which
+has no login session and so no session bus. Keep it that way: do not turn
+on lingering for it with `loginctl enable-linger`. From ABI 9, the network
+part reaches only its own socket folders, and serve refuses to start a part
+whose socket folder holds the session bus.
+
+On RHEL 8 and any other kernel without Landlock, no agent turn runs, but
+the rest of serve runs unconfined. On a server install, the network part
+of serve (the files service and both GraphJin engines) then runs as the
+same system user as web, with only the database roles between them. The
+6.0.0 pre-releases put serve under a second system user; the one-account
+install has no such boundary. Use the Docker install where you need it.
+
+To check by hand:
 
 ```bash
 cat /sys/kernel/security/lsm   # must hold landlock
@@ -541,7 +560,7 @@ The proof tests run on macOS 15 on every push.
 
 Apple marks `sandbox_init` and `sandbox-exec` as deprecated, but macOS 15
 still has both. If a later macOS removes the call, `openneko serve` refuses
-every agent turn in production mode with one line: "agent confinement:
+every agent turn, in every mode, with one line: "agent confinement:
 off. macOS <version> has no sandbox_init, the call that confines an agent
 runner, so agent turns are off". The same applies when macOS refuses the
 profile. The web app, data reads and workflows without an agent step still
@@ -566,6 +585,10 @@ check that read. So no OpenNeko process keeps a secret there:
   gets the bucket login and the AWS login in its start line, and the
   customer GraphJin gets the secret `GJ_*` and `OTEL_*` header variables on
   its stdin.
+- A variable counts as secret by its name (a key, token, password, database
+  URL or webhook URL, such as `OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL`) or by its
+  value: a URL with a login, or with a key, token, signature or password in
+  its query, whatever the variable's name.
 
 Other programs that you run as the OpenNeko account are not covered. Run
 OpenNeko as an account of its own on a shared Mac.
@@ -625,15 +648,14 @@ the config folder, `secrets.json`, the serve credentials or the web admin
 socket token, and it cannot run a file that it wrote. `openneko
 release-check --serve-socket` prints `serve_confinement=` and
 `serve_network_confinement=`, and fails when a part of serve runs
-unconfined in production mode ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
+unconfined ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
 
 The model calls now leave from web. A firewall that let only serve reach
 the model APIs must let web reach them.
 
-Two set-ups put the key in the process that runs the agent loop. Use them
-for development and demos only: `openneko web` with no
-`OPENNEKO_SERVE_SOCKET`, which runs the Ax harness in its own process, and
-the stand-alone harness of the evals. The one-user native install starts
+No set-up puts a model key in the process that runs the agent loop.
+`openneko web` with no `OPENNEKO_SERVE_SOCKET` refuses agent turns, and the
+`ax-harness` binary refuses a turn. The one-user native install starts
 serve with no key, token, password or database URL from your shell, but web
 and serve run as one OS user there. Use it for development and demos only.
 

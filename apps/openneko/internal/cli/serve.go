@@ -38,6 +38,9 @@ func newServeCmd() *cobra.Command {
 			if err := secretenv.ReadHanded(os.Stdin); err != nil {
 				return err
 			}
+			if !cmd.Flags().Changed("sandbox-url") {
+				sandboxURL = os.Getenv("OPENNEKO_SANDBOX_URL")
+			}
 			development := webfront.Development()
 			refuse, err := guardAgentSocket()
 			if err != nil {

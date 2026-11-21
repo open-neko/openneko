@@ -3,6 +3,7 @@ package confine
 import (
 	"encoding/binary"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -279,5 +280,53 @@ func TestRunnerGapsNameWhatTheFilterLeaves(t *testing.T) {
 	}
 	if g := strings.Join(runnerGaps(1), "; "); !strings.Contains(g, "ABI 2") || !strings.Contains(g, "ABI 5") {
 		t.Errorf("ABI 1 gaps %q", g)
+	}
+}
+
+func TestTheSessionBusStaysOutOfReach(t *testing.T) {
+	if writeRights&fsResolveUnix != 0 {
+		t.Error("a read-write folder lets a connect reach any socket below it")
+	}
+	runtimeDir := t.TempDir()
+	bus := filepath.Join(runtimeDir, "bus")
+	ln, err := net.Listen("unix", bus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	if got := SessionBus(); got != bus {
+		t.Fatalf("SessionBus() = %q, want %q", got, bus)
+	}
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+bus+",guid=1")
+	if got := SessionBus(); got != bus {
+		t.Fatalf("SessionBus() from the address = %q", got)
+	}
+	for dirs, want := range map[string]string{
+		filepath.Join(runtimeDir, "openneko-sandbox"): "",
+		runtimeDir:               runtimeDir,
+		filepath.Dir(runtimeDir): filepath.Dir(runtimeDir),
+		filepath.Join(t.TempDir(), "run") + "|" + runtimeDir: runtimeDir,
+	} {
+		if got := coversBus(strings.Split(dirs, "|"), bus); got != want {
+			t.Errorf("coversBus(%s) = %q, want %q", dirs, got, want)
+		}
+	}
+	st := Available()
+	if !st.Confined {
+		t.Skip(st.Reason)
+	}
+	named := strings.Contains(strings.Join(st.Gaps, "; "), "session bus "+bus)
+	if st.ABI < 9 && !named {
+		t.Errorf("ABI %d: the gaps do not name the session bus: %v", st.ABI, st.Gaps)
+	}
+	if st.ABI >= 9 && named {
+		t.Errorf("ABI %d names the session bus as a gap", st.ABI)
+	}
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	if strings.Contains(strings.Join(Available().Gaps, "; "), "session bus") {
+		t.Error("a system account with no session bus gets the bus gap")
 	}
 }

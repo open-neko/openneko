@@ -233,6 +233,9 @@ func ServeSecrets(env []string) []byte {
 			values[name] = v
 		}
 	}
+	for name, v := range secretURLs(env) {
+		values[name] = v
+	}
 	return secretenv.Line(values)
 }
 
@@ -251,12 +254,12 @@ var webReads = map[string]bool{
 	"NEKO_EMBEDDING_API_KEY": true, "NEKO_EMBEDDING_API_KEY_FILE": true,
 	"OPENNEKO_SANDBOX_KEY": true, "OPENNEKO_SANDBOX_KEY_FILE": true,
 	"OPENNEKO_JOBS_WAKE_TOKEN": true, "OPENNEKO_GITHUB_TOKEN": true, "GITHUB_TOKEN": true,
-	"OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN": true, "OPENNEKO_AGENT_MODEL_KEY_ENV": true,
+	"OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN": true, "OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL": true, "OPENNEKO_AGENT_MODEL_KEY_ENV": true,
 	"OPENNEKO_WORKFLOW_API_ORG_ROLLING_TOKEN_BUDGET": true, "OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE": true,
 }
 
 var webSecrets = []string{"NEKO_PG_PASSWORD", "OPENNEKO_SESSION_SECRET", "NEKO_EMBEDDING_API_KEY", "OPENNEKO_SANDBOX_KEY",
-	"OPENNEKO_JOBS_WAKE_TOKEN", "OPENNEKO_GITHUB_TOKEN", "GITHUB_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"}
+	"OPENNEKO_JOBS_WAKE_TOKEN", "OPENNEKO_GITHUB_TOKEN", "GITHUB_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"}
 
 // WebEnviron keeps the variables of env that are not secret-named, and the
 // secret-named ones that web reads and that hold no secret value.
@@ -264,9 +267,27 @@ func WebEnviron(env []string) []string {
 	return keepEnv(env, func(upper string) bool { return webReads[upper] && !slices.Contains(webSecrets, upper) })
 }
 
-// WebSecrets is the JSON line that web reads on stdin.
+// WebSecrets is the JSON line that web reads on stdin: its secrets, and
+// each URL with a login or a credential in its query.
 func WebSecrets(env []string) []byte {
-	return secretenv.Line(handedValues(env, webSecrets))
+	values := handedValues(env, webSecrets)
+	for name, v := range secretURLs(env) {
+		values[name] = v
+	}
+	return secretenv.Line(values)
+}
+
+// secretURLs are the variables of env that only their URL value makes
+// secret.
+func secretURLs(env []string) map[string]string {
+	out := map[string]string{}
+	for _, kv := range env {
+		name, value, _ := strings.Cut(kv, "=")
+		if !secretenv.SecretName(name) && secretenv.SecretURL(value) {
+			out[name] = value
+		}
+	}
+	return out
 }
 
 func handedValues(env []string, names []string) map[string]string {
@@ -282,9 +303,9 @@ func handedValues(env []string, names []string) map[string]string {
 func keepEnv(env []string, keep func(upper string) bool) []string {
 	var out []string
 	for _, kv := range env {
-		name, _, _ := strings.Cut(kv, "=")
+		name, value, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
-		if !secretenv.SecretName(upper) || keep(upper) {
+		if !secretenv.Secret(upper, value) || keep(upper) {
 			out = append(out, kv)
 		}
 	}
