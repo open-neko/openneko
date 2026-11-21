@@ -436,7 +436,7 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 		t.Fatalf("development mode turned turns off: %q", off)
 	}
 	runnerAvailable = func() confine.State { return confine.State{Reason: "confinement on darwin is not built yet"} }
-	if _, confineIt, off := runnerConfinement(io.Discard, false); off != "" || confineIt {
+	if _, confineIt, off := runnerConfinement(io.Discard, false); off != confine.NotAvailable+" (confinement on darwin is not built yet), so agent turns are off" || confineIt {
 		t.Fatalf("a system with no runner confinement built yet: off=%q confine=%v", off, confineIt)
 	}
 
@@ -475,7 +475,7 @@ func TestDoctorNamesTheConfinementAndTheModules(t *testing.T) {
 		return confine.State{Mechanism: "landlock+seccomp", Reason: "the container engine blocks Landlock (Linux 6.8.0 has it): use an engine whose default seccomp profile allows the landlock calls (INSTALL.md, \"Agent confinement\")"}
 	}
 	var out strings.Builder
-	if !confinementDoctorLines(&out) {
+	if !confinementDoctorLines(context.Background(), &out) {
 		t.Fatal("doctor passed a host that cannot confine its agent runners")
 	}
 	for _, want := range []string{"kernel security modules: ", "agent confinement: off. the container engine blocks Landlock", "so agent turns are off"} {
@@ -485,7 +485,7 @@ func TestDoctorNamesTheConfinementAndTheModules(t *testing.T) {
 	}
 	runnerAvailable = confine.RunnerAvailable
 	out.Reset()
-	if st := confine.RunnerAvailable(); st.Confined && (confinementDoctorLines(&out) || !strings.Contains(out.String(), "agent confinement: landlock+seccomp ABI")) {
+	if st := confine.RunnerAvailable(); st.Confined && (confinementDoctorLines(context.Background(), &out) || !strings.Contains(out.String(), "agent confinement: landlock+seccomp ABI")) {
 		t.Errorf("doctor on this host:\n%s", out.String())
 	}
 }

@@ -72,6 +72,10 @@ type Frame struct {
 	Code        *int              `json:"code,omitempty"`
 	Error       string            `json:"error,omitempty"`
 	Runner      *RunnerSetup      `json:"runner,omitempty"`
+	// Unconfined asks serve to run a start frame's turn without OS
+	// confinement. Serve takes it only while TurnsOff is set, so it never
+	// weakens a system that can confine.
+	Unconfined bool `json:"unconfined,omitempty"`
 }
 
 // Server runs turns for connections on a listener.
@@ -104,6 +108,10 @@ type Server struct {
 	// TurnsOff, when set, refuses every agent turn with this text. Host
 	// model calls and embedding calls still run.
 	TurnsOff string
+	// Host and Kernel name this system in a status frame.
+	Host, Kernel string
+	// Log takes serve's own lines; nil writes to stderr.
+	Log io.Writer
 	// Run runs one turn; tests replace it.
 	Run      func(context.Context, harness.Turn) (int, error)
 	Generate func(context.Context, inference.Request, string, string) (inference.Result, error)
@@ -112,6 +120,7 @@ type Server struct {
 	runnerStarted func(*os.Process)
 	runnerLog     io.Writer
 	runnerSeq     atomic.Int64
+	unconfined    sync.Once
 	confine       func(environ []string) error
 
 	mu      sync.Mutex
@@ -162,6 +171,13 @@ func (s *Server) defaults() {
 	}
 }
 
+func (s *Server) logOut() io.Writer {
+	if s.Log != nil {
+		return s.Log
+	}
+	return os.Stderr
+}
+
 func (s *Server) acquire() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -199,7 +215,7 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 			runner = "process"
 		}
 		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement, NetworkConfinement: s.NetworkConfinement, Runner: runner,
-			RunnerConfinement: s.RunnerConfinement, TurnsOff: s.TurnsOff})
+			RunnerConfinement: s.RunnerConfinement, TurnsOff: s.TurnsOff, Host: s.Host, Kernel: s.Kernel})
 		_ = out.write(Frame{Type: "status", Result: result})
 		return
 	}
@@ -234,8 +250,13 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 		return
 	}
 	if s.TurnsOff != "" {
-		exit(2, errors.New(s.TurnsOff))
-		return
+		if !start.Unconfined {
+			exit(2, errors.New(s.TurnsOff))
+			return
+		}
+		s.unconfined.Do(func() {
+			fmt.Fprintln(s.logOut(), "warning: agent turns run without OS confinement: an admin turned this on at Admin, Settings, Agent")
+		})
 	}
 	if !s.acquire() {
 		exit(2, errors.New("serve is at its turn limit"))
@@ -371,6 +392,9 @@ type Status struct {
 	RunnerConfinement json.RawMessage `json:"runner_confinement,omitempty"`
 	// TurnsOff tells why serve refuses every agent turn.
 	TurnsOff string `json:"turns_off,omitempty"`
+	// Host and Kernel name the system that runs the agent turns.
+	Host   string `json:"host,omitempty"`
+	Kernel string `json:"kernel,omitempty"`
 }
 
 func onlyDoorTokens(frame Frame) bool {

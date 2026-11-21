@@ -166,6 +166,13 @@ func (a *API) runAgentJob(ctx context.Context, j agentJob) (string, error) {
 	if o.Door, err = a.keyDoor(o.Socket); err != nil {
 		return "", err
 	}
+	if o.Unconfined, err = a.turnRunsUnconfined(ctx, o.Socket, ""); err != nil {
+		return "", err
+	}
+	if o.Unconfined {
+		log.Printf("[agent] job %s %s runs without OS confinement: an admin turned this on", j.Label, j.RunID)
+		a.jobProgress(ctx, j.RunID, "The agent runs without OS confinement: an admin turned this on.")
+	}
 	if j.GraphjinRead || j.MemorySearch {
 		b := turnBinding{OrgID: j.OrgID, ThreadID: j.RunID, RunID: j.RunID, Kind: "agent-job", MemoryReadOnly: true}
 		if j.GraphjinRead {

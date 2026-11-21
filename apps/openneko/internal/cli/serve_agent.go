@@ -59,7 +59,8 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	if runner != nil {
 		fmt.Fprintln(out, "openneko serve runs each agent turn in an agent runner process of its own")
 	}
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
+	hostName, _ := os.Hostname()
+	srv := &serve.Server{Getenv: os.Getenv, Host: hostName, Kernel: confine.Kernel(), Log: out, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
 		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: confineRunner, TurnsOff: turnsOff}
 	done := make(chan error, 1)
 	go func() {

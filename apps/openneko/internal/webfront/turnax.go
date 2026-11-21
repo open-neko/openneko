@@ -202,6 +202,7 @@ type axTurnOptions struct {
 	Tools                                     *toolServer
 	NetworkHosts, EgressHosts                 []string
 	Debug, NativeDelegationOff, Shell         bool
+	Unconfined                                bool
 	TimeoutMs, MaxToolIterations              int
 	MaxModelCalls                             int
 	ReasoningEffort, PythonPath               string
@@ -532,6 +533,9 @@ func runAxOnce(ctx context.Context, cfg *llm.AxBackendConfig, o axTurnOptions, n
 	bridge := o.Tools != nil && len(o.Servers) > 0
 	start := jsObjOf("type", "start", "environ", stringsAny(environ), "spec", spec, "bridge", bridge,
 		"model_key_env", "MODEL_API_KEY", "model_keys", modelKeys)
+	if o.Unconfined {
+		start.set("unconfined", true)
+	}
 
 	turn, err := dialAxTurn(ctx, o.Socket, start, bridgeTools(bridge, o.Tools))
 	if err != nil {
