@@ -234,6 +234,21 @@ func sourceFormPrefillFromAnswers(answers *jsObj) *jsObj {
 }
 
 // packSetupSurface is buildPackSetupSurface().
+func openAPIImportSurface(confirm any, surfaceID string) []any {
+	host := jsTemplate(jsLookup(confirm, "host"))
+	input := jsObjOf("id", "spec", "component", "OpenApiSpecInput", "label", "OpenAPI specification", "url", jsLookup(confirm, "url"),
+		"value", jsObjOf("path", "/openApiSpec"))
+	if base, ok := jsField(confirm, "baseUrl"); ok {
+		input.set("baseUrl", base)
+	}
+	return []any{jsObjOf("version", a2uiVersion, "createSurface", jsObjOf("surfaceId", surfaceID, "catalogId", a2uiCatalogID,
+		"dataModel", &jsObj{}, "components", []any{
+			jsObjOf("id", "root", "component", "Answer", "eyebrow", "OPENAPI IMPORT", "title", "Import from "+host,
+				"subtitle", "Check the address. OpenNeko fetches it from "+host+" only when you press Import.", "children", []any{"spec"}),
+			input,
+		}))}
+}
+
 func packSetupSurface(packID, surfaceID string) []any {
 	return []any{jsObjOf("version", a2uiVersion, "createSurface", jsObjOf("surfaceId", surfaceID, "catalogId", a2uiCatalogID,
 		"dataModel", &jsObj{}, "components", []any{
@@ -355,15 +370,29 @@ func sourceConfigTools(b turnBinding, be toolBackend) []toolDef {
 				zRequired("url", &zStr{url: true, max: num(2000)}),
 				zOptional("baseUrl", &zStr{url: true, max: num(2000)}),
 			}},
-			description: joinWords("Import and validate a hosted OpenAPI 3.x YAML or JSON document for",
-				"the current organization. Use this when an admin supplies an HTTPS",
-				"URL in chat. The trusted host fetches it and returns a managed asset ID."),
+			description: joinWords("Show the admin a card to import a hosted OpenAPI 3.x YAML or JSON",
+				"document from an HTTPS URL that the admin gave in chat. The card shows",
+				"the exact URL and its host; OpenNeko fetches it only when the admin",
+				"presses Import. Then call list_openapi_specs for the asset ID."),
 			call: func(ctx context.Context, args *jsObj) (toolResult, error) {
 				req := openAPIImportIn{OrgID: b.OrgID, RunID: b.runID(), URL: stringArg(args, "url")}
 				if base, ok := args.vals["baseUrl"].(string); ok {
 					req.BaseURL = &base
 				}
-				return sourceConfigCall(ctx, be, "/v1/openapi/import", func() (any, error) { return be.importOpenAPISpec(ctx, req) })
+				be.audit(ctx, "/v1/openapi/import")
+				result, err := be.importOpenAPISpec(ctx, req)
+				if err != nil {
+					return toolResult{}, err
+				}
+				confirm, ok := jsField(result, "confirm")
+				if !ok {
+					return toolText(result), nil
+				}
+				if err := be.emitEvent(ctx, jsObjOf("type", "surface", "messages",
+					openAPIImportSurface(confirm, "openapi-import-"+uuid.NewString()))); err != nil {
+					return toolResult{}, err
+				}
+				return toolText(jsObjOf("ok", true, "next", "Card shown. The admin checks the URL and its host and presses Import. Nothing is fetched before that. Then call list_openapi_specs for the asset ID.")), nil
 			}},
 		{server: server, name: "list_openapi_specs",
 			shape:       &zObj{fields: []zField{zOptional("limit", zIntRange(1, 100))}},

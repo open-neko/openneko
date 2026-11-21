@@ -2669,7 +2669,7 @@
     },
     {
      "name": "source_config_manager_import_openapi_spec",
-     "description": "Import and validate a hosted OpenAPI 3.x YAML or JSON document for the current organization. Use this when an admin supplies an HTTPS URL in chat. The trusted host fetches it and returns a managed asset ID.",
+     "description": "Show the admin a card to import a hosted OpenAPI 3.x YAML or JSON document from an HTTPS URL that the admin gave in chat. The card shows the exact URL and its host; OpenNeko fetches it only when the admin presses Import. Then call list_openapi_specs for the asset ID.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -18229,24 +18229,10 @@
    "replies": {
     "importOpenApiSpec": {
      "value": {
-      "asset": {
-       "id": "88888888-8888-4888-8888-888888888888",
-       "originalName": "orders.yaml",
-       "sourceType": "url",
-       "title": "Orders",
-       "version": "1.0",
-       "baseUrl": "https://api.example.com",
-       "operationCount": 3,
-       "readOperationCount": 2,
-       "mutatingOperationCount": 1,
-       "authSchemes": [
-        "bearer"
-       ],
-       "warnings": [],
-       "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-       "status": "imported",
-       "sourceName": null,
-       "createdAt": "2026-11-12T08:00:00.000Z"
+      "confirm": {
+       "url": "https://api.example.com/openapi.yaml",
+       "host": "api.example.com",
+       "baseUrl": "https://api.example.com/v2"
       }
      }
     }
@@ -18255,7 +18241,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"asset\":{\"id\":\"88888888-8888-4888-8888-888888888888\",\"originalName\":\"orders.yaml\",\"sourceType\":\"url\",\"title\":\"Orders\",\"version\":\"1.0\",\"baseUrl\":\"https://api.example.com\",\"operationCount\":3,\"readOperationCount\":2,\"mutatingOperationCount\":1,\"authSchemes\":[\"bearer\"],\"warnings\":[],\"checksumSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"status\":\"imported\",\"sourceName\":null,\"createdAt\":\"2026-11-12T08:00:00.000Z\"}}"
+      "text": "{\"ok\":true,\"next\":\"Card shown. The admin checks the URL and its host and presses Import. Nothing is fetched before that. Then call list_openapi_specs for the asset ID.\"}"
      }
     ]
    },
@@ -18270,7 +18256,43 @@
      }
     }
    ],
-   "events": [],
+   "events": [
+    {
+     "type": "surface",
+     "messages": [
+      {
+       "version": "v1.0",
+       "createSurface": {
+        "surfaceId": "openapi-import-<id>",
+        "catalogId": "urn:openneko:catalog:work:v2",
+        "dataModel": {},
+        "components": [
+         {
+          "id": "root",
+          "component": "Answer",
+          "eyebrow": "OPENAPI IMPORT",
+          "title": "Import from api.example.com",
+          "subtitle": "Check the address. OpenNeko fetches it from api.example.com only when you press Import.",
+          "children": [
+           "spec"
+          ]
+         },
+         {
+          "id": "spec",
+          "component": "OpenApiSpecInput",
+          "label": "OpenAPI specification",
+          "url": "https://api.example.com/openapi.yaml",
+          "value": {
+           "path": "/openApiSpec"
+          },
+          "baseUrl": "https://api.example.com/v2"
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ],
    "files": {}
   },
   {

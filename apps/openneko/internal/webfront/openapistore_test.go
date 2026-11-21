@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -72,7 +73,11 @@ func TestOpenAPIStoreErrorStaysInTheLog(t *testing.T) {
 		f, db := memoryFront(t)
 		seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_user_id, actor_role) values
 			($1, 'org', $2, 'test', 'admin', 'member')`, sourceAdminRun, threadMine)
-		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(petSpec)) }))
+		var fetched atomic.Int32
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fetched.Add(1)
+			w.Write([]byte(petSpec))
+		}))
 		defer srv.Close()
 		_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
 		oldLookup, oldPublic, oldCAs := openAPILookup, openAPIPublic, openAPIRootCAs
@@ -82,20 +87,18 @@ func TestOpenAPIStoreErrorStaysInTheLog(t *testing.T) {
 			return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
 		}
 		openAPIPublic = func(netip.Addr) bool { return true }
-		failOpenAPIStore(t, func(q string) error { _, err := db.Exec(context.Background(), q); return err })
-		logs := captureLog(t)
 
 		admin := f.API.runTools(turnBinding{OrgID: "org", RunID: sourceAdminRun})
-		got, err := admin.importOpenAPISpec(context.Background(), openAPIImportIn{OrgID: "org", RunID: &admin.binding.RunID,
-			URL: "https://example.com:" + port + "/pets.yaml"})
+		target := "https://files.example.com:" + port + "/pets.yaml"
+		got, err := admin.importOpenAPISpec(context.Background(), openAPIImportIn{OrgID: "org", RunID: &admin.binding.RunID, URL: target})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s := jsStringify(got, false); s != `{"error":"`+openAPIStoreFailed+`"}` {
-			t.Fatalf("tool: %s", s)
+		if s := jsStringify(got, false); s != `{"confirm":{"url":"`+target+`","host":"files.example.com:`+port+`"}}` || fetched.Load() != 0 {
+			t.Fatalf("a run's import fetched %d times before an admin confirmed the URL: %s", fetched.Load(), s)
 		}
-		if !strings.Contains(logs.String(), plantedStoreFault) {
-			t.Fatalf("the log lacks the database error: %q", logs.String())
+		if got := scalar(t, db, `select count(*)::text from openapi_spec_asset`); got != "0" {
+			t.Fatalf("a run's import stored %s documents", got)
 		}
 	})
 }
