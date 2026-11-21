@@ -25,6 +25,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 )
 
 const (
@@ -170,7 +171,7 @@ func (g *Gate) sessionSecret() string {
 
 // DefaultSessionSecret matches sessionSecret() in apps/web/src/lib/auth.ts.
 func DefaultSessionSecret() (string, error) {
-	if s := os.Getenv("OPENNEKO_SESSION_SECRET"); s != "" {
+	if s := secretenv.Get("OPENNEKO_SESSION_SECRET"); s != "" {
 		return s, nil
 	}
 	if err := config.EnsureSecretKey(""); err != nil {

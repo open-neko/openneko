@@ -50,6 +50,8 @@ type networkStart struct {
 	// TempDir is the part's own temp folder; it takes no other.
 	TempDir   string           `json:"temp_dir,omitempty"`
 	FileStore filestore.Config `json:"file_store"`
+	// GraphJinSecrets go to the customer GraphJin child on its stdin.
+	GraphJinSecrets map[string]string `json:"graphjin_secrets,omitempty"`
 }
 
 func (in networkStart) folders() serveFolders {
@@ -81,22 +83,30 @@ func (p *networkPart) stop() {
 	}
 }
 
-// networkEnv drops the sandbox key and every variable that can hold a model
-// key, a database URL or the secret key. The AWS pair stays for the bucket.
+// networkEnv drops every secret-named variable. The part gets the bucket
+// login and the GraphJin secrets in its start line.
 func networkEnv(environ []string) []string {
-	drop := map[string]bool{"OPENNEKO_SANDBOX_KEY": true, "OPENNEKO_SANDBOX_KEY_FILE": true, "OPENNEKO_FILES_BUCKET_KEY_ID": true, "OPENNEKO_FILES_BUCKET_KEY_ID_FILE": true,
-		"OPENNEKO_FILES_BUCKET_SECRET": true, "OPENNEKO_FILES_BUCKET_SECRET_FILE": true, serveCredentialsEnv: true, native.SupervisorFDEnv: true, secretenv.StdinEnv: true}
+	drop := map[string]bool{"OPENNEKO_SANDBOX_KEY_FILE": true, "OPENNEKO_FILES_BUCKET_KEY_ID_FILE": true, "OPENNEKO_FILES_BUCKET_SECRET_FILE": true,
+		serveCredentialsEnv: true, native.SupervisorFDEnv: true, secretenv.StdinEnv: true}
 	for _, name := range serve.KeyEnvNames(environ) {
-		if name != "AWS_SECRET_ACCESS_KEY" && name != "AWS_SESSION_TOKEN" {
-			drop[name] = true
-		}
+		drop[name] = true
 	}
 	out := make([]string, 0, len(environ))
 	for _, kv := range environ {
 		name, _, _ := strings.Cut(kv, "=")
-		if !drop[name] {
+		if !drop[name] && !secretenv.SecretName(name) {
 			out = append(out, kv)
 		}
+	}
+	return out
+}
+
+// graphJinSecrets are the secret GJ_ and OTEL_ header variables that serve
+// got on stdin or in its environment.
+func graphJinSecrets() map[string]string {
+	out := gjhost.ChildSecrets(os.Environ())
+	for k, v := range secretenv.HandedWith(gjhost.ChildSecretName) {
+		out[k] = v
 	}
 	return out
 }
@@ -247,7 +257,7 @@ func runNetworkPart(ctx context.Context, stdout, stderr io.Writer, in networkSta
 	}
 	gjDone := make(chan error, 1)
 	if in.GraphJinConfig != "" {
-		gj := &gjhost.Supervisor{ConfigFile: in.GraphJinConfig, Addr: in.GraphJinAddr, Log: stderr, Command: gjhost.SelfCommand(in.GraphJinConfig), Socket: in.GraphJinSocket}
+		gj := &gjhost.Supervisor{ConfigFile: in.GraphJinConfig, Addr: in.GraphJinAddr, Log: stderr, Command: gjhost.SelfCommand(in.GraphJinConfig), Socket: in.GraphJinSocket, Secrets: in.GraphJinSecrets}
 		go func() { gjDone <- gj.Run(ctx) }()
 	} else {
 		gjDone <- nil
