@@ -4,15 +4,13 @@ Ax Harness runs one agent turn. The host writes one JSON run specification.
 The harness writes one JSON event per line. The host owns history, compaction
 across turns, approvals, the sandbox and scheduling.
 
-The host can run a turn in two ways:
-
-- The `ax-harness` binary runs one turn per process on stdin and stdout. Build
-  it with `go build -o bin/ax-harness ./cmd/ax-harness`.
-- `openneko serve --agent-socket <path>` runs turns in one process, one turn
-  per connection. The frames are in `serve/serve.go`. Serve removes
-  `OPENNEKO_MCP_BRIDGE` and every `*_API_KEY` variable from the turn's
-  environment. It reads the model key from the start frame or from its own
-  environment, so the turn's tools and terminal never see it.
+A turn runs only in `openneko serve --agent-socket <path>`, one turn per
+connection, each in a confined runner process. The `ax-harness` binary
+refuses a turn; it runs `catalog`, `generate` and `embed` only. The frames
+are in `serve/serve.go`. Serve removes
+`OPENNEKO_MCP_BRIDGE` and every `*_API_KEY` variable from the turn's
+environment. It reads the model key from the start frame or from its own
+environment, so the turn's tools and terminal never see it.
 
 ## Input
 
