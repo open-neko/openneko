@@ -35,7 +35,7 @@ func TestRunnerGetsNoControlZoneSecret(t *testing.T) {
 		t.Fatalf("command = %v", command)
 	}
 	for _, entry := range append(env, command...) {
-		if strings.Contains(entry, "planted") || !strings.HasPrefix(entry, "PATH=") && !strings.HasPrefix(entry, "TMPDIR=") && entry != command[0] && entry != agentRunnerCmd {
+		if strings.Contains(entry, "planted") || !strings.HasPrefix(entry, "PATH=") && !strings.HasPrefix(entry, "TMPDIR=") && !strings.HasPrefix(entry, "SYSTEMROOT=") && entry != command[0] && entry != agentRunnerCmd {
 			t.Fatalf("the runner gets %q", entry)
 		}
 	}

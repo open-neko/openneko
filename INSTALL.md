@@ -17,6 +17,7 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 - An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
 - On Linux, for agent turns: kernel 5.13 or later with `landlock` in the active security modules, and seccomp. Without them, OpenNeko starts but refuses every agent turn. See [Agent confinement](#agent-confinement-linux).
 - On macOS, for agent turns: the system call `sandbox_init`, which macOS 15 has. Without it, OpenNeko starts but refuses every agent turn. See [Agent confinement (macOS)](#agent-confinement-macos).
+- On Windows, for agent turns: Windows 10 1809, Windows Server 2019 or later, which run Unix sockets in app containers. Without them, OpenNeko starts but refuses every agent turn. See [Agent confinement (Windows)](#agent-confinement-windows).
 
 ## Install
 
@@ -571,11 +572,33 @@ OpenNeko as an account of its own on a shared Mac.
 
 ### Agent confinement (Windows)
 
-Windows has no agent confinement yet, so `openneko serve` refuses every
-agent turn in every mode. The start line, the status page, `openneko doctor`
-and `openneko release-check --serve-socket` say "agent confinement: not
-available on this system yet" and tell you to run serve on Linux or macOS
-for agent turns. The web app, sign-in, data reads and host model calls work.
+On Windows, `openneko serve` starts each agent turn in an `openneko
+agent-runner` process inside an app container of its own, with no
+capabilities. Each turn gets a new app container. Serve deletes it when the
+turn ends, and at its next start it deletes the app containers that an
+earlier serve left. The runner:
+
+- has no network: no TCP, no UDP and no name lookup;
+- reads and writes only the folders of its turn, and cannot change their
+  access lists;
+- cannot open serve, web, another runner or a named pipe of your account;
+- reaches serve only on two sockets in a folder of its own, and serve
+  takes a connection on them only from the runner's process.
+
+A job object holds the runner. It refuses a second process, ends the runner
+when serve ends and holds the runner to 8 GiB of memory and the turn's CPU
+time. It also closes the clipboard, the desktop and global atoms to the
+runner. Before each turn, serve removes each junction and symbolic link in
+the turn's folders, and it refuses a turn whose folders are outside the
+agent runs folder.
+
+Windows 10 1809, Windows Server 2019 or later is needed. On an older
+Windows, serve starts and refuses every agent turn with one line: "agent
+confinement: off. Windows <version> has no Unix sockets for app
+containers". `openneko doctor` and the status page show the same line.
+The runner can still read what Windows opens to every app container, such
+as the system folders. The network part of serve (files and GraphJin) is
+not confined on Windows.
 
 ### Model keys
 
