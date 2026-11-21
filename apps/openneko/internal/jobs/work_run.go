@@ -84,6 +84,8 @@ type ChannelDeliverArgs struct {
 	Recipient     json.RawMessage `json:"recipient"`
 	Events        json.RawMessage `json:"events"`
 	Key           string          `json:"key,omitempty"`
+	Notice        string          `json:"notice,omitempty"`
+	PrivateTo     string          `json:"privateTo,omitempty"`
 }
 
 func (ChannelDeliverArgs) Kind() string { return KindChannelDeliver }

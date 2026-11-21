@@ -45,6 +45,16 @@ export const adminCases: Case[] = [
     op: "POST /admin/channels/settings", name: "refuses an unknown channel", status: 400,
     request: { body: { channel: "fax", state: "on" } },
   },
+  {
+    op: "GET /admin/channels/replies", name: "reports where Slack and Telegram answers go", status: 200,
+    check: (r) => {
+      expect(Object.keys(body(r)).sort()).toEqual(["keptFromUpgrade", "slack", "telegram"]);
+    },
+  },
+  {
+    op: "PUT /admin/channels/replies", name: "refuses a place that is not a chat ID", status: 400,
+    request: { body: { channel: "slack", mode: "listed", places: ["#general"] } },
+  },
   { op: "GET /admin/data-access", name: "lists the rules", status: 200 },
   { op: "GET /admin/data-access/settings", name: "reports the setting", status: 200 },
   {
@@ -312,5 +322,15 @@ export const adminCases: Case[] = [
   { op: "POST /onboarding/submit", name: "needs a company name", status: 400, request: { body: {} } },
   { op: "GET /policies", name: "lists the policies", status: 200 },
   { op: "GET /policies/{policyId}", name: "refuses an unknown policy", status: 404, request: (c) => ({ params: { policyId: c.ids.unknownId } }) },
+  { op: "GET /policies/proposals", name: "lists the pending rule proposals", status: 200 },
+  { op: "GET /policies/proposals", name: "refuses a member", as: "member", status: 403 },
+  {
+    op: "POST /policies/proposals/{proposalId}/confirm", name: "refuses an unknown proposal", status: 404,
+    request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
+  },
+  {
+    op: "POST /policies/proposals/{proposalId}/reject", name: "refuses an unknown proposal", status: 404,
+    request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
+  },
   { op: "PATCH /policies/{policyId}", name: "needs a change", status: 400, request: (c) => ({ params: { policyId: c.ids.unknownId }, body: {} }) },
 ];

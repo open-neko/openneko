@@ -108,19 +108,35 @@ func (a *API) enabledChannels() []*builtInChannel {
 
 // deliverOnChannel is deliverOnChannel() of the worker's channel runtime.
 func (a *API) deliverOnChannel(ctx context.Context, id string, recipient any, events []any) (channelDeliverResult, error) {
-	ch := findBuiltInChannel(id)
-	if ch == nil {
-		return channelDeliverResult{}, fmt.Errorf("unknown channel %s", id)
-	}
-	store, err := secrets.Read(a.SecretsDir)
+	ch, env, err := a.channelForSend(id)
 	if err != nil {
 		return channelDeliverResult{}, err
 	}
+	return ch.Deliver(ctx, recipient, events, env)
+}
+
+func (a *API) deliverUnderRule(ctx context.Context, job jobs.ChannelDeliverArgs, recipient any, events []any) (channelDeliverResult, error) {
+	ch, env, err := a.channelForSend(job.ChannelPlugin)
+	if err != nil {
+		return channelDeliverResult{}, err
+	}
+	return a.deliverPrivately(ctx, ch, job, recipient, events, env)
+}
+
+func (a *API) channelForSend(id string) (*builtInChannel, map[string]string, error) {
+	ch := findBuiltInChannel(id)
+	if ch == nil {
+		return nil, nil, fmt.Errorf("unknown channel %s", id)
+	}
+	store, err := secrets.Read(a.SecretsDir)
+	if err != nil {
+		return nil, nil, err
+	}
 	env := store["channel."+ch.ID]
 	if !channelEnabled(ch, env) {
-		return channelDeliverResult{}, fmt.Errorf("channel %s is not turned on: set its required settings in Admin, Settings, Channels", ch.ID)
+		return nil, nil, fmt.Errorf("channel %s is not turned on: set its required settings in Admin, Settings, Channels", ch.ID)
 	}
-	return ch.Deliver(ctx, recipient, events, env)
+	return ch, env, nil
 }
 
 // ChannelDeliver is the channel_deliver job. A failed send or a send that
@@ -134,7 +150,12 @@ func (a *API) ChannelDeliver(ctx context.Context, job jobs.ChannelDeliverArgs) e
 	if err != nil {
 		return fmt.Errorf("channel-delivery: %s: events: %w", job.ChannelPlugin, err)
 	}
-	result, err := a.deliverOnChannel(ctx, job.ChannelPlugin, recipient, jsArray(parsed))
+	var result channelDeliverResult
+	if job.Notice != "" {
+		result, err = a.deliverUnderRule(ctx, job, recipient, jsArray(parsed))
+	} else {
+		result, err = a.deliverOnChannel(ctx, job.ChannelPlugin, recipient, jsArray(parsed))
+	}
 	if err != nil {
 		return fmt.Errorf("channel-delivery: %s failed: %w", job.ChannelPlugin, err)
 	}
@@ -196,6 +217,10 @@ func (a *API) deliverWorkflowOutput(ctx context.Context, orgID string, output *j
 		mood = "watch"
 	}
 	event := jsObjOf("kind", "inform", "id", id, "mood", mood, "title", jsGet(output, "title"), "body", jsGet(output, "body"))
+	owner, err := a.workflowRunOwner(ctx, orgID, runID)
+	if err != nil {
+		return err
+	}
 	for _, b := range bindings {
 		ok, err := a.audienceReceivesOutput(ctx, orgID, b.audience, runID)
 		if err != nil {
@@ -204,12 +229,28 @@ func (a *API) deliverWorkflowOutput(ctx context.Context, orgID string, output *j
 		if !ok {
 			continue
 		}
-		if err := a.queueChannelDelivery(ctx, orgID, b.channel, json.RawMessage(b.recipient), []any{event},
-			"output-"+id+"-"+b.channel); err != nil {
+		person := ""
+		if ch := findBuiltInChannel(b.channel); ch != nil {
+			if person, err = a.channelPersonOf(ctx, orgID, ch.ID, owner); err != nil {
+				return err
+			}
+		}
+		if err := a.queueChannelSend(ctx, orgID, b.channel, json.RawMessage(b.recipient), []any{event},
+			"output-"+id+"-"+b.channel, "output", person); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (a *API) workflowRunOwner(ctx context.Context, orgID, runID string) (string, error) {
+	var owner *string
+	err := a.DB.QueryRow(ctx, `select w.owner_user_id from workflow_run r join workflow_definition w on w.id = r.workflow_id
+		where r.org_id = $1 and r.id::text = $2`, orgID, runID).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) || owner == nil {
+		return "", nil
+	}
+	return *owner, err
 }
 
 // audienceReceivesOutput is audienceReceivesOutput() of the worker: the

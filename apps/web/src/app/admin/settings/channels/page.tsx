@@ -2,6 +2,7 @@
 
 import AdminOnly from "@/app/admin/AdminOnly";
 import { AdminShell } from "@/app/admin/AdminShell";
+import ChannelRepliesPanel from "./ChannelRepliesPanel";
 import ChannelSettingsPanel from "./ChannelSettingsPanel";
 
 export default function SettingsChannelsPage() {
@@ -13,6 +14,7 @@ export default function SettingsChannelsPage() {
         back={{ href: "/admin/settings", label: "Settings" }}
       >
         <ChannelSettingsPanel />
+        <ChannelRepliesPanel />
       </AdminShell>
     </AdminOnly>
   );
