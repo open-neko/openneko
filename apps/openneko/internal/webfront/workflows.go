@@ -31,6 +31,7 @@ type workflowSummary struct {
 	CreatedAt    string     `json:"createdAt"`
 	UpdatedAt    string     `json:"updatedAt"`
 	NeedsOwner   bool       `json:"needsOwner"`
+	AccessHeld   bool       `json:"accessHeld"`
 }
 
 func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +48,7 @@ func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := a.DB.Query(ctx, `
 		select id::text, name, description, goal, enabled, status, cron, cron_timezone, cron_enabled, steps,
-		  created_at, updated_at, owner_user_id, `+workflowNeedsOwner+`
+		  created_at, updated_at, owner_user_id, `+workflowNeedsOwner+`, access_held_at is not null
 		from workflow_definition w where org_id = $1 order by updated_at desc`, act.OrgID)
 	if err != nil {
 		a.fail(w, r, err)
@@ -61,7 +62,7 @@ func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
 		var created, updated time.Time
 		var owner string
 		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.Goal, &s.Enabled, &s.Status, &s.Cron, &s.CronTimezone,
-			&s.CronEnabled, &steps, &created, &updated, &owner, &s.NeedsOwner); err != nil {
+			&s.CronEnabled, &steps, &created, &updated, &owner, &s.NeedsOwner, &s.AccessHeld); err != nil {
 			a.fail(w, r, err)
 			return
 		}

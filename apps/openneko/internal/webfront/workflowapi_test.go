@@ -28,6 +28,7 @@ func wfAPIFront(t *testing.T) (*Front, *pgxpool.Pool, *setupWorker) {
 	seed(t, db, `update workflow_api_access set enabled = true, token_verifier = $2, token_prefix = 'onk_wf_0123456789ab', token_created_at = now() where workflow_id = $1`,
 		wfHeld, hex.EncodeToString(digest[:]))
 	seed(t, db, `update workflow_definition set daily_run_budget = null where id = $1`, wfHeld)
+	seed(t, db, `update workflow_definition set team_approved_by = 'admin' where id = $1`, wfHeld)
 	seed(t, db, `delete from workflow_api_rate_bucket`)
 	worker := &setupWorker{status: `{"provider":{"pluginName":"scalekit"}}`, reply: map[string]string{}}
 	srv := httptest.NewServer(worker)

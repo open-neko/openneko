@@ -449,6 +449,25 @@ func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, http.StatusOK, obj("ok", recovered || terminal, "recovered", recovered))
 }
 
+type workflowRefusal string
+
+func (e workflowRefusal) Error() string { return string(e) }
+
+// apiRunPrincipal is who an API or webhook run of the workflow acts as. A
+// workflow that a run edited after an admin gave it API access waits for
+// the admin to approve the new content.
+func (a *API) apiRunPrincipal(ctx context.Context, orgID, workflowID string) (graphjinPrincipal, error) {
+	var held *time.Time
+	if err := a.DB.QueryRow(ctx, `select access_held_at from workflow_definition where org_id = $1 and id = $2`, orgID, workflowID).
+		Scan(&held); err != nil {
+		return graphjinPrincipal{}, err
+	}
+	if held != nil {
+		return graphjinPrincipal{}, workflowRefusal("The workflow changed after an admin gave it API access. An admin approves the new content at Admin, Settings, Workflow API before it runs from the API.")
+	}
+	return a.workflowPrincipalByID(ctx, orgID, workflowID)
+}
+
 // workflowPrincipal is who a workflow acts as: its owner with the owner's
 // role, or service for a pack workflow or an admin-approved team workflow.
 func (a *API) workflowPrincipal(ctx context.Context, wf workflowRecord) (graphjinPrincipal, error) {
@@ -458,7 +477,7 @@ func (a *API) workflowPrincipal(ctx context.Context, wf workflowRecord) (graphji
 			return graphjinPrincipal{}, err
 		}
 		if needs {
-			return graphjinPrincipal{}, errors.New("Workflow " + wf.Name + " has no owner. An admin assigns one at Admin, Settings, Workflow API before it runs.")
+			return graphjinPrincipal{}, workflowRefusal("Workflow " + wf.Name + " has no owner. An admin assigns one at Admin, Settings, Workflow API before it runs.")
 		}
 		return graphjinPrincipal{role: "service"}, nil
 	}
@@ -468,7 +487,7 @@ func (a *API) workflowPrincipal(ctx context.Context, wf workflowRecord) (graphji
 		return graphjinPrincipal{}, err
 	}
 	if !active {
-		return graphjinPrincipal{}, errors.New("The workflow owner is no longer active")
+		return graphjinPrincipal{}, workflowRefusal("The workflow owner is no longer active")
 	}
 	role, err := a.role(ctx, wf.OrgID, wf.OwnerUserID)
 	if err != nil {
