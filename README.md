@@ -76,7 +76,7 @@ Integrations ship as **solution packs** — sources, API specs, actions, workflo
 
 ## Under the hood
 
-- **Self-hosted on Linux, macOS and Windows.** One binary, one `start` command. Linux and macOS run the Docker stack or the native install; Windows runs the native install. The server install with two system users is for Linux. Data lives on your Postgres.
+- **Self-hosted on Linux, macOS and Windows.** One binary, one `start` command. Linux and macOS run the Docker stack or the native install; Windows runs the native install. The systemd server install is for Linux. Data lives on your Postgres.
 - **Installable mobile web app.** Add to Home Screen on a phone, pair devices with an 8-letter code (`/device`), sign high-risk action approvals with WebAuthn passkeys, and receive encrypted Web Push notifications when an approval waits, a run finishes, or a workflow needs attention.
 - **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the agent runtime.
 - **The agent runs no code in OpenNeko.** The agent loop runs in `openneko serve`, apart from the control plane, and reaches data only through `openneko web`'s per-run tool bridge. Its terminal runs only in an optional sandbox service that holds no secrets. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).

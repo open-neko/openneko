@@ -192,18 +192,18 @@ func statusServer(ctx context.Context, out io.Writer) error {
 func serverDoctorLines(out io.Writer) bool {
 	s := activeServer
 	failed := false
-	if s.OneUser() {
-		fmt.Fprintf(out, "server: systemd, one user (%s)\n", s.ControlUser)
-	} else {
-		fmt.Fprintf(out, "server: systemd, control zone %s, agent zone %s, group %s\n", s.ControlUser, s.AgentUser, s.Group)
+	fmt.Fprintf(out, "server: systemd, user %s\n", s.User)
+	if s.Old.Any() {
+		fmt.Fprintf(out, "server: FAIL, the install has two accounts; run `sudo openneko upgrade`, or install-native.sh --upgrade from an older executable, to move it to %s\n", s.User)
+		failed = true
 	}
-	for _, d := range s.Dirs() {
-		problem, err := dirProblem(d)
+	for _, dir := range s.Dirs() {
+		problem, err := dirProblem(dir, s.User)
 		switch {
 		case err != nil:
-			fmt.Fprintf(out, "folder %s: not checked (%v)\n", d.Path, err)
+			fmt.Fprintf(out, "folder %s: not checked (%v)\n", dir, err)
 		case problem != "":
-			fmt.Fprintf(out, "folder %s: FAIL, %s; run server-install again\n", d.Path, problem)
+			fmt.Fprintf(out, "folder %s: FAIL, %s; run server-install again\n", dir, problem)
 			failed = true
 		}
 	}
@@ -223,62 +223,60 @@ func serverDoctorLines(out io.Writer) bool {
 	return failed
 }
 
-func dirProblem(d native.Dir) (string, error) {
-	info, err := os.Stat(d.Path)
+func dirProblem(dir, owner string) (string, error) {
+	info, err := os.Stat(dir)
 	if err != nil {
 		return "", err
 	}
-	uid, gid, err := lookupIDs(d.Owner, d.Group)
+	uid, gid, err := lookupIDs(owner)
 	if err != nil {
 		return "", err
 	}
-	want := d.Mode.Perm() | d.Mode&fs.ModeSetgid
-	got := info.Mode().Perm() | info.Mode()&fs.ModeSetgid
 	var problems []string
 	if fu, fg, ok := fileOwner(info); ok && (fu != uid || fg != gid) {
-		problems = append(problems, fmt.Sprintf("owner %d:%d, want %s:%s", fu, fg, d.Owner, d.Group))
+		problems = append(problems, fmt.Sprintf("owner %d:%d, want %s", fu, fg, owner))
 	}
-	if got != want {
-		problems = append(problems, fmt.Sprintf("mode %v, want %v", got, want))
+	if got := info.Mode() & (fs.ModePerm | fs.ModeSetgid); got != 0o700 {
+		problems = append(problems, fmt.Sprintf("mode %v, want %v", got, fs.FileMode(0o700)))
 	}
 	return strings.Join(problems, ", "), nil
 }
 
-// ownServerData gives restored files the owner and group of the folder that
-// holds them, and keeps the setgid bit on the folders of a shared folder.
+// ownServerData gives the user every file of the data and sandbox folders,
+// after a restore or the move from two accounts, and drops the setgid bit
+// that the shared folders of two accounts had.
 func ownServerData(s native.Server) error {
 	if err := applyServerDirs(s); err != nil {
 		return err
 	}
-	if err := ownTree(s.ConfigDir, s.ControlUser, s.ControlUser); err != nil {
+	if err := ownTree(s.ConfigDir, s.User); err != nil {
 		return err
 	}
-	dirs := map[string]native.Dir{}
-	for _, d := range s.Dirs() {
-		dirs[d.Path] = d
+	uid, gid, err := lookupIDs(s.User)
+	if err != nil {
+		return err
 	}
-	for _, path := range s.Layout().DataFolders() {
-		d, ok := dirs[path]
-		if !ok {
-			return fmt.Errorf("no owner is set for %s", path)
-		}
-		uid, gid, err := lookupIDs(d.Owner, d.Group)
-		if err != nil {
-			return err
-		}
-		err = filepath.WalkDir(path, func(p string, e fs.DirEntry, err error) error {
-			if err != nil || p == path {
+	roots := []string{s.DataDir}
+	if s.SandboxDir != "" {
+		roots = append(roots, s.SandboxDir)
+	}
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
+			if err != nil {
 				return err
 			}
 			if err := os.Lchown(p, uid, gid); err != nil {
 				return err
 			}
-			if e.IsDir() && d.Mode&fs.ModeSetgid != 0 {
-				info, err := e.Info()
-				if err != nil {
-					return err
-				}
-				return os.Chmod(p, info.Mode().Perm()|fs.ModeSetgid)
+			if !e.IsDir() {
+				return nil
+			}
+			info, err := e.Info()
+			if err != nil {
+				return err
+			}
+			if info.Mode()&fs.ModeSetgid != 0 {
+				return os.Chmod(p, info.Mode().Perm())
 			}
 			return nil
 		})
