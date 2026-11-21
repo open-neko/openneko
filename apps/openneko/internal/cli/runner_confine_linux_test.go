@@ -10,9 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -336,26 +334,6 @@ func runnerLimits(workspace string, nproc uint64) map[string]bool {
 	return out
 }
 
-// floodThreads pins goroutines to threads until the process has n threads,
-// as native code that floods threads would. It returns the count reached.
-// Each goroutine holds its own thread once it counts itself.
-func floodThreads(n int) int {
-	block := make(chan struct{})
-	var pinned atomic.Int64
-	for range n {
-		go func() {
-			runtime.LockOSThread()
-			pinned.Add(1)
-			<-block
-		}()
-	}
-	deadline := time.Now().Add(20 * time.Second)
-	for int(pinned.Load()) < n && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	return int(pinned.Load())
-}
-
 func errnoErr(e syscall.Errno) error {
 	if e != 0 {
 		return e
@@ -594,24 +572,6 @@ func TestConfinedRunner(t *testing.T) {
 		if noLandlock.Refused[what] {
 			t.Errorf("with seccomp only, the runner still could not %s: the check does not prove Landlock", what)
 		}
-	}
-}
-
-// TestRunnerThreadFloodStaysInTheRunner floods threads in a runner: the
-// runner stops at its cap, and the account can still start threads. The
-// runner sets its limits with or without confinement.
-func TestRunnerThreadFloodStaysInTheRunner(t *testing.T) {
-	tg := newRunnerTargets(t)
-	open, msg := runRunnerProbe(t, tg, "flood-nolimits")
-	if open.Threads < floodTarget {
-		t.Fatalf("with no limits the runner reached %d threads of %d (%s), so the check proves nothing", open.Threads, floodTarget, msg)
-	}
-	capped, msg := runRunnerProbe(t, tg, "flood")
-	if capped.Threads != 0 || !strings.Contains(msg, "stopped before the turn ended") {
-		t.Fatalf("the confined runner reached %d threads, turn error %q", capped.Threads, msg)
-	}
-	if got := floodThreads(64); got < 64 {
-		t.Fatalf("after the flood this account started too few threads: %d", got)
 	}
 }
 

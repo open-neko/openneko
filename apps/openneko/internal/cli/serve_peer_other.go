@@ -2,5 +2,6 @@
 
 package cli
 
-// refuseNetworkPeers is nil here: the agent socket reads no peer process.
-func refuseNetworkPeers(int) func(pid int) bool { return nil }
+// guardAgentSocket refuses no peer here: the agent socket reads no peer
+// process.
+func guardAgentSocket() (func(pid int) bool, error) { return nil, nil }

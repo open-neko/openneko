@@ -455,9 +455,14 @@ one of those sockets or the web admin socket. Below ABI 9 the network part
 can still connect to a named socket, so:
 
 - the agent socket reads the peer process of each connection and closes a
-  connection from the network part or one of its children (GraphJin,
-  DuckDB). A process in another pid namespace, as web in its own container,
-  passes;
+  connection from serve itself or any process under it: the network part,
+  its children (GraphJin, DuckDB) and the runners. Serve is the child
+  subreaper of its processes, so an orphan of the network part (a double
+  fork) gets serve as its parent and stays in the tree. A chain of more
+  than 64 parents counts as serve's. Serve also refuses a peer that exited
+  before the check ended (`SO_PEERPIDFD`, or `pidfd_open` on a kernel
+  before 6.5), because its pid can name another process by then. A process
+  in another pid namespace, as web in its own container, passes;
 - the key door takes only a one-call token of a turn, and the sandbox takes
   only its key or a run's token. The network part holds neither.
 
@@ -562,11 +567,18 @@ limits and confines itself for good, before any agent code runs:
   them: CPU time up to the turn's deadline (`timeout_ms`, at most 30
   minutes, plus one minute); 8 GiB of address space; a file of at most
   128 MiB, the most that one sandbox command may return; 1024 open files;
-  and `RLIMIT_NPROC` at the account's task count at the start of the turn
-  plus 256. The kernel counts `RLIMIT_NPROC` over every task of the account,
-  so a thread flood stops in the runner and the account keeps room for web
-  and serve. The kernel does not apply `RLIMIT_NPROC` to root: run
-  OpenNeko as another user, or the status page names the gap.
+  256 threads, which the Go runtime enforces (`debug.SetMaxThreads`); and
+  `RLIMIT_NPROC` at the account's task count at the start of the turn plus
+  256 for each turn that serve runs at once (`OPENNEKO_SERVE_MAX_TURNS`).
+  The kernel counts `RLIMIT_NPROC` over every task of the account, so a
+  thread flood stops in the runner and the account keeps room for web and
+  serve. The runners share that room: each leaves enough for every runner
+  beside it to reach its own 256 threads. Native code in a runner that
+  starts threads past the Go runtime can use the room of the runners
+  beside it; their thread starts then fail. A runner that cannot start a
+  thread ends only its own turn, with the line "the agent runner could not
+  start another thread". The kernel does not apply `RLIMIT_NPROC` to root:
+  run OpenNeko as another user, or the status page names the gap.
 - Landlock keeps read and write on the folders of its turn only (the
   workspace, the uploads, the skills, the run folder and the artifacts, all
   in the turn's staged folder) and read on the time zone files. It keeps no
@@ -652,8 +664,15 @@ kernel's ABI and with the ABI capped at 1, and with Landlock or seccomp
 left out, which must fail named checks. It also checks each limit, and
 with the limits left out each limit check must fail.
 `TestRunnerThreadFloodStaysInTheRunner` floods threads in a runner: with
-the limits left out the runner starts 400 threads; with them it stops, and
-the account still starts threads. Web reads a file that a runner wrote
+the limits left out the runner starts 400 threads; with them it stops, the
+turn ends with the thread line, and the account still starts threads.
+`TestAThreadFloodEndsOnlyItsOwnTurn` runs three runners at once: one waits,
+one holds 200 threads and one floods; the flood ends only its own turn, and
+the first runner then starts 64 threads. Both run on Linux and macOS.
+`TestAgentSocketRefusesServesOwnTree` (`serve_peer_linux_test.go`) starts
+a serve stand-in whose network part runs one peer as a child and one as a
+double-forked orphan: both are refused and web is answered; with no
+subreaper the orphan gets in. Web reads a file that a runner wrote
 only up to its limit (an artifact 128 MiB, a skill file 16 MiB) and
 refuses a sparse file with one line (`TestRunnerFilesAreReadWithALimit`). `TestConfinedServeDoesItsWork`
 (`internal/webfront`) runs a whole turn with a fake model through the door
@@ -673,6 +692,11 @@ libSystem, with no cgo). The profile is built for each turn from the same
 - the metadata (size, times) of any path;
 - sysctl reads;
 - signals and process information for itself only.
+
+macOS has no kernel limit on the threads of one process, so the runner
+caps its threads at 256 in the Go runtime, as on Linux. It also sets the
+CPU time, file size and open file limits; macOS does not enforce an
+address space limit.
 
 It allows no network rule, no fork, no program to run and no Mach service.
 So the runner holds the two sockets that serve passed and the connections

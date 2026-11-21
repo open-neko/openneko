@@ -39,6 +39,11 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			development := webfront.Development()
+			refuse, err := guardAgentSocket()
+			if err != nil {
+				return err
+			}
+			agentPeerRefused = refuse
 
 			if credentials == "" && !development {
 				return errors.New("openneko serve needs --credentials from `openneko serve-init` in production mode, so that no part of serve holds the secret-key or the main database login")
@@ -79,7 +84,6 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			defer network.stop()
-			agentPeerRefused = refuseNetworkPeers(network.proc.Pid)
 
 			if err := os.Setenv("TMPDIR", tmp.Turns); err != nil {
 				return err

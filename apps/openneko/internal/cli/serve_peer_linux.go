@@ -5,34 +5,67 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"golang.org/x/sys/unix"
 )
 
-// refuseNetworkPeers refuses the network part of serve and its children on
-// the agent socket: below Landlock ABI 9 they can connect to it.
-func refuseNetworkPeers(network int) func(pid int) bool {
-	return func(pid int) bool { return descendsFrom(pid, network) }
+// guardAgentSocket makes serve the child subreaper of its own processes and
+// refuses serve's own process tree on the agent socket: below Landlock ABI 9
+// the network part and its children can connect to it. As the subreaper,
+// serve adopts each orphan of the network part, so a double fork does not
+// leave the tree. It must run before serve starts a child.
+func guardAgentSocket() (func(pid int) bool, error) {
+	if err := unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0); err != nil {
+		return nil, fmt.Errorf("make openneko serve the subreaper of its children: %w", err)
+	}
+	self := os.Getpid()
+	return func(pid int) bool { return pid != 0 && descendsFrom(pid, self) }, nil
 }
 
+const maxPeerDepth = 64
+
 // descendsFrom tells whether pid is ancestor or one of its children, by the
-// parent links in /proc.
+// parent links in /proc. A chain longer than maxPeerDepth counts as a child.
+// When a link breaks because a process on the chain exited, the walk starts
+// again: its children have a new parent by then. A link that stays broken
+// at the same process is a process this account cannot see, which serve's
+// tree never holds. A chain that keeps changing counts as a child.
 func descendsFrom(pid, ancestor int) bool {
-	for range 64 {
+	broken := -1
+	for range 16 {
+		in, at := walkParents(pid, ancestor)
+		if at < 0 {
+			return in
+		}
+		if at == broken {
+			return false
+		}
+		broken = at
+	}
+	return true
+}
+
+// walkParents returns the process whose parent it could not read, or -1.
+func walkParents(pid, ancestor int) (bool, int) {
+	for range maxPeerDepth {
 		if pid == ancestor {
-			return true
+			return true, -1
 		}
 		if pid <= 1 {
-			return false
+			return false, -1
 		}
 		parent, err := parentOf(pid)
 		if err != nil {
-			return false
+			return false, pid
 		}
 		pid = parent
 	}
-	return false
+	return true, -1
 }
 
-func parentOf(pid int) (int, error) {
+var parentOf = procParent
+
+func procParent(pid int) (int, error) {
 	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		return 0, err

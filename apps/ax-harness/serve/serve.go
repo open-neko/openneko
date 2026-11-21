@@ -110,8 +110,9 @@ type Server struct {
 	// Log takes serve's own lines; nil writes to stderr.
 	Log io.Writer
 	// RefusePeer, when set, closes a connection from a process for which it
-	// returns true, and one whose peer the OS does not report. It gets pid 0
-	// for a process outside this pid namespace.
+	// returns true, one whose peer the OS does not report, and one whose
+	// peer exited before the check ended. It gets pid 0 for a process
+	// outside this pid namespace.
 	RefusePeer func(pid int) bool
 	// Run runs one turn; tests replace it.
 	Run      func(context.Context, harness.Turn) (int, error)
@@ -148,7 +149,12 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 			return err
 		}
 		if s.RefusePeer != nil {
-			if pid, ok := peerPID(conn); !ok || s.RefusePeer(pid) {
+			pid, alive, ok := peer(conn)
+			refused := !ok || s.RefusePeer(pid)
+			if ok && !alive() {
+				refused = true
+			}
+			if refused {
 				fmt.Fprintf(s.logOut(), "serve refused a connection on its agent socket from process %d\n", pid)
 				_ = conn.Close()
 				continue
@@ -413,6 +419,9 @@ type RunnerSetup struct {
 	// Confine makes the runner confine itself before the turn's agent code
 	// runs, and refuse the turn when it cannot.
 	Confine bool `json:"confine,omitempty"`
+	// Turns is how many runners serve runs at once. They share the
+	// account's task limit, so each runner leaves room for all of them.
+	Turns int `json:"turns,omitempty"`
 }
 
 // Status is serve's answer to a status frame: whether it refuses a frame
