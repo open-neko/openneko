@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -270,6 +271,7 @@ type teamProposalOut struct {
 	Kind       string             `json:"kind"`
 	Target     string             `json:"target"`
 	Title      string             `json:"title"`
+	Details    []string           `json:"details"`
 	Files      []proposalFileDiff `json:"files"`
 	ProposedBy *string            `json:"proposedBy"`
 	RunID      *string            `json:"runId"`
@@ -282,6 +284,24 @@ func textDiff(path, before, after string, existed bool) proposalFileDiff {
 		change = "added"
 	}
 	return proposalFileDiff{Path: path, Change: change, Lines: lineDiff(before, after)}
+}
+
+func memoryProposalDetails(m memoryProposal) []string {
+	out := []string{"Kind: " + strings.ReplaceAll(m.Kind, "_", " ")}
+	switch {
+	case m.Scope == "thread":
+		out = append(out, "Scope: one conversation")
+	case deref(m.ScopeID) != "":
+		out = append(out, "Scope: "+m.Scope+" "+deref(m.ScopeID))
+	default:
+		out = append(out, "Scope: the whole organization")
+	}
+	if m.Pinned {
+		out = append(out, "Pinned: every run of every member loads this text into its prompt")
+	} else {
+		out = append(out, "Not pinned: a run loads it when a question matches it")
+	}
+	return out
 }
 
 func describeTeamProposal(p *teamProposalOut, before, after []byte) {
@@ -299,6 +319,7 @@ func describeTeamProposal(p *teamProposalOut, before, after []byte) {
 			p.Title = "Add a team memory (" + strings.ReplaceAll(next.Kind, "_", " ") + ")"
 		}
 		p.Files = []proposalFileDiff{textDiff("memory", prev.Text, next.Text, existed)}
+		p.Details = memoryProposalDetails(next)
 	case "skill":
 		var next skillProposal
 		var prev skillBefore
@@ -350,6 +371,9 @@ func describeTeamProposal(p *teamProposalOut, before, after []byte) {
 	}
 	if p.Files == nil {
 		p.Files = []proposalFileDiff{}
+	}
+	if p.Details == nil {
+		p.Details = []string{}
 	}
 }
 
@@ -414,6 +438,22 @@ func (a *API) pendingTeamProposal(w http.ResponseWriter, r *http.Request, orgID 
 	return &p, true
 }
 
+// claimTeamProposal decides a pending change before anything is applied,
+// so a second admin's decision on the same change finds it decided.
+func (a *API) claimTeamProposal(w http.ResponseWriter, r *http.Request, id, status, adminID string) bool {
+	tag, err := a.DB.Exec(r.Context(), `update team_item_proposal set status = $2, decided_by_user_id = $3, decided_at = now()
+		where id = $1 and status = 'pending'`, id, status, adminID)
+	if err != nil {
+		a.fail(w, r, err)
+		return false
+	}
+	if tag.RowsAffected() == 0 {
+		sendError(w, http.StatusConflict, "Another admin decided this change first. Nothing was applied.")
+		return false
+	}
+	return true
+}
+
 type staleProposal string
 
 func (s staleProposal) Error() string { return string(s) }
@@ -430,6 +470,9 @@ func (a *API) teamProposalConfirm(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !a.claimTeamProposal(w, r, p.id, "confirmed", act.UserID) {
+		return
+	}
 	var err error
 	switch p.kind {
 	case "memory":
@@ -441,15 +484,9 @@ func (a *API) teamProposalConfirm(w http.ResponseWriter, r *http.Request) {
 	default:
 		err = errors.New("unknown team change kind " + p.kind)
 	}
-	var unshown unshownFile
-	if errors.As(err, &unshown) {
-		sendError(w, http.StatusUnprocessableEntity, unshown.Error()+" Reject this change.")
-		return
-	}
 	var stale staleProposal
 	if errors.As(err, &stale) {
-		if _, err := a.DB.Exec(ctx, `update team_item_proposal set status = 'stale', decided_by_user_id = $2, decided_at = now() where id = $1`,
-			p.id, act.UserID); err != nil {
+		if _, err := a.DB.Exec(ctx, `update team_item_proposal set status = 'stale' where id = $1 and status = 'confirmed'`, p.id); err != nil {
 			a.fail(w, r, err)
 			return
 		}
@@ -457,11 +494,15 @@ func (a *API) teamProposalConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.fail(w, r, err)
-		return
-	}
-	if _, err := a.DB.Exec(ctx, `update team_item_proposal set status = 'confirmed', decided_by_user_id = $2, decided_at = now() where id = $1`,
-		p.id, act.UserID); err != nil {
+		if _, undo := a.DB.Exec(ctx, `update team_item_proposal set status = 'pending', decided_by_user_id = null, decided_at = null
+			where id = $1 and status = 'confirmed'`, p.id); undo != nil {
+			log.Printf("[team-proposals] could not put %s back to pending: %v", p.id, undo)
+		}
+		var unshown unshownFile
+		if errors.As(err, &unshown) {
+			sendError(w, http.StatusUnprocessableEntity, unshown.Error()+" Reject this change.")
+			return
+		}
 		a.fail(w, r, err)
 		return
 	}
@@ -480,9 +521,7 @@ func (a *API) teamProposalReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := a.DB.Exec(r.Context(), `update team_item_proposal set status = 'rejected', decided_by_user_id = $2, decided_at = now() where id = $1`,
-		p.id, act.UserID); err != nil {
-		a.fail(w, r, err)
+	if !a.claimTeamProposal(w, r, p.id, "rejected", act.UserID) {
 		return
 	}
 	a.recordAudit(r.Context(), auditEvent{OrgID: act.OrgID, EntityKind: "team_item_proposal", EntityID: p.id, Event: "team_item:rejected",

@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestTeamMemoryWritesWaitForAnAdmin(t *testing.T) {
@@ -88,11 +91,50 @@ func TestTeamMemoryWritesWaitForAnAdmin(t *testing.T) {
 	if w := call(f, "POST", "/api/v1/admin/team-proposals/"+create.ID+"/confirm", "", sessionCookie("member")); w.Code != 403 {
 		t.Fatalf("a member confirmed: %d", w.Code)
 	}
-	if w := call(f, "POST", "/api/v1/admin/team-proposals/"+create.ID+"/confirm", "", sessionCookie("admin")); w.Code != 200 {
-		t.Fatalf("confirm: %d %s", w.Code, w.Body)
+	if want := []string{"Kind: business rule", "Scope: the whole organization", "Pinned: every run of every member loads this text into its prompt"}; !slices.Equal(create.Details, want) {
+		t.Errorf("memory details %v", create.Details)
 	}
-	if teamRows() != "1" {
-		t.Fatal("the confirmed memory is not a team memory")
+	hold, err := db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hold.Exec(t.Context(), `select 1 from team_item_proposal where id = $1 for update`, create.ID); err != nil {
+		t.Fatal(err)
+	}
+	codes := make(chan int, 8)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes <- call(f, "POST", "/api/v1/admin/team-proposals/"+create.ID+"/confirm", "", sessionCookie("admin")).Code
+		}()
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		waiting := scalar(t, db, `select count(*)::text from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`)
+		if waiting == "8" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s of 8 confirms wait on the proposal row", waiting)
+		}
+	}
+	if err := hold.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	close(codes)
+	confirmed := 0
+	for code := range codes {
+		if code == 200 {
+			confirmed++
+		}
+	}
+	if confirmed != 1 || teamRows() != "1" {
+		t.Fatalf("eight confirms at once: %d confirmed, %s team rows", confirmed, teamRows())
+	}
+	if w := call(f, "POST", "/api/v1/admin/team-proposals/"+create.ID+"/reject", "", sessionCookie("admin")); w.Code != 404 {
+		t.Fatalf("a reject after the confirm: %d %s", w.Code, w.Body)
 	}
 	seed(t, db, `update work_memory set text = 'Revenue is gross' where id = $1`, memTeam)
 	if w := call(f, "POST", "/api/v1/admin/team-proposals/"+update.ID+"/confirm", "", sessionCookie("admin")); w.Code != 409 {
