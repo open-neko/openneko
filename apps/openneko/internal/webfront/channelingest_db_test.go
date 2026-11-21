@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -907,12 +908,20 @@ func TestInboundTwoInstancesOneDatabase(t *testing.T) {
 type freezableConn struct {
 	net.Conn
 	frozen    *atomic.Bool
+	lock      atomic.Bool
 	mu        sync.Mutex
 	interrupt chan struct{}
 }
 
+func (c *freezableConn) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("pg_try_advisory_lock")) {
+		c.lock.Store(true)
+	}
+	return c.Conn.Write(p)
+}
+
 func (c *freezableConn) Read(p []byte) (int, error) {
-	for c.frozen.Load() {
+	for c.frozen.Load() && c.lock.Load() {
 		c.mu.Lock()
 		ch := c.interrupt
 		c.mu.Unlock()
