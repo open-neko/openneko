@@ -116,6 +116,10 @@
 * **Breaking:** the sandbox refuses to listen on TCP with an `OPENNEKO_SANDBOX_KEY` shorter than 32 characters. This affects `compose.desktop.yml`; make a key with `openssl rand -hex 32`.
 * The sandbox client takes `unix:/path` and `unix://host/path` again, as in 5.0.0, beside `unix:///path`.
 * **Breaking:** the sandbox does not start without `OPENNEKO_SANDBOX_KEY`, also on a Unix socket, and only a request with the key opens a run. Before, a sandbox with no key took a request with no `Authorization` as the control side. `recipes/sandbox/compose.yml` now stops with one line when the key is not set; make one with `openssl rand -hex 32`.
+* **Breaking:** the config check socket of serve moves to a folder of its own: `check/check.sock` in the data folder of a native install and `/run/openneko/check/check.sock` in Docker (the new compose files set it). Serve stops with one line when `OPENNEKO_CONFIG_CHECK_SOCKET` names a folder that holds the agent socket, the key door, the sandbox socket or the web admin socket. On Linux the agent socket closes a connection from the network part of serve and its children.
+* Each part of serve gets a private temp folder of its own (`openneko-serve-*` in its `TMPDIR`), never all of `TMPDIR`. A plain `openneko serve` keeps its agent runs and the subscriptions GraphJin in the data folder (`agent-runs`, `subscriptions`), no longer in `/tmp`.
+* `openneko doctor` asks serve how it confines its agent runners and its two parts, and says what this system can give only when serve does not answer.
+* On Windows, a listener refuses a socket folder that exists and allows another account, with one line, and does not change its access list. It makes a missing socket folder owner-only.
 * Each agent runner limits its CPU time to the turn's deadline, its address space to 8 GiB, a file to 128 MiB, its open files to 1024 and its new threads to 256, and cannot raise a limit. Web copies a runner's artifact only up to 128 MiB and a skill file up to 16 MiB, and skips a sparse file with one log line.
 
 ### Upgrade from 5.0.0

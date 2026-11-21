@@ -114,6 +114,7 @@ func (s Server) Dirs() []Dir {
 		{filepath.Dir(l.Log("serve")), a, a, 0o700},
 		{l.shared(), "root", g, 0o750},
 		{l.Run(), a, g, fs.ModeSetgid | 0o750},
+		{l.Check(), a, g, fs.ModeSetgid | 0o750},
 		{l.Door(), c, g, fs.ModeSetgid | 0o750},
 		{l.AgentRuns(), c, g, fs.ModeSetgid | 0o770},
 		{filepath.Dir(l.GraphJin()), c, g, fs.ModeSetgid | 0o770},

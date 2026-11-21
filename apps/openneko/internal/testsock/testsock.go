@@ -5,10 +5,13 @@ import (
 	"os"
 	"runtime"
 	"testing"
+
+	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 )
 
-// Dir makes a folder under /tmp and removes it when the test ends. A socket
-// path holds at most 104 bytes on macOS, and t.TempDir() there is too long.
+// Dir makes an owner-only folder under /tmp and removes it when the test
+// ends. A socket path holds at most 104 bytes on macOS, and t.TempDir()
+// there is too long.
 func Dir(t testing.TB) string {
 	t.Helper()
 	base := "/tmp"
@@ -20,5 +23,8 @@ func Dir(t testing.TB) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := ownacl.Set(dir); err != nil {
+		t.Fatal(err)
+	}
 	return dir
 }

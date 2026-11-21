@@ -154,15 +154,16 @@ func checkBuiltinPacks(ctx context.Context, socket string) (int, error) {
 	return n, nil
 }
 
-func checkServeSocket(ctx context.Context, socket string) (host, network, runner confine.State, err error) {
-	var none confine.State
+// serveStatus asks the serve on socket for its status frame.
+func serveStatus(ctx context.Context, socket string) (serve.Status, error) {
+	var status serve.Status
 	if socket == "" {
-		return none, none, none, errors.New("OPENNEKO_SERVE_SOCKET is not set")
+		return status, errors.New("OPENNEKO_SERVE_SOCKET is not set")
 	}
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", socket)
 	if err != nil {
-		return none, none, none, fmt.Errorf("serve socket %s: %w", socket, err)
+		return status, fmt.Errorf("serve socket %s: %w", socket, err)
 	}
 	defer conn.Close()
 	if deadline, ok := ctx.Deadline(); ok {
@@ -172,9 +173,29 @@ func checkServeSocket(ctx context.Context, socket string) (host, network, runner
 	if err := json.NewEncoder(conn).Encode(serve.Frame{Type: "status"}); err == nil {
 		err = json.NewDecoder(conn).Decode(&reply)
 	}
-	var status serve.Status
 	if reply.Type != "status" || json.Unmarshal(reply.Result, &status) != nil {
-		return none, none, none, fmt.Errorf("openneko serve on %s did not report whether it holds a model key; run serve from the same release as web", socket)
+		return status, fmt.Errorf("openneko serve on %s did not report whether it holds a model key; run serve from the same release as web", socket)
+	}
+	return status, nil
+}
+
+// statusStates reads the confinement of serve's turn part, its network part
+// and its runners from a status frame.
+func statusStates(socket string, status serve.Status) (host, network, runner confine.State, err error) {
+	if len(status.Confinement) == 0 || json.Unmarshal(status.Confinement, &host) != nil || len(status.NetworkConfinement) == 0 || json.Unmarshal(status.NetworkConfinement, &network) != nil {
+		return host, network, runner, fmt.Errorf("openneko serve on %s did not report its confinement; run serve from the same release as web", socket)
+	}
+	if len(status.RunnerConfinement) > 0 && json.Unmarshal(status.RunnerConfinement, &runner) != nil {
+		return host, network, runner, fmt.Errorf("openneko serve on %s sent a runner confinement that this release cannot read; run serve from the same release as web", socket)
+	}
+	return host, network, runner, nil
+}
+
+func checkServeSocket(ctx context.Context, socket string) (host, network, runner confine.State, err error) {
+	var none confine.State
+	status, err := serveStatus(ctx, socket)
+	if err != nil {
+		return none, none, none, err
 	}
 	if len(status.KeyEnv) > 0 {
 		return none, none, none, fmt.Errorf("openneko serve started with the secret variables %s; remove them from serve's environment and keep them in web (INSTALL.md, \"Model keys\")", strings.Join(status.KeyEnv, ", "))
@@ -182,12 +203,9 @@ func checkServeSocket(ctx context.Context, socket string) (host, network, runner
 	if !status.RequireDoor {
 		return none, none, none, errors.New("openneko serve accepts a model key in a frame because it runs in development mode; run serve without OPENNEKO_ENV=development")
 	}
-	var state confine.State
-	if len(status.Confinement) == 0 || json.Unmarshal(status.Confinement, &state) != nil || len(status.NetworkConfinement) == 0 || json.Unmarshal(status.NetworkConfinement, &network) != nil {
-		return none, none, none, fmt.Errorf("openneko serve on %s did not report its confinement; run serve from the same release as web", socket)
-	}
-	if len(status.RunnerConfinement) > 0 && json.Unmarshal(status.RunnerConfinement, &runner) != nil {
-		return none, none, none, fmt.Errorf("openneko serve on %s sent a runner confinement that this release cannot read; run serve from the same release as web", socket)
+	state, network, runner, err := statusStates(socket, status)
+	if err != nil {
+		return none, none, none, err
 	}
 	if status.TurnsOff != "" {
 		return state, network, runner, fmt.Errorf("%w: %s", errTurnsOff, status.TurnsOff)

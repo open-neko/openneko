@@ -1,7 +1,9 @@
 package ownacl
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,16 +153,25 @@ func simple(t uint8) bool {
 	return t == aceAllowed || t == aceAllowedCallback
 }
 
-// SocketFolder limits the folder of a socket path to the current account
-// before a listener opens it. A Windows socket takes the access list of its
-// folder, so a folder that stays open to another account is refused.
+// SocketFolder makes the folder of a socket path owner-only when it does not
+// exist. A Windows socket takes the access list of its folder, so a folder
+// that exists and allows another account is refused; SocketFolder does not
+// change the access list of a folder it did not make.
 func SocketFolder(path string) error {
 	dir := filepath.Dir(path)
-	if err := Set(dir); err != nil {
+	err := os.Mkdir(dir, 0o700)
+	if err == nil {
+		if err := Set(dir); err != nil {
+			_ = os.Remove(dir)
+			return fmt.Errorf("socket folder %s: %w", dir, err)
+		}
+		return nil
+	}
+	if !errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("socket folder %s: %w", dir, err)
 	}
 	if err := Verify(dir); err != nil {
-		return fmt.Errorf("socket folder %s stays open to another account: %w", dir, err)
+		return fmt.Errorf("socket folder %s is open to another account, and OpenNeko does not change a folder it did not make; give the socket a folder of its own: %w", dir, err)
 	}
 	return nil
 }
