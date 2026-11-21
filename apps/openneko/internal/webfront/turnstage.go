@@ -518,8 +518,9 @@ func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, abo
 		return
 	}
 	if saved != nil {
-		log.Printf("[agent-run] run %s saved skill edits (%s): team %s; own %s; copies %s; skipped: %s", runID, reason,
-			strings.Join(saved.Team, ", "), strings.Join(saved.Own, ", "), strings.Join(saved.copyList(), ", "), strings.Join(saved.Skipped, ", "))
+		log.Printf("[agent-run] run %s saved skill edits (%s): proposed %s; refused %s; own %s; copies %s; skipped: %s", runID, reason,
+			strings.Join(saved.Proposed, ", "), strings.Join(saved.Refused, ", "), strings.Join(saved.Own, ", "),
+			strings.Join(saved.copyList(), ", "), strings.Join(saved.Skipped, ", "))
 	}
 }
 

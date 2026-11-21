@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { matchesListSearch } from "@/lib/list-search";
 import SkillLearnCard from "./SkillLearnCard";
 import ProposedRules, { type RuleProposal } from "./ProposedRules";
+import TeamProposals, { type TeamProposal } from "./TeamProposals";
 
 type Policy = {
   id: string;
@@ -107,6 +108,7 @@ export default function RulesClient() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [proposals, setProposals] = useState<RuleProposal[]>([]);
+  const [teamProposals, setTeamProposals] = useState<TeamProposal[]>([]);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
@@ -115,6 +117,12 @@ export default function RulesClient() {
       .then((r) => (r.ok ? (r.json() as Promise<{ proposals: RuleProposal[] }>) : { proposals: [] }))
       .then((result) => {
         if (!cancelled) setProposals(result.proposals ?? []);
+      })
+      .catch(() => undefined);
+    void fetch("/api/v1/admin/team-proposals", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ proposals: TeamProposal[] }>) : { proposals: [] }))
+      .then((result) => {
+        if (!cancelled) setTeamProposals(result.proposals ?? []);
       })
       .catch(() => undefined);
     void fetch("/api/v1/policies", { cache: "no-store" })
@@ -185,6 +193,8 @@ export default function RulesClient() {
         <SkillLearnCard />
 
         <ProposedRules proposals={proposals} onDecided={() => setRevision((n) => n + 1)} />
+
+        <TeamProposals proposals={teamProposals} onDecided={() => setRevision((n) => n + 1)} />
 
         {error ? (
           <div className="py-14 text-center text-sm text-danger">{error}</div>

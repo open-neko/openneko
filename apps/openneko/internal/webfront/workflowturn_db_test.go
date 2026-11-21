@@ -411,8 +411,8 @@ func TestWorkflowTurnScriptSteps(t *testing.T) {
 			t.Fatalf("events lack %s:\n%s", want, events)
 		}
 	}
-	if raw, err := os.ReadFile(filepath.Join(ws.SkillsRoot, "stockcheck", "NOTES.md")); err != nil || string(raw) != "Stores: north, south\n" {
-		t.Fatalf("the script step's skill edit was not saved: %q %v", raw, err)
+	if raw, err := os.ReadFile(filepath.Join(ws.SkillsRoot, "stockcheck", "NOTES.md")); err == nil {
+		t.Fatalf("a team workflow run with no user changed a team skill: %q", raw)
 	}
 	if workStatus, workErr, _, _, _ := runRow(t, db); workStatus != "completed" || workErr != "" {
 		t.Fatalf("work run %s %q", workStatus, workErr)

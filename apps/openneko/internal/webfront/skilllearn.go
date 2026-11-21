@@ -49,6 +49,7 @@ type learnedOverlay struct {
 type skillLearnResult struct {
 	Decision, Reason string
 	Overlay          *learnedOverlay
+	PriorBody        string
 	Trace            skillLearnTrace
 	Diff             string
 }
@@ -56,6 +57,7 @@ type skillLearnResult struct {
 type skillLearnInput struct {
 	OrgRoot, SkillName  string
 	OrgEnabled, SkillOn bool
+	Pending             bool
 	Usages              []skillUsageSnapshot
 	Now                 time.Time
 	Propose             func(baseHash string, cohort []skillUsageSnapshot) (*skillLearnProposal, error)
@@ -75,7 +77,7 @@ const skillProposalShape = `{
 
 // SkillLearn is runSkillLearnForOrgSkill() of the Node worker: it reads the
 // settled uses of one org skill and, when one version repeats often enough,
-// writes one additive LEARNED.md overlay from a model proposal.
+// proposes one additive LEARNED.md overlay for an admin to confirm.
 func (a *API) SkillLearn(ctx context.Context, orgID, skillName string) error {
 	res, err := a.skillLearn(ctx, orgID, skillName, func(root, baseHash string, cohort []skillUsageSnapshot) (*skillLearnProposal, error) {
 		return a.proposeSkillLesson(ctx, orgID, root, skillName, baseHash, cohort)
@@ -95,6 +97,11 @@ func (a *API) skillLearn(ctx context.Context, orgID, skillName string,
 		return skillLearnResult{}, err
 	}
 	if err := noRows(a.DB.QueryRow(ctx, `select enabled from skill_learn_state where org_id = $1 and skill_name = $2`, orgID, skillName).Scan(&skillOn)); err != nil {
+		return skillLearnResult{}, err
+	}
+	var pending bool
+	if err := a.DB.QueryRow(ctx, `select exists (select 1 from team_item_proposal where org_id = $1 and kind = 'skill_lesson'
+		and target = $2 and status = 'pending')`, orgID, skillName).Scan(&pending); err != nil {
 		return skillLearnResult{}, err
 	}
 	rows, err := a.DB.Query(ctx, `select run_id::text, content_hash, created_at from skill_usage
@@ -126,7 +133,7 @@ func (a *API) skillLearn(ctx context.Context, orgID, skillName string,
 	}
 	res, err := runSkillLearn(skillLearnInput{
 		OrgRoot: root, SkillName: skillName,
-		OrgEnabled: orgOn != nil && *orgOn, SkillOn: skillOn == nil || *skillOn,
+		OrgEnabled: orgOn != nil && *orgOn, SkillOn: skillOn == nil || *skillOn, Pending: pending,
 		Usages: usages, Now: time.Now(),
 		Propose: func(baseHash string, cohort []skillUsageSnapshot) (*skillLearnProposal, error) {
 			return propose(root, baseHash, cohort)
@@ -144,15 +151,16 @@ func (a *API) skillLearn(ctx context.Context, orgID, skillName string,
 		res.Trace.Rationale, res.Diff, string(trace), res.Decision, res.Reason); err != nil {
 		return skillLearnResult{}, err
 	}
-	if res.Decision == "applied" && res.Overlay != nil {
-		if _, err := tx.Exec(ctx, `insert into skill_learn_state (org_id, skill_name, enabled, current_base_hash, current_learned_hash)
-			values ($1, $2, true, $3, $4) on conflict (org_id, skill_name) do update
-			set current_base_hash = excluded.current_base_hash, current_learned_hash = excluded.current_learned_hash, updated_at = now()`,
-			orgID, skillName, res.Overlay.BaseHash, sha256Hex(res.Overlay.Body)); err != nil {
-			return skillLearnResult{}, err
-		}
+	if err := tx.Commit(ctx); err != nil {
+		return skillLearnResult{}, err
 	}
-	return res, tx.Commit(ctx)
+	if res.Decision == "proposed" && res.Overlay != nil {
+		before := map[string]string{"body": res.PriorBody}
+		_, err := a.proposeTeamItem(ctx, orgID, "skill_lesson", skillName, before,
+			lessonProposal{Body: res.Overlay.Body, BaseHash: res.Overlay.BaseHash}, res.Overlay.BaseHash, nil, nil)
+		return res, err
+	}
+	return res, nil
 }
 
 func runSkillLearn(in skillLearnInput) (skillLearnResult, error) {
@@ -161,6 +169,9 @@ func runSkillLearn(in skillLearnInput) (skillLearnResult, error) {
 	}
 	if !in.OrgEnabled || !in.SkillOn {
 		return skip("flags_off", skillLearnTrace{SkipReason: "org or skill learning is off"})
+	}
+	if in.Pending {
+		return skip("lesson_pending", skillLearnTrace{SkipReason: "a proposed lesson waits for an admin"})
 	}
 	var settled []skillUsageSnapshot
 	for _, u := range in.Usages {
@@ -215,15 +226,12 @@ func runSkillLearn(in skillLearnInput) (skillLearnResult, error) {
 			Trace: skillLearnTrace{BaseHash: baseHash, ContentHash: contentHash}}, nil
 	}
 	overlay := &learnedOverlay{SkillName: in.SkillName, BaseHash: baseHash, Status: "applied", Body: jsTrim(proposal.LearnedMarkdown)}
-	if err := writeLearnedOverlay(in.OrgRoot, overlay); err != nil {
-		return skillLearnResult{}, err
-	}
 	before := ""
 	if existing != nil {
 		before = existing.Body
 	}
 	return skillLearnResult{
-		Decision: "applied", Reason: "applied additive learned guidance", Overlay: overlay,
+		Decision: "proposed", Reason: "proposed additive learned guidance", Overlay: overlay, PriorBody: before,
 		Diff: "--- before\n" + before + "\n+++ after\n" + overlay.Body + "\n",
 		Trace: skillLearnTrace{Lesson: proposal.Lesson, Rationale: proposal.Rationale,
 			EvidenceRunIDs: proposal.EvidenceRunIDs, BaseHash: baseHash, ContentHash: contentHash},

@@ -209,7 +209,8 @@ func TestChatTurnThroughServe(t *testing.T) {
 		`select name from workflow_definition where org_id = 'org' and name = 'Daily stock'`:                                                                         "Daily stock",
 		`select rule->>'mode' || ':' || status from action_policy_proposal where org_id = 'org' and name = 'Ask before email'`:                                       "approval_required:pending",
 		`select count(*)::text from action_policy where org_id = 'org' and name = 'Ask before email'`:                                                                "0",
-		`select kind || ':' || pinned || ':' || scope from work_memory where text = 'Stock counts come from the ERP'`:                                                "business_rule:true:global",
+		`select count(*)::text from work_memory where text = 'Stock counts come from the ERP'`:                                                                       "0",
+		`select kind || ':' || status || ':' || (after->>'pinned') from team_item_proposal where after->>'text' = 'Stock counts come from the ERP'`:                 "memory:pending:true",
 		`select string_agg(event, ',') from audit_chain where entity_id = '` + runAdmin + `'`:                                                                        "run:completed",
 	} {
 		if got := rowText(t, db, sql); got != want {
@@ -434,7 +435,7 @@ func TestChatTurnOutcomes(t *testing.T) {
 		}
 	}
 
-	t.Run("the turn works in a stage and saves an admin's skill edit for the team", func(t *testing.T) {
+	t.Run("the turn works in a stage and proposes an admin's skill edit for the team", func(t *testing.T) {
 		writeTestFile(t, report, "# Team report\n")
 		writeTestFile(t, filepath.Join(host, "memory", "secret.md"), "memory")
 		id := newRun("admin")
@@ -450,11 +451,11 @@ func TestChatTurnOutcomes(t *testing.T) {
 		if _, err := os.Stat(ws.OrgRoot); err == nil {
 			t.Error("the stage is still there")
 		}
-		if got := readText(report); got != "# Better report\n" {
-			t.Errorf("host skill %q", got)
+		if got := readText(report); got != "# Team report\n" {
+			t.Errorf("an admin's chat run changed a team skill with no confirmation: %q", got)
 		}
-		if got, want := skillChange(), "team::Updated skill in run "+id[:8]+": report:-"; got != want {
-			t.Errorf("config change %q", got)
+		if got := rowText(t, db, `select status || ':' || (after->'files'->0->>'content') from team_item_proposal where kind = 'skill' and target = 'report' and proposed_by_run_id = '`+id+`'`); got != "pending:# Better report\n" {
+			t.Errorf("proposal %q", got)
 		}
 		if log.count(`{"type":"artifact","artifact":{"path":"runs/`+id+`/artifacts/out.csv","label":"out.csv"}}`) != 1 {
 			t.Errorf("events %v", log.all())
@@ -512,20 +513,30 @@ func TestChatTurnOutcomes(t *testing.T) {
 			_ = in.Emit(ctx, jsObjOf("type", "tool_start", "id", "t1", "name", "process"))
 			return axRunResult{Status: "completed", FinalText: "Done."}, nil
 		})
-		if err != nil || res.Status != "completed" || readText(old) != "<none>" || readText(other) != "from an admin\n" {
+		if err != nil || res.Status != "completed" || readText(old) != "old\n" || readText(other) != "from an admin\n" {
 			t.Errorf("%+v %v %q %q", res, err, readText(old), readText(other))
+		}
+		id := rowText(t, db, `select id::text from team_item_proposal where kind = 'skill' and status = 'pending' and before is not null
+			and after->'removed' ? 'report/old.py'`)
+		if w := call(f, "POST", "/api/v1/admin/team-proposals/"+id+"/confirm", "", sessionCookie("admin")); w.Code != 409 {
+			t.Errorf("a change to a file that an admin changed meanwhile: %d %s", w.Code, w.Body)
+		}
+		if readText(old) != "old\n" || readText(other) != "from an admin\n" {
+			t.Errorf("a stale change was applied: %q %q", readText(old), readText(other))
 		}
 		os.Remove(other)
 	})
 
-	t.Run("a failed turn still saves its skill edits", func(t *testing.T) {
+	t.Run("a failed turn still proposes its skill edits", func(t *testing.T) {
 		writeTestFile(t, report, "# Team report\n")
-		_, err, _ := run(ctx, newRun("admin"), func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
+		id := newRun("admin")
+		_, err, _ := run(ctx, id, func(ctx context.Context, in agentCoreInput) (axRunResult, error) {
 			writeTestFile(t, filepath.Join(in.Workspace.SkillsRoot, "report", "SKILL.md"), "# Kept\n")
 			return axRunResult{}, errors.New("model down")
 		})
-		if err == nil || readText(report) != "# Kept\n" {
-			t.Errorf("%v %q", err, readText(report))
+		proposed := rowText(t, db, `select after->'files'->0->>'content' from team_item_proposal where proposed_by_run_id = '`+id+`'`)
+		if err == nil || readText(report) != "# Team report\n" || proposed != "# Kept\n" {
+			t.Errorf("%v %q %q", err, readText(report), proposed)
 		}
 	})
 

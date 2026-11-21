@@ -23,14 +23,16 @@ type stagedSkillFile struct {
 	Content []byte
 }
 
-// savedSkillEdits names the skills a run changed: team skills saved in
-// place, own skills saved in place, and team skills a member changed,
-// saved as a private copy (team name to copy name).
+// savedSkillEdits names the skills a run changed: team skills an admin's
+// chat run changed, proposed for an admin to confirm; team skills a run
+// may not change; own skills saved in place; and team skills a member
+// changed, saved as a private copy (team name to copy name).
 type savedSkillEdits struct {
-	Team    []string
-	Own     []string
-	Copies  map[string]string
-	Skipped []string
+	Proposed []string
+	Refused  []string
+	Own      []string
+	Copies   map[string]string
+	Skipped  []string
 }
 
 func (s savedSkillEdits) copyList() []string {
@@ -240,16 +242,25 @@ func skillEditMessage(runID string, skills []string) string {
 }
 
 // saveSkillEdits saves a run's skill edits. An own skill the run staged
-// is saved in place. A team skill is saved in place for an admin or an
-// unattended run; a member's edit becomes a private copy and the team
-// skill stays as it is. A new skill from a member is their own skill. A
-// file another writer changed on the host during the turn stays as it is.
+// is saved in place. A team skill change from an admin's chat run becomes
+// a proposal; from a workflow run or a run with no user it is dropped. A
+// member's edit becomes a private copy and the team skill stays as it is.
+// A new skill from a member is their own skill. A file another writer
+// changed on the host during the turn stays as it is.
 func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runActorRow, baseline skillFileHashes,
 	own map[string]bool, changed []stagedSkillFile, removed []string, stagedSkills string) savedSkillEdits {
 	orgRoot := orgAgentRoot(orgID)
 	teamRoot := filepath.Join(orgRoot, "skills")
 	ownRoot := memberSkillsRoot(orgRoot, act.UserID)
 	member := act.UserID != "" && act.Role != "admin"
+	mode := teamWriteRefused
+	if !member {
+		var err error
+		if mode, _, err = a.runTeamWrite(ctx, orgID, &runID); err != nil {
+			log.Printf("[agent-run] skill save for %s: %v", runID, err)
+			mode = teamWriteRefused
+		}
+	}
 	names := map[string]bool{}
 	for _, f := range changed {
 		names[skillOf(f.Path)] = true
@@ -258,13 +269,15 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 		names[skillOf(p)] = true
 	}
 	out := savedSkillEdits{Copies: map[string]string{}, Skipped: []string{}}
-	var team, mine, copies []string
+	var proposed, refused, mine, copies []string
 	for n := range names {
 		switch {
 		case own[n] && act.UserID != "":
 			mine = append(mine, n)
+		case !member && mode == teamWritePropose:
+			proposed = append(proposed, n)
 		case !member:
-			team = append(team, n)
+			refused = append(refused, n)
 		case isTeamSkill(teamRoot, baseline, n):
 			copies = append(copies, n)
 		case validSkillName(n) && !skillNameTaken(orgRoots{Org: orgRoot, Skills: teamRoot}, act.UserID, n):
@@ -273,7 +286,8 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 			copies = append(copies, n)
 		}
 	}
-	slices.Sort(team)
+	slices.Sort(proposed)
+	slices.Sort(refused)
 	slices.Sort(mine)
 	slices.Sort(copies)
 
@@ -311,11 +325,15 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 		}
 	}
 
-	if len(team) > 0 {
-		save(teamRoot, team)
-		a.recordConfigChange(ctx, orgID, skillEditMessage(runID, team), "skill", strings.Join(team, ", "), act.UserID)
-		out.Team = team
+	for _, n := range proposed {
+		userID := act.UserID
+		if _, err := a.proposeSkillEdit(ctx, orgID, teamRoot, n, baseline, changed, removed, &userID, runID); err != nil {
+			log.Printf("[agent-run] skill proposal failed for %s: %v", runID, err)
+			continue
+		}
+		out.Proposed = append(out.Proposed, n)
 	}
+	out.Refused = refused
 	if len(mine) > 0 {
 		save(ownRoot, mine)
 		a.insertConfigChange(ctx, configChange{OrgID: orgID, Kind: "skill", Ref: strings.Join(mine, ", "), Actor: act.UserID,

@@ -216,6 +216,7 @@ func TestRunSkillCapture(t *testing.T) {
 	writeTree(t, mine, map[string]string{"my-notes/SKILL.md": "---\nname: my-notes\ndescription: Notes.\n---\nOld\n"})
 	writeTree(t, memberSkillsRoot(roots.Org, "admin"), map[string]string{"admin-own/SKILL.md": "---\nname: admin-own\n---\nOld\n"})
 
+	runID := "run-12345678-aaaa"
 	run := func(act runActorRow, allowed []string, edit func(skills string)) savedSkillEdits {
 		t.Helper()
 		host, err := turnWorkspace("org", "thread", "run")
@@ -229,7 +230,7 @@ func TestRunSkillCapture(t *testing.T) {
 		}
 		defer os.RemoveAll(st.Dir)
 		edit(st.Workspace.SkillsRoot)
-		saved, err := a.captureSkillEdits(ctx, "org", "run-12345678-aaaa", act, st.baseline, st.own, st.Workspace.SkillsRoot)
+		saved, err := a.captureSkillEdits(ctx, "org", runID, act, st.baseline, st.own, st.Workspace.SkillsRoot)
 		if err != nil || saved == nil {
 			t.Fatalf("capture: %v %v", saved, err)
 		}
@@ -263,7 +264,7 @@ func TestRunSkillCapture(t *testing.T) {
 		writeTestFile(t, filepath.Join(skills, "fresh", "SKILL.md"), "---\nname: fresh\n---\n")
 		writeTestFile(t, filepath.Join(skills, "sales-playbook", "SKILL.md"), "---\nname: sales-playbook\n---\nMine\n")
 	})
-	if !slices.Equal(saved.Own, []string{"fresh", "my-notes"}) || len(saved.Team) != 0 ||
+	if !slices.Equal(saved.Own, []string{"fresh", "my-notes"}) || len(saved.Proposed)+len(saved.Refused) != 0 ||
 		saved.Copies["finance-close"] != "finance-close-m" || saved.Copies["sales-playbook"] != "sales-playbook-m" || len(saved.Copies) != 2 {
 		t.Fatalf("saved %+v", saved)
 	}
@@ -299,33 +300,59 @@ func TestRunSkillCapture(t *testing.T) {
 		t.Error("the own copy was not edited in place")
 	}
 
+	seed(t, db, `insert into work_thread (id, org_id) values ('61000000-0000-4000-8000-000000000001', 'org')`)
+	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_user_id, actor_role) values
+		('71000000-0000-4000-8000-000000000001', 'org', '61000000-0000-4000-8000-000000000001', 'test', 'member', 'member'),
+		('71000000-0000-4000-8000-000000000002', 'org', '61000000-0000-4000-8000-000000000001', 'test', null, 'service'),
+		('71000000-0000-4000-8000-000000000003', 'org', '61000000-0000-4000-8000-000000000001', 'test', 'admin', 'admin'),
+		('71000000-0000-4000-8000-000000000004', 'org', '61000000-0000-4000-8000-000000000001', 'test', 'admin', 'admin')`)
+	seed(t, db, `with w as (insert into workflow_definition (org_id, name, owner_user_id) values ('org', 'Nightly', 'admin') returning id)
+		insert into workflow_run (org_id, workflow_id, thread_id, work_run_id, trigger_kind)
+		select 'org', id, '61000000-0000-4000-8000-000000000001', '71000000-0000-4000-8000-000000000004', 'cron' from w`)
+	proposals := func() string {
+		return scalar(t, db, `select count(*)::text from team_item_proposal where org_id = 'org'`)
+	}
+
+	runID = "71000000-0000-4000-8000-000000000003"
 	saved = run(adminAct, nil, func(skills string) {
 		writeTestFile(t, filepath.Join(skills, "finance-close", "SKILL.md"), "---\nname: finance-close\n---\nAdmin\n")
 		writeTestFile(t, filepath.Join(skills, "admin-own", "SKILL.md"), "---\nname: admin-own\n---\nNew\n")
 	})
-	if !slices.Equal(saved.Team, []string{"finance-close"}) || !slices.Equal(saved.Own, []string{"admin-own"}) || len(saved.Copies) != 0 {
+	if !slices.Equal(saved.Proposed, []string{"finance-close"}) || !slices.Equal(saved.Own, []string{"admin-own"}) || len(saved.Copies) != 0 {
 		t.Fatalf("admin %+v", saved)
 	}
-	if read(filepath.Join(roots.Skills, "finance-close", "SKILL.md")) != "---\nname: finance-close\n---\nAdmin\n" ||
-		read(filepath.Join(memberSkillsRoot(roots.Org, "admin"), "admin-own", "SKILL.md")) != "---\nname: admin-own\n---\nNew\n" {
-		t.Error("admin edits not saved in place")
+	if read(filepath.Join(roots.Skills, "finance-close", "SKILL.md")) != teamClose {
+		t.Error("an admin's chat run changed a team skill with no confirmation")
+	}
+	if read(filepath.Join(memberSkillsRoot(roots.Org, "admin"), "admin-own", "SKILL.md")) != "---\nname: admin-own\n---\nNew\n" {
+		t.Error("an admin's own skill was not saved in place")
 	}
 	if _, err := os.Stat(filepath.Join(roots.Skills, "admin-own")); err == nil {
 		t.Error("an admin's own skill reached the team folder")
 	}
-
-	saved = run(runActorRow{}, nil, func(skills string) {
-		writeTestFile(t, filepath.Join(skills, "sales-playbook", "SKILL.md"), "---\nname: sales-playbook\n---\nJob\n")
-	})
-	if !slices.Equal(saved.Team, []string{"sales-playbook"}) || len(saved.Own)+len(saved.Copies) != 0 ||
-		read(filepath.Join(roots.Skills, "sales-playbook", "SKILL.md")) != "---\nname: sales-playbook\n---\nJob\n" {
-		t.Fatalf("unattended %+v", saved)
+	if got := scalar(t, db, `select kind || ' ' || target || ' ' || (after->'files'->0->>'content') from team_item_proposal`); got != "skill finance-close ---\nname: finance-close\n---\nAdmin\n" {
+		t.Errorf("proposal %q", got)
 	}
 
-	seed(t, db, `insert into work_thread (id, org_id) values ('61000000-0000-4000-8000-000000000001', 'org')`)
-	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_user_id, actor_role) values
-		('71000000-0000-4000-8000-000000000001', 'org', '61000000-0000-4000-8000-000000000001', 'test', 'member', 'member'),
-		('71000000-0000-4000-8000-000000000002', 'org', '61000000-0000-4000-8000-000000000001', 'test', null, 'service')`)
+	for _, c := range []struct {
+		name, runID string
+		act         runActorRow
+	}{
+		{"an admin's workflow run", "71000000-0000-4000-8000-000000000004", adminAct},
+		{"a run with no user", "71000000-0000-4000-8000-000000000002", runActorRow{}},
+	} {
+		runID = c.runID
+		saved = run(c.act, nil, func(skills string) {
+			writeTestFile(t, filepath.Join(skills, "sales-playbook", "SKILL.md"), "---\nname: sales-playbook\n---\nJob\n")
+		})
+		if !slices.Equal(saved.Refused, []string{"sales-playbook"}) || len(saved.Own)+len(saved.Copies)+len(saved.Proposed) != 0 ||
+			read(filepath.Join(roots.Skills, "sales-playbook", "SKILL.md")) != "---\nname: sales-playbook\ndescription: Sell.\n---\n" {
+			t.Fatalf("%s: %+v", c.name, saved)
+		}
+		if got := proposals(); got != "1" {
+			t.Fatalf("%s left a proposal: %s", c.name, got)
+		}
+	}
 	search := func(runID, query string) []string {
 		t.Helper()
 		res, err := a.runTools(turnBinding{}).searchSkills(ctx, skillSearchIn{OrgID: "org", RunID: runID, Query: query})
