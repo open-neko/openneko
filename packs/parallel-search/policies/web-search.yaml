@@ -1,10 +1,11 @@
 key: policy.parallel_web_search
 targetRef: parallel_search.policy.web_search
 name: Parallel web search
-description: Web searches run without approval. They read the open web and change nothing; each search is a billed Parallel call.
+description: Each web search sends its search text to Parallel. The admin chooses at install whether a person approves each search (ask) or not (auto). A search reads the open web and changes nothing; each search is a billed Parallel call.
 appliesToKinds: [parallel_search.web_search]
 appliesToScopes: [external]
-mode: auto
+mode: ask
+modeInput: parallel_search.approval
 priority: 10
 enabled: true
 allowedTargets: {}

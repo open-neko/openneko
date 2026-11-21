@@ -10,9 +10,13 @@ server from plugin code. No plugin code runs inside OpenNeko.
 1. Create an API key at Parallel.
 2. Open Admin, Settings, Packs and install Parallel web search. Paste the key.
    GraphJin seals it in its keystore and sends it as `x-api-key`.
-3. Review and apply the configuration.
-4. Enable **Parallel web search**. It installs disabled. Enabled, it runs
-   searches without approval: they read the web and change nothing.
+3. Choose **ask** or **auto** for `parallel_search.approval`. Each search sends
+   its search text to Parallel. With ask (the default), a person approves each
+   search; with auto, searches run without approval.
+4. Review and apply the configuration.
+5. Enable **Parallel web search**. It installs disabled.
+
+The search objective holds at most 500 characters.
 
 ## Coverage
 

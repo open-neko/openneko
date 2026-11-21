@@ -46,7 +46,7 @@ components:
         - required: [objective]
         - required: [search_queries]
       properties:
-        objective: { type: string, minLength: 1, maxLength: 5000, description: The goal of the search in plain language }
+        objective: { type: string, minLength: 1, maxLength: 500, description: The goal of the search in plain language }
         search_queries:
           type: array
           minItems: 1

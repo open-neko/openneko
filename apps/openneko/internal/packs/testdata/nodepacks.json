@@ -7,7 +7,7 @@
           1.5,
           0,
           1e+21,
-          1e-7,
+          1e-07,
           123456789012,
           null,
           true
@@ -27,7 +27,7 @@
     {
       "value": [
         0.1,
-        2.5e-8,
+        2.5e-08,
         100,
         -3
       ],
@@ -1774,10 +1774,10 @@
     },
     {
       "dir": "parallel-search",
-      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/parallel.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/parallel-web-search\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"parallel\",\"versions\":\"v1beta\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"search\":[]},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"research\",\"id\":\"parallel-search\",\"name\":\"Parallel web search\",\"publisher\":\"openneko\",\"version\":\"0.1.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"api.parallel.ai\"]},\"secrets\":[{\"key\":\"parallel-search.api_key\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
-      "manifestHash": "8feffabe8efc81a7cb6a3abc4f086e4418eb55c6c513e6e152cc430ea73d2d3f",
-      "bundleHash": "99f9077e8d4ca84a77f64866e2ef675635009785617511d5f6574a7610535556",
-      "filesHash": "05edaaabd734fd1f2436ddd6caf9d1bb7ac24904e1e83dbe74c685798367caf2",
+      "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/parallel.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/parallel-web-search\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"parallel\",\"versions\":\"v1beta\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"search\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"default\":\"ask\",\"description\":\"The search text leaves this install for Parallel (api.parallel.ai). Choose ask to approve each search, or auto to let searches run without approval.\",\"key\":\"parallel_search.approval\",\"required\":true,\"type\":\"enum\",\"values\":[\"ask\",\"auto\"]}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"research\",\"id\":\"parallel-search\",\"name\":\"Parallel web search\",\"publisher\":\"openneko\",\"version\":\"0.2.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"api.parallel.ai\"]},\"secrets\":[{\"key\":\"parallel-search.api_key\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
+      "manifestHash": "5f1ae2928334d51dda07f64da3380760ac83d502081d75b86e44ea382111931d",
+      "bundleHash": "8816ba8069934b7b62e39818a05d316008b486fefc78a5cf5fef14e33c08c0e0",
+      "filesHash": "4cd3381a1144660f8d3b376401f2a3cf6f6673353d1676ea67e1453070ae1c94",
       "artifacts": [
         {
           "kind": "action",
@@ -1791,7 +1791,7 @@
           "key": "policy.parallel_web_search",
           "targetRef": "parallel_search.policy.web_search",
           "path": "policies/web-search.yaml",
-          "hash": "9e3be1c9adbf11d6866a5f2aa12c8d15b5feae9a2ce1f5685cd5a6612a09c998"
+          "hash": "8a560126f23b4fe15079fafefc8cb125f4dc40d5f90157e058a8523df9697a9a"
         },
         {
           "kind": "relationships",
@@ -1819,7 +1819,7 @@
           "key": "spec.parallel",
           "targetRef": "spec.parallel",
           "path": "graphjin/specs/parallel.yaml",
-          "hash": "92366d0b1eec7c5265bc0752c09d37b8e60ee10d4a03b3b2565d61a1ec7fe593"
+          "hash": "6b065c0493c5be217bb5572d5f1d15eaaf21ee49c641737a66208f02949dc8eb"
         }
       ]
     },

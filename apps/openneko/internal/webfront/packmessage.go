@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -42,6 +43,10 @@ func guardPackBody(kind string, body any) (any, error) {
 			obj.set("unfurl_links", false)
 			obj.set("unfurl_media", false)
 		}
+	case kind == "parallel_search.web_search":
+		if objective, ok := obj.vals["objective"].(string); ok && utf8.RuneCountInString(objective) > searchObjectiveMax {
+			return nil, refuse(fmt.Sprintf("the search objective has %d characters; a search needs at most %d", utf8.RuneCountInString(objective), searchObjectiveMax))
+		}
 	case kind == "resend.email":
 		if _, has := obj.vals["attachments"]; has {
 			return nil, refuse("the email holds attachments. Resend fetches an attachment from its path; OpenNeko sends no attachment")
@@ -62,6 +67,8 @@ func guardPackBody(kind string, body any) (any, error) {
 	}
 	return obj, nil
 }
+
+const searchObjectiveMax = 500
 
 var slackFetchKeys = map[string]bool{"image_url": true, "thumb_url": true, "author_icon": true, "footer_icon": true, "icon_url": true}
 

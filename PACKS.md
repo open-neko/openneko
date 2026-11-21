@@ -113,7 +113,7 @@ collisions with other packs or operator-created artifacts.
 | Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; the agent's web tool in that workflow reaches only those hosts. See the [example workflow](apps/openneko/internal/packs/testdata/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
-| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. See [Action safety fields](#action-safety-fields). |
+| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. A policy can name an `enum` install input in `modeInput`; when the admin picks `ask` or `auto` for it, the rule takes that mode, and any other value keeps the file's `mode`. See [Action safety fields](#action-safety-fields). |
 
 ### Action safety fields
 
