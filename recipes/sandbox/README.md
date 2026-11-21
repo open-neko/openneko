@@ -67,13 +67,13 @@ so you need no checkout. Run it from that folder with the release's tag:
 
 ```sh
 OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox \
-OPENNEKO_SANDBOX_GID=$(getent group openneko-shared | cut -d: -f3) \
+OPENNEKO_SANDBOX_GID=$(id -g openneko) \
 OPENNEKO_SANDBOX_KEY=<a long random string> \
 OPENNEKO_VERSION=v$(openneko version --short) \
 docker compose -f compose.native.yml up -d
 ```
 
-A one-user native install uses
+A native install for your own user uses
 `OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox` and
 `OPENNEKO_SANDBOX_GID=$(id -g)`. This file needs a key.
 

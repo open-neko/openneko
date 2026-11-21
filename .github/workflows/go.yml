@@ -129,9 +129,15 @@ jobs:
         run: |
           set -euo pipefail
           CGO_ENABLED=0 go test -c -o /tmp/cli.test ./internal/cli
-          docker run --rm -e OPENNEKO_TEST_SERVER_INSTALL=1 -v /tmp/cli.test:/cli.test:ro \
-            debian:bookworm-slim /cli.test -test.v -test.run 'TestServerInstall|TestServerRestore' | tee /tmp/server-install.log
-          grep -q -- '--- PASS: TestServerInstallZones' /tmp/server-install.log
+          git fetch --depth=1 origin dbe93d5c9b934a406fa8be7a4846d4a001f63dde
+          git worktree add /tmp/two-accounts dbe93d5c9b934a406fa8be7a4846d4a001f63dde
+          (cd /tmp/two-accounts/apps/openneko && CGO_ENABLED=0 go build -o /tmp/openneko-two-accounts ./cmd/openneko)
+          docker run --rm -e OPENNEKO_TEST_SERVER_INSTALL=1 -e OPENNEKO_TEST_TWO_ACCOUNT_EXE=/old \
+            -v /tmp/openneko-two-accounts:/old:ro -v /tmp/cli.test:/cli.test:ro \
+            debian:bookworm-slim /cli.test -test.v -test.run 'TestServerInstall|TestServerRestore|TestServerUpgrade' | tee /tmp/server-install.log
+          for t in TestServerInstallOneAccount TestServerRestoreOwners TestServerUpgradeFromTwoAccounts; do
+            grep -q -- "--- PASS: $t" /tmp/server-install.log
+          done
           if grep -- '--- SKIP' /tmp/server-install.log; then
             echo "a root test skipped; this step must run every one" >&2
             exit 1

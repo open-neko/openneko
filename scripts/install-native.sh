@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs the native OpenNeko release on Linux or macOS, with no Docker: for
-# one user, or on Linux with --server as two systemd services (needs root).
+# one user, or on Linux with --server as two systemd services of one system user (needs root).
 # --upgrade upgrades an install with the new release's own executable.
 set -eu
 

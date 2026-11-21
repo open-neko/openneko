@@ -10,8 +10,8 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
   | Install | Linux | macOS | Windows |
   |---|---|---|---|
   | Docker stack (`openneko setup`, `openneko start`) | Docker Engine + Docker Compose | Docker Desktop | no |
-  | One-user [native install](#run-without-docker-native), no Docker | yes | yes | yes |
-  | [Server install](#server-install-systemd-two-users) with two system users | yes | no | no |
+  | [Native install](#run-without-docker-native) for your own user, no Docker | yes | yes | yes |
+  | [Server install](#server-install-systemd) with systemd and one system user | yes | no | no |
 
 - PostgreSQL 16 or later with the `vector` extension (pgvector 0.6.0 or later) for production and native installs (`--mode demo` and `--mode dev` run a bundled Postgres container)
 - An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
@@ -1194,8 +1194,8 @@ It needs no Docker. It runs prod mode only, for the default installation.
 OpenNeko's database is yours, by URL.
 
 The native install runs on Linux, macOS and Windows for one user, with no
-admin rights. Serve and web run as your account. The install with two
-system users is for Linux only ([Server install](#server-install-systemd-two-users)).
+admin rights. Serve and web run as your account. The systemd install with
+its own system user is for Linux only ([Server install](#server-install-systemd)).
 
 On Linux or macOS (amd64 or arm64), this script installs the native release
 for your user:
@@ -1436,7 +1436,7 @@ key of at least 32 characters in `OPENNEKO_SANDBOX_KEY` (for example
 `OPENNEKO_SANDBOX_PORT` changes the port. Each request needs the key.
 `recipes/sandbox/prove-desktop.sh` checks the recipe on your machine.
 
-#### Server install (systemd, two users)
+#### Server install (systemd)
 
 On a Linux server, run the install script once as root with `--server`:
 
@@ -1448,19 +1448,24 @@ curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/i
 
 The script puts the release in `/opt/openneko` and links
 `/usr/local/bin/openneko`. Then it runs `openneko server-install`, which
-needs root once. It makes two system users and two systemd services:
+needs root once. It makes one system user, `openneko`, and two systemd
+services that run as that user: `openneko-web.service` and
+`openneko-serve.service`.
 
-| Service | User | Owns |
-|---|---|---|
-| `openneko-web.service` | `openneko` (control zone) | `/etc/openneko` (the secret key, `config.json` with the database login, the provider settings) and `/var/lib/openneko/control`, both mode 700 |
-| `openneko-serve.service` | `openneko-agent` (agent zone) | `/var/lib/openneko/agent` (files, file index, subscriptions, serve log), mode 700, and the socket folder |
+The user owns `/etc/openneko` (the secret key, `config.json` with the
+database login, the provider settings) and every folder under
+`/var/lib/openneko`, each mode 700. No other user can enter them. The
+serve unit makes `/etc/openneko` and `/var/lib/openneko/control` inaccessible
+to serve, and the web unit makes `/var/lib/openneko/agent` inaccessible to
+web. Both units set `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`,
+`ProtectHome` and `ReadWritePaths`, and run with umask 0007.
 
-The two users share the group `openneko-shared`. Only these folders under
-`/var/lib/openneko/shared` use it: `run` (the sockets; serve writes, web
-connects), `agent-runs` and `graphjin`. Web writes serve's database
-credentials to `shared/credentials`, which only the `openneko-agent` group
-can read. The serve unit makes `/etc/openneko` and the control folder
-inaccessible to serve. Both services run with umask 0007.
+The agent does not run in either service. Serve starts a confined runner
+for each agent turn. The runner opens no socket, runs no program and reads
+only the folders of its turn and the time zone data. Its environment holds only `PATH` and
+`TMPDIR`. See [Agent confinement](#agent-confinement-linux). On a kernel
+that cannot confine it, serve refuses every agent turn until an admin turns
+them on without confinement.
 
 Before each start, web runs the database check, the migrations and serve's
 credentials step. Put extra settings for a service in
@@ -1472,9 +1477,8 @@ files as root.
   in web (`apps/openneko/internal/webfront/hostcalls.go`).
 - Model keys go only in web: Admin, Settings, Models. Put no `*_API_KEY`
   in `serve.env` ([Model keys](#model-keys)).
-- `server-install` makes the key door folder `/var/lib/openneko/shared/door`:
-  owner `openneko`, group `openneko-shared`, mode 2750. Both units get
-  `OPENNEKO_KEY_DOOR_SOCKET`.
+- `server-install` makes the key door folder `/var/lib/openneko/shared/door`,
+  mode 700. Both units get `OPENNEKO_KEY_DOOR_SOCKET`.
 - `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY` go in both files.
   `openneko serve` sends the agent's terminal commands to the sandbox
   (`apps/openneko/internal/cli/serve.go`). `openneko web` runs workflow
@@ -1483,23 +1487,20 @@ files as root.
   `workspace.go`). The logs are `/var/lib/openneko/control/logs/web.log` and
 `/var/lib/openneko/agent/logs/serve.log`.
 - `server-install` makes the sandbox socket folder `/run/openneko-sandbox`:
-  owner root, group `openneko-shared`, mode 0750 (with `--one-user`, owner
-  and group `openneko`, mode 0700). It writes
+  owner and group `openneko`, mode 0700. It writes
   `/etc/tmpfiles.d/openneko-sandbox.conf`, so systemd makes the folder again
   at each boot. Start the sandbox with
   `share/openneko/sandbox/compose.native.yml`, `OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox`
-  and `OPENNEKO_SANDBOX_GID` set to the group ID of `openneko-shared` (with
-  `--one-user`, of `openneko`), so that both services can connect. The
+  and `OPENNEKO_SANDBOX_GID=$(id -g openneko)`, so that both services can connect. The
   folder stays apart from `/var/lib/openneko/shared/run`, which holds
   serve's sockets. An install from an earlier release gets the folder when
   you run `server-install` again.
 
-`server-install` options: `--database-url`, `--port` (3000), `--bind`
+`server-install` options: `--database-url`, `--user` (`openneko`), `--port` (3000), `--bind`
 (0.0.0.0), `--public-url`, `--sandbox-dir` (`/run/openneko-sandbox`),
-`--tmpfiles-dir` (`/etc/tmpfiles.d`), `--start` (start both services and wait until web
-answers), and `--one-user`, which runs both
-services as the `openneko` user with no agent-zone user. A second run of
-`server-install` keeps the data and sets the given values again.
+`--tmpfiles-dir` (`/etc/tmpfiles.d`) and `--start` (start both services and wait until web
+answers). A second run of `server-install` keeps the data and sets the given
+values again.
 
 On a server install, the usual commands find `/etc/openneko/server.json` and
 act on the two services. Set `OPENNEKO_SERVER_FILE` when you gave
@@ -1511,13 +1512,22 @@ act on the two services. Set `OPENNEKO_SERVER_FILE` when you gave
 | `openneko status` | root or `openneko` | the state of each unit, then a check that serve and web answer |
 | `sudo openneko logs [serve\|web]` | root | `serve.log` and `web.log`; `-f` follows them |
 | `sudo openneko doctor` | root | the native checks, the owner and mode of each folder, and whether the units match what `server-install` writes |
-| `sudo openneko backup` | root | the config folder, the data folders of both zones and the database, to `/var/lib/openneko/control/openneko/backups` |
-| `sudo openneko restore <file> --confirm RESTORE` | root | stops the services, restores, gives each file the owner of its folder, and starts the services again if they ran |
+| `sudo openneko backup` | root | the config folder, the data folders and the database, to `/var/lib/openneko/control/openneko/backups` |
+| `sudo openneko restore <file> --confirm RESTORE` | root | stops the services, restores, gives each file to the `openneko` user, and starts the services again if they ran |
 | `sudo openneko upgrade` | root | a backup, then a new executable, web folder, packs and skills in `/opt/openneko`, then the release's folders and units and `systemctl daemon-reload`, then a start if the services ran |
 
-The agent-zone user cannot read `server.json`, so each command refuses it.
-A backup of a one-user native install restores into a server install, and
-the reverse: the backup names each data folder, not its path.
+A backup of a native install for your own user restores into a server
+install, and the reverse: the backup names each data folder, not its path.
+
+An install from a 6.0.0 pre-release can have two system users,
+`openneko-agent` and the group `openneko-shared`. Upgrade it with the new
+release's own executable: `sudo sh install-native.sh --upgrade`. The upgrade
+gives every folder to `openneko`, rewrites both units and `server.json`,
+and prints how to remove the old user and group. It does not remove them.
+`server-install` of the new release does the same move.
+Before you remove the group, start the sandbox again with
+`OPENNEKO_SANDBOX_GID=$(id -g openneko)`. Until the upgrade, `openneko
+doctor` reports the two users as a failure.
 
 A native install runs no Node.js. `openneko web` serves the static web app,
 answers every `/api/v1/*` and `/api/*` route (including `POST /api/v1/settings/finish`),
