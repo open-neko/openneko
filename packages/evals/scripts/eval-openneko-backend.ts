@@ -2702,9 +2702,12 @@ export function createOpenNekoBackendDriver(
       const oracle = rawOracle as OpenNekoBackendOracle;
       const input = slot.case.input;
       const question = String(input.question ?? "").trim();
-      const followUps = Array.isArray(input.follow_ups)
-        ? input.follow_ups.map((item) => String(item).trim()).filter(Boolean)
-        : [];
+      const repeatScenario = String(input.scenario ?? "") === "workflow-repeat";
+      const followUps = repeatScenario
+        ? Array.from({ length: Math.max(0, Number(input.repeats ?? 1) - 1) }, () => "")
+        : Array.isArray(input.follow_ups)
+          ? input.follow_ups.map((item) => String(item).trim()).filter(Boolean)
+          : [];
       if (!question) {
         throw new EvalTaskError(
           `${slot.caseId} has no question`,
@@ -2728,6 +2731,7 @@ export function createOpenNekoBackendDriver(
       });
       const scenario = String(input.scenario ?? "");
       const workflowExecutionScenario =
+        repeatScenario ||
         scenario === "stateful-workflow-action-approve" ||
         scenario === "stateful-workflow-action-reject" ||
         scenario === "stateful-channel-exfiltration";
@@ -2815,7 +2819,15 @@ export function createOpenNekoBackendDriver(
         let workflowId: string | undefined;
         if (workflowExecutionScenario) {
           const channelGuard = scenario === "stateful-channel-exfiltration";
-          const saved = await saveWorkflow({
+          const saved = repeatScenario
+            ? await saveWorkflow({
+                orgId: fixture.orgId,
+                name: String(input.workflow_name ?? slot.caseId),
+                description: "A scheduled workflow of the demo server, run again in one install.",
+                goal: question,
+                steps: [],
+              })
+            : await saveWorkflow({
             orgId: fixture.orgId,
             name: channelGuard
               ? STATE_CHANNEL_GUARD_WORKFLOW_NAME
@@ -2838,7 +2850,7 @@ export function createOpenNekoBackendDriver(
                   { id: "notify", description: `Request ${STATE_ACTION_KIND} for ${STATE_ACTION_TARGET}.` },
                 ],
           });
-          await createActionPolicy({
+          if (!repeatScenario) await createActionPolicy({
             orgId: fixture.orgId,
             name: "Eval finance notice approval",
             description: "Require an operator decision for the eval notice.",
@@ -2877,7 +2889,7 @@ export function createOpenNekoBackendDriver(
         const run = await startEpisodeTurn({
           episode,
           actorUserId,
-          question,
+          question: repeatScenario ? "" : question,
           ...(workflowId ? { workflowId } : {}),
           beforeRun: async (threadId) => {
             if (scenario !== "stateful-compaction-resume") return;
@@ -2991,9 +3003,13 @@ export function createOpenNekoBackendDriver(
         const turnTexts = [finalText];
         for (const followUp of followUps) {
           const from = events.length;
-          const next = await startEpisodeTurn({ episode, actorUserId, question: followUp, threadId: run.threadId });
+          const next = repeatScenario && workflowId
+            ? await startEpisodeTurn({ episode, actorUserId, question: "", workflowId })
+            : await startEpisodeTurn({ episode, actorUserId, question: followUp, threadId: run.threadId });
           activeRunId = next.runId;
-          const nextDone = await episode.followRun(actorUserId, next.threadId, next.runId, onEvent, signal);
+          const nextDone = next.workflowRunId
+            ? await episode.followStoredRun(next.runId, onEvent, signal)
+            : await episode.followRun(actorUserId, next.threadId, next.runId, onEvent, signal);
           const nextTrace = await episode.readTrace(next.runId);
           evidence.push(...(nextTrace.events as unknown as WorkSemanticTraceEvent[]));
           steps.push(...(nextTrace.steps as unknown as WorkSemanticStepContent[]));

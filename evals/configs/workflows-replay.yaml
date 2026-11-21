@@ -1,6 +1,6 @@
 schema_version: openneko.eval/v1
 id: workflows-replay
-description: The two daily workflows of the demo server, replayed as eight days. Ax on Gemini 3.8 Flash.
+description: The two daily workflows of the demo server, each run six times in one install. Ax on Gemini 3.8 Flash.
 adapter: openneko.work-backend
 semantics: { ref: ../semantics.yaml }
 pricing: { ref: ../pricing/gemini-3.8-flash-2026-09-13.yaml }
