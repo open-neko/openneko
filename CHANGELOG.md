@@ -115,6 +115,8 @@
 * `install-native.ps1` keeps the entries of your user `PATH` as they are, for example `%USERPROFILE%\bin` unexpanded, when it adds OpenNeko's `bin` folder. Before, it wrote every entry back expanded.
 * **Breaking:** the sandbox refuses to listen on TCP with an `OPENNEKO_SANDBOX_KEY` shorter than 32 characters. This affects `compose.desktop.yml`; make a key with `openssl rand -hex 32`.
 * The sandbox client takes `unix:/path` and `unix://host/path` again, as in 5.0.0, beside `unix:///path`.
+* **Breaking:** the sandbox does not start without `OPENNEKO_SANDBOX_KEY`, also on a Unix socket, and only a request with the key opens a run. Before, a sandbox with no key took a request with no `Authorization` as the control side. `recipes/sandbox/compose.yml` now stops with one line when the key is not set; make one with `openssl rand -hex 32`.
+* Each agent runner limits its CPU time to the turn's deadline, its address space to 8 GiB, a file to 128 MiB, its open files to 1024 and its new threads to 256, and cannot raise a limit. Web copies a runner's artifact only up to 128 MiB and a skill file up to 16 MiB, and skips a sparse file with one log line.
 
 ### Upgrade from 5.0.0
 

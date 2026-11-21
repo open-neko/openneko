@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -40,12 +41,8 @@ func status(t *testing.T, c *testClient, method, path string, body any) int {
 }
 
 func TestARunTokenCannotChooseTheEgress(t *testing.T) {
-	for _, key := range []string{"", "control-side-" + strings.Repeat("k", 32)} {
-		name := "keyless"
-		if key != "" {
-			name = "keyed"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, key := range []string{"control-side-" + strings.Repeat("k", 32)} {
+		t.Run("keyed", func(t *testing.T) {
 			server, socket := startSandboxWith(t, false, func(s *Server) { s.Key = key })
 			control := newClient(socket)
 			control.key = key
@@ -101,5 +98,24 @@ func TestARunTokenCannotChooseTheEgress(t *testing.T) {
 				t.Errorf("the token outlived its run: %v", err)
 			}
 		})
+	}
+}
+
+// TestOnlyTheKeyIsTheControlSide: a sandbox with no key does not start, and
+// a request with no Authorization opens no run.
+func TestOnlyTheKeyIsTheControlSide(t *testing.T) {
+	if l, err := (&Server{}).listen("unix://" + filepath.Join(shortSocketDir(t), "s.sock")); err == nil {
+		l.Close()
+		t.Fatal("a sandbox with no key listened")
+	} else if !strings.Contains(err.Error(), "set OPENNEKO_SANDBOX_KEY") {
+		t.Fatalf("the refusal = %v", err)
+	}
+	_, socket := startSandbox(t, false)
+	for _, key := range []string{"", "not-the-key"} {
+		c := newClient(socket)
+		c.key = key
+		if got := status(t, c, http.MethodPost, "/v2/runs/"+c.run, egressBody{Org: "org-1", Label: "x"}); got != http.StatusUnauthorized {
+			t.Errorf("a request with key %q opened a run: status %d", key, got)
+		}
 	}
 }

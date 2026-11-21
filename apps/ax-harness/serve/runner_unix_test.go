@@ -48,7 +48,7 @@ func TestMain(m *testing.M) {
 		runnerRun = hostileSandbox
 	case "door-only":
 		os.Exit(checkDoorOnly())
-	case "hostile-exit", "hostile-hold", "hostile-broker", "hostile-orphan":
+	case "hostile-exit", "hostile-hold", "hostile-broker", "paced-broker", "hostile-orphan":
 		hostileRunner(os.Getenv(runnerChildEnv))
 	}
 	if err := RunRunner(context.Background(), nil); err != nil {

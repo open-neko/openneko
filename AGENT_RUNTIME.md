@@ -530,8 +530,17 @@ serve; the Windows runner waits for the Windows probe.
 ### The runner confines itself (Linux)
 
 On Linux, the runner reads its setup frame and the turn's start frame, then
-confines itself for good, before any agent code runs:
+limits and confines itself for good, before any agent code runs:
 
+- Limits, each set as both soft and hard limit, so the runner cannot raise
+  them: CPU time up to the turn's deadline (`timeout_ms`, at most 30
+  minutes, plus one minute); 8 GiB of address space; a file of at most
+  128 MiB, the most that one sandbox command may return; 1024 open files;
+  and `RLIMIT_NPROC` at the account's task count at the start of the turn
+  plus 256. The kernel counts `RLIMIT_NPROC` over every task of the account,
+  so a thread flood stops in the runner and the account keeps room for web
+  and serve. The kernel does not apply `RLIMIT_NPROC` to root: run
+  OpenNeko as another user, or the status page names the gap.
 - Landlock keeps read and write on the folders of its turn only (the
   workspace, the uploads, the skills, the run folder and the artifacts, all
   in the turn's staged folder) and read on the time zone files. It keeps no
@@ -542,16 +551,21 @@ confines itself for good, before any agent code runs:
   `EPERM`:
   - sockets: `socket`, `socketpair`, `connect`, `bind`, `listen`,
     `sendmsg`, `sendmmsg`, and `sendto` with a destination address;
-  - new processes: `fork`, `vfork`, `clone` without `CLONE_THREAD` or with
-    a namespace flag, `unshare`, `setns`;
+  - new processes and groups: `fork`, `vfork`, `clone` without
+    `CLONE_THREAD` or with a namespace flag, `unshare`, `setns`,
+    `setpgid`, `setsid`, and `prctl` `PR_SET_PDEATHSIG`;
   - the reach into other processes: `ptrace`, `process_vm_readv`,
     `process_vm_writev`, `kcmp`, `pidfd_getfd`, `process_madvise`,
     `get_robust_list`, `migrate_pages`, `move_pages`;
   - signals: `kill`, `tkill`, `pidfd_send_signal`, `rt_sigqueueinfo`,
-    `rt_tgsigqueueinfo`, and `fcntl` `F_SETOWN`, `F_SETOWN_EX`,
-    `F_SETSIG`, `F_SETLEASE` and `F_NOTIFY`;
-  - scheduling: `sched_setscheduler`, `sched_setparam`, `sched_setattr`,
-    `ioprio_set`; `prlimit64` and `sched_setaffinity` on another process,
+    `rt_tgsigqueueinfo`; `fcntl` `F_SETOWN`, `F_SETOWN_EX`, `F_SETSIG`,
+    `F_SETLEASE`, `F_NOTIFY` and `F_SETFL` with `O_ASYNC`; and the ioctls
+    `FIOSETOWN`, `SIOCSPGRP` and `FIOASYNC`;
+  - shared memory and queues: `shmget`, `shmat`, `shmctl`, the `msg*` and
+    `sem*` calls and the `mq_*` calls;
+  - scheduling and limits: `sched_setscheduler`, `sched_setparam`,
+    `sched_setattr`, `ioprio_set`, `setrlimit`; `prlimit64` on another
+    process or with a new limit, `sched_setaffinity` on another process,
     and `setpriority` on anything but itself;
   - file changes that Landlock does not check: `truncate` by path,
     `chmod`, `fchmodat`, `fchmodat2`, the `chown` family, `utime`,
@@ -577,7 +591,8 @@ confines itself for good, before any agent code runs:
   `ENOSYS` rule closes calls that a later kernel adds.
 
 So the runner holds the two sockets that serve passed and the connections
-that the broker passes, and can open no other. It starts threads only, no
+that the broker passes, and can open no other. The broker passes at most
+1024 connections a minute to a turn and ends a turn that asks for more. It starts threads only, no
 process. It reaches no file of another turn, the config folder or the home
 folder, and cannot read, trace, signal or reschedule serve or web, or change
 the mode, owner, times or attributes of a file outside its folders.
@@ -607,7 +622,13 @@ Proof tests (`apps/openneko/internal/cli/runner_confine_linux_test.go`):
 signal, pidfd, scheduling, metadata, watch and datagram checks, inside a
 real runner that serve starts, in a one-account layout. It runs them unconfined as a control, confined at the
 kernel's ABI and with the ABI capped at 1, and with Landlock or seccomp
-left out, which must fail named checks. `TestConfinedServeDoesItsWork`
+left out, which must fail named checks. It also checks each limit, and
+with the limits left out each limit check must fail.
+`TestRunnerThreadFloodStaysInTheRunner` floods threads in a runner: with
+the limits left out the runner starts 400 threads; with them it stops, and
+the account still starts threads. Web reads a file that a runner wrote
+only up to its limit (an artifact 128 MiB, a skill file 16 MiB) and
+refuses a sparse file with one line (`TestRunnerFilesAreReadWithALimit`). `TestConfinedServeDoesItsWork`
 (`internal/webfront`) runs a whole turn with a fake model through the door
 descriptor in a confined runner.
 
@@ -629,7 +650,8 @@ libSystem, with no cgo). The profile is built for each turn from the same
 
 It allows no network rule, no fork, no program to run and no Mach service.
 So the runner holds the two sockets that serve passed and the connections
-that the broker passes, and can open no other. It cannot read another
+that the broker passes, and can open no other. The broker passes at most
+1024 connections a minute to a turn and ends a turn that asks for more. It cannot read another
 turn's files, the config folder or the home folder, and cannot signal serve
 or web or read their environment. macOS matches rules on the resolved path,
 so each path goes in the profile both as named and resolved (`/var` and

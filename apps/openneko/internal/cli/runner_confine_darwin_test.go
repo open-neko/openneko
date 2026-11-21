@@ -291,3 +291,8 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 		t.Fatalf("doctor on this Mac:\n%s", out.String())
 	}
 }
+
+// floodThreads runs on Linux only: macOS has no per-process thread cap.
+func floodThreads(int) int { return 0 }
+
+func removeProbeLeftovers(runnerProbeIn) {}
