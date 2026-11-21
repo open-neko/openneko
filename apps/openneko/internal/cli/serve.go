@@ -48,7 +48,7 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			in := networkStart{TokenKey: key, DatabaseURL: dsn, Addr: addr, FilesDir: filesDir, IndexDir: indexDir, DuckDB: duckdb,
-				CheckSocket: checkSocket, GraphJinConfig: gjConfig, GraphJinAddr: gjAddr, SubscriptionsDir: subsDir, FileStore: filestore.FromEnv(filesDir)}
+				CheckSocket: checkSocket, GraphJinConfig: gjConfig, GraphJinAddr: gjAddr, SubscriptionsDir: subsDir, FileStore: filestore.FromEnv(filesDir), GraphJinSecrets: graphJinSecrets()}
 			sandboxSocket, _ := sandbox.SocketPath(sandboxURL)
 			if err := networkSocketFolder(checkSocket, agentSocket, keydoor.SocketPath(os.Getenv, agentSocket), sandboxSocket, webAdminSocket()); err != nil {
 				return err

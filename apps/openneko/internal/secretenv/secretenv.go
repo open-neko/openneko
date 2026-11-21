@@ -91,3 +91,52 @@ func ReadHanded(r io.Reader) error {
 	Hand(values)
 	return nil
 }
+
+// SecretName tells whether a variable can hold a secret value: a key, a
+// token, a password, a login, a database URL, or an OTLP header.
+func SecretName(name string) bool {
+	upper := strings.ToUpper(name)
+	if strings.HasPrefix(upper, "OTEL_") && strings.Contains(upper, "HEADERS") {
+		return true
+	}
+	for _, part := range []string{"KEY", "TOKEN", "SECRET", "PASS", "CREDENTIAL", "DATABASE_URL", "DSN", "AUTH"} {
+		if strings.Contains(upper, part) {
+			return true
+		}
+	}
+	return false
+}
+
+// Split moves the secret-named variables of env into a map.
+func Split(env []string) ([]string, map[string]string) {
+	clean := make([]string, 0, len(env))
+	secrets := map[string]string{}
+	for _, kv := range env {
+		name, value, _ := strings.Cut(kv, "=")
+		if SecretName(name) {
+			secrets[name] = value
+			continue
+		}
+		clean = append(clean, kv)
+	}
+	return clean, secrets
+}
+
+// HandedWith returns the handed values whose names match keep.
+func HandedWith(keep func(name string) bool) map[string]string {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := map[string]string{}
+	for k, v := range handed {
+		if keep(k) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// Line is the JSON line that ReadHanded reads.
+func Line(values map[string]string) []byte {
+	raw, _ := json.Marshal(values)
+	return append(raw, '\n')
+}

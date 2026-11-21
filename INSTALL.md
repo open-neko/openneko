@@ -557,10 +557,18 @@ itself ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-maco
 
 On macOS, a confined runner or network part can still read the arguments
 and environment of every process of the same account: Seatbelt does not
-check that read. Keep secrets out of the environment of the shell that runs
-`openneko start`. Give the database URL with `--database-url` and the
-provider keys in Admin, Settings, so that OpenNeko keeps them in its config
-folder.
+check that read. So no OpenNeko process keeps a secret there:
+
+- `openneko start` replaces itself with the supervisor, which has neither
+  `--database-url` in its arguments nor a secret-named variable of the
+  shell in its environment. It gets them on stdin.
+- Web and serve get their secrets on stdin at each start. The network part
+  gets the bucket login and the AWS login in its start line, and the
+  customer GraphJin gets the secret `GJ_*` and `OTEL_*` header variables on
+  its stdin.
+
+Other programs that you run as the OpenNeko account are not covered. Run
+OpenNeko as an account of its own on a shared Mac.
 
 ### Agent confinement (Windows)
 

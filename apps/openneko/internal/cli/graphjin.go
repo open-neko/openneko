@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -37,13 +38,17 @@ func newGraphjinServeCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if asChild {
+				stdin := bufio.NewReader(os.Stdin)
+				if err := setHandedEnv(stdin); err != nil {
+					return err
+				}
 				go func() {
-					_, _ = io.Copy(io.Discard, os.Stdin)
+					_, _ = io.Copy(io.Discard, stdin)
 					stop()
 				}()
 				return gjhost.Serve(ctx, file, addr, cmd.ErrOrStderr())
 			}
-			return (&gjhost.Supervisor{ConfigFile: file, Addr: addr, Log: cmd.ErrOrStderr(), Command: gjhost.SelfCommand(file)}).Run(ctx)
+			return (&gjhost.Supervisor{ConfigFile: file, Addr: addr, Log: cmd.ErrOrStderr(), Command: gjhost.SelfCommand(file), Secrets: gjhost.ChildSecrets(os.Environ())}).Run(ctx)
 		},
 	}
 	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml)")
@@ -51,6 +56,28 @@ func newGraphjinServeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asChild, "child", false, "Run one engine and exit when stdin closes; the supervisor uses it")
 	_ = cmd.Flags().MarkHidden("child")
 	return cmd
+}
+
+// setHandedEnv sets the variables of the line that the supervisor writes
+// first on the child's stdin. A variable set here is not in the environment
+// block that the OS shows to another process; GraphJin reads it through
+// os.Getenv.
+func setHandedEnv(r *bufio.Reader) error {
+	line, err := r.ReadBytes('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("read the GraphJin secrets on stdin: %w", err)
+	}
+	var values map[string]string
+	if err := json.Unmarshal(line, &values); err != nil {
+		return fmt.Errorf("read the GraphJin secrets on stdin: %w", err)
+	}
+	clear(line)
+	for k, v := range values {
+		if err := os.Setenv(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newGraphjinCheckCmd() *cobra.Command {
