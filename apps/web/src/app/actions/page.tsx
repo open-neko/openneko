@@ -439,7 +439,7 @@ function ActionReadingPane({
 
         {action.target && (
           <div className="mt-4">
-            <div className="text-ui-caption font-semibold text-text3 mb-1.5">Target</div>
+            <div className="text-ui-caption font-semibold text-text3 mb-1.5">The agent&apos;s target</div>
             <code className="font-mono text-ui-caption text-text2 break-all">{action.target}</code>
           </div>
         )}

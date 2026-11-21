@@ -355,7 +355,7 @@ func (a *API) approvals(w http.ResponseWriter, r *http.Request) {
 	for _, o := range all {
 		if visible(o.Kind, o.Scope, workflowIDOf(o.Workflow)) {
 			payload, _ := jsParse(o.Payload)
-			facts := buildApprovalFacts(o.Kind, o.Target, payload, domains, known)
+			facts := buildApprovalFacts(o.Kind, payload, domains, known)
 			o.Facts = &facts
 			actions = append(actions, o)
 		}

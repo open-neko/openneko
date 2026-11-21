@@ -108,6 +108,28 @@ func (p replyPlaces) private(place string) bool {
 	return !slices.Contains(p.Places, place)
 }
 
+// slackPlaceProblem applies the org's Slack answer rule to a pack action
+// that posts to a channel: data goes to a shared channel only where the
+// rule lets answers go.
+func (a *API) slackPlaceProblem(ctx context.Context, orgID, kind string, body any) error {
+	if !strings.HasPrefix(kind, "slack.") {
+		return nil
+	}
+	channel, _ := jsGet(body, "channel").(string)
+	channel = strings.TrimSpace(channel)
+	if channel == "" || strings.HasPrefix(channel, "D") || strings.HasPrefix(channel, "U") || strings.HasPrefix(channel, "W") {
+		return nil
+	}
+	rules, err := a.channelReplyRules(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	if !rules.Slack.private(channel) {
+		return nil
+	}
+	return fmt.Errorf("pack action %s: the org's Slack answer rule keeps data out of the channel %s. An admin lists the channel at Admin, Settings, Channels, or the message goes to one person by user ID", kind, channel)
+}
+
 // answersPrivately says whether a send to this recipient goes to one person
 // in place of the group chat.
 func (a *API) answersPrivately(ctx context.Context, orgID, channel string, recipient json.RawMessage) (bool, error) {
