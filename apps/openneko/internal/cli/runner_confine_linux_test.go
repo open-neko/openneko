@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -31,6 +33,7 @@ const fOwnerPID = 1
 
 func setProbeMode(in runnerProbeIn) {
 	confine.SetForTest(in.ABI, in.Mode == "seccomp", in.Mode == "landlock")
+	serve.SetRunnerLimitsOff(strings.HasSuffix(in.Mode, "nolimits"))
 	probeGram, _ = unix.Socket(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 }
 
@@ -185,6 +188,56 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 	if _, err := os.Stat("/dev/log"); err == nil {
 		refused("send to /dev/log", sendUnixgram("/dev/log"))
 	}
+	if probeGram < 0 {
+		for _, what := range []string{"make web the owner of a socket (FIOSETOWN)", "make web the owner of a socket (SIOCSPGRP)",
+			"turn on signal-driven I/O (F_SETFL O_ASYNC)", "turn on signal-driven I/O (FIOASYNC)"} {
+			refused(what, nil)
+		}
+	} else {
+		parent := int32(in.Parent)
+		refused("make web the owner of a socket (FIOSETOWN)", ioctlPtr(probeGram, 0x8901, unsafe.Pointer(&parent)))
+		refused("make web the owner of a socket (SIOCSPGRP)", ioctlPtr(probeGram, unix.SIOCSPGRP, unsafe.Pointer(&parent)))
+		_, err = unix.FcntlInt(uintptr(probeGram), unix.F_SETFL, unix.O_ASYNC|unix.O_NONBLOCK)
+		refused("turn on signal-driven I/O (F_SETFL O_ASYNC)", err)
+		on := int32(1)
+		refused("turn on signal-driven I/O (FIOASYNC)", ioctlPtr(probeGram, 0x5452, unsafe.Pointer(&on)))
+		_, _ = unix.FcntlInt(uintptr(probeGram), unix.F_SETFL, unix.O_NONBLOCK)
+	}
+	_, err = unix.FcntlInt(uintptr(probeGram), unix.F_SETFL, unix.O_NONBLOCK)
+	out.Allowed["set O_NONBLOCK (F_SETFL)"] = probeGram < 0 || err == nil
+	shm, err := unix.SysvShmGet(unix.IPC_PRIVATE, 4096, unix.IPC_CREAT|0o600)
+	if err == nil {
+		_, _ = unix.SysvShmCtl(shm, unix.IPC_RMID, nil)
+	}
+	refused("create shared memory (shmget)", err)
+	seg, err := unix.SysvShmAttach(in.Shm, 0, 0)
+	if err == nil {
+		_ = unix.SysvShmDetach(seg)
+	}
+	refused("attach web's shared memory (shmat)", err)
+	refused("create a message queue (msgget)", sysvCreate(unix.SYS_MSGGET, unix.SYS_MSGCTL, 0))
+	refused("create a semaphore set (semget)", sysvCreate(unix.SYS_SEMGET, unix.SYS_SEMCTL, 1))
+	refused("open a POSIX message queue (mq_open)", posixQueue(probeQueue(in.Parent)))
+	refused("change its parent-death signal (prctl)", unix.Prctl(unix.PR_SET_PDEATHSIG, 0, 0, 0, 0))
+	_ = unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0)
+	webGroup, _ := unix.Getpgid(in.Parent)
+	err = unix.Setpgid(0, webGroup)
+	if err == nil {
+		_ = unix.Setpgid(0, 0)
+	}
+	refused("leave its process group (setpgid)", err)
+	err = unix.Setpgid(0, webGroup)
+	if err == nil {
+		_, err = unix.Setsid()
+	}
+	refused("start a session of its own (setsid)", err)
+	var files unix.Rlimit
+	_ = unix.Getrlimit(unix.RLIMIT_NOFILE, &files)
+	refused("set a limit (prlimit64)", unix.Prlimit(0, unix.RLIMIT_NOFILE, &files, nil))
+	_, _, e := unix.Syscall(unix.SYS_SETRLIMIT, unix.RLIMIT_NOFILE, uintptr(unsafe.Pointer(&files)), 0)
+	refused("set a limit (setrlimit)", errnoErr(e))
+
+	out.Limited = runnerLimits(workspace, in.NProc)
 	tool := filepath.Join(workspace, "tool")
 	err = copyFile("/bin/true", tool)
 	if err == nil {
@@ -205,6 +258,102 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 	out.Allowed["truncate a workspace file through its descriptor"] = err == nil
 	out.Allowed["reach the key door through the broker"] = keyDoorAnswers(&out)
 	return out
+}
+
+func ioctlPtr(fd int, req uint, arg unsafe.Pointer) error {
+	_, _, e := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(req), uintptr(arg))
+	return errnoErr(e)
+}
+
+func sysvCreate(get, ctl uintptr, nsems uintptr) error {
+	args := []uintptr{unix.IPC_PRIVATE, unix.IPC_CREAT | 0o600}
+	if nsems > 0 {
+		args = []uintptr{unix.IPC_PRIVATE, nsems, unix.IPC_CREAT | 0o600}
+	}
+	var id uintptr
+	var e syscall.Errno
+	if len(args) == 2 {
+		id, _, e = unix.Syscall(get, args[0], args[1], 0)
+	} else {
+		id, _, e = unix.Syscall(get, args[0], args[1], args[2])
+	}
+	if e != 0 {
+		return e
+	}
+	if nsems > 0 {
+		_, _, _ = unix.Syscall6(ctl, id, 0, unix.IPC_RMID, 0, 0, 0)
+	} else {
+		_, _, _ = unix.Syscall(ctl, id, unix.IPC_RMID, 0)
+	}
+	return nil
+}
+
+// probeQueue is the queue name of a probe. Landlock refuses the open after
+// the kernel made the queue, so the test removes it after each probe.
+func probeQueue(parent int) string { return fmt.Sprintf("openneko-probe-%d", parent) }
+
+func removeProbeLeftovers(in runnerProbeIn) { removeQueue(probeQueue(in.Parent)) }
+
+func removeQueue(name string) {
+	p, _ := unix.BytePtrFromString(name)
+	_, _, _ = unix.Syscall(unix.SYS_MQ_UNLINK, uintptr(unsafe.Pointer(p)), 0, 0)
+}
+
+func posixQueue(queue string) error {
+	name, _ := unix.BytePtrFromString(queue)
+	fd, _, e := unix.Syscall6(unix.SYS_MQ_OPEN, uintptr(unsafe.Pointer(name)), unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC, 0o600, 0, 0, 0)
+	if e != 0 {
+		return e
+	}
+	unix.Close(int(fd))
+	_, _, _ = unix.Syscall(unix.SYS_MQ_UNLINK, uintptr(unsafe.Pointer(name)), 0, 0)
+	return nil
+}
+
+// runnerLimits tells, for each limit, whether it holds in this runner.
+func runnerLimits(workspace string, nproc uint64) map[string]bool {
+	out := map[string]bool{}
+	big := filepath.Join(workspace, "big")
+	f, err := os.Create(big)
+	if err == nil {
+		_, err = f.WriteAt([]byte("x"), sandbox.MaxTransfer)
+		f.Close()
+		os.Remove(big)
+	}
+	out["write past the file size limit"] = errors.Is(err, syscall.EFBIG)
+	m, err := unix.Mmap(-1, 0, 9<<30, unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS|unix.MAP_NORESERVE)
+	if err == nil {
+		_ = unix.Munmap(m)
+	}
+	out["map more than the address space limit"] = errors.Is(err, syscall.ENOMEM)
+	capped := func(resource int, most uint64) bool {
+		var l unix.Rlimit
+		return unix.Getrlimit(resource, &l) == nil && l.Cur == l.Max && l.Max <= most
+	}
+	out["open files capped at 1024"] = capped(unix.RLIMIT_NOFILE, 1024)
+	out["CPU time capped at the turn's deadline"] = capped(unix.RLIMIT_CPU, 31*60)
+	out["threads capped below web's limit"] = capped(unix.RLIMIT_NPROC, nproc-1)
+	return out
+}
+
+// floodThreads pins goroutines to threads until the process has n threads,
+// as native code that floods threads would. It returns the count reached.
+// Each goroutine holds its own thread once it counts itself.
+func floodThreads(n int) int {
+	block := make(chan struct{})
+	var pinned atomic.Int64
+	for range n {
+		go func() {
+			runtime.LockOSThread()
+			pinned.Add(1)
+			<-block
+		}()
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for int(pinned.Load()) < n && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	return int(pinned.Load())
 }
 
 func errnoErr(e syscall.Errno) error {
@@ -326,6 +475,18 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 	if bus := fmt.Sprintf("/run/user/%d/bus", os.Getuid()); fileExists(bus) {
 		in.DBus = bus
 	}
+	shm, err := unix.SysvShmGet(unix.IPC_PRIVATE, 4096, unix.IPC_CREAT|0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = unix.SysvShmCtl(shm, unix.IPC_RMID, nil) })
+	in.Shm = shm
+	t.Cleanup(func() { removeQueue(probeQueue(in.Parent)) })
+	var nproc unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NPROC, &nproc); err != nil {
+		t.Fatal(err)
+	}
+	in.NProc = nproc.Max
 	return runnerTargets{in: in, workspace: workspace, tmp: tmp}
 }
 
@@ -384,6 +545,24 @@ func TestConfinedRunner(t *testing.T) {
 		if fileExists(tg.in.Outside) {
 			t.Errorf("%s: the confined runner wrote outside its folders", name)
 		}
+		if len(got.Limited) < 5 {
+			t.Errorf("%s: the runner checked %d limits", name, len(got.Limited))
+		}
+		for what, held := range got.Limited {
+			if !held {
+				t.Errorf("%s: the runner's limit did not hold: %s", name, what)
+			}
+		}
+	}
+
+	open, _ := runRunnerProbe(t, tg, "nolimits")
+	if len(open.Limited) != len(control.Limited) {
+		t.Fatalf("with no limits the runner checked %d limits, with them %d", len(open.Limited), len(control.Limited))
+	}
+	for what, held := range open.Limited {
+		if held {
+			t.Errorf("with no limits set, this still holds: %s: the check does not prove the limit", what)
+		}
 	}
 
 	noSeccomp, _ := runRunnerProbe(t, tg, "landlock")
@@ -394,7 +573,12 @@ func TestConfinedRunner(t *testing.T) {
 		"set the times of a file outside its folders (utimensat)", "set an attribute of a file outside its folders (setxattr)",
 		"set an attribute of a file outside its folders (lsetxattr)", "remove an attribute of a file outside its folders (removexattr)",
 		"watch the config folder (inotify)", "watch the config folder (fanotify)",
-		"send to a datagram socket outside its folders (sendto)", "send to a datagram socket outside its folders (sendmsg)", "make a socket pair"}
+		"send to a datagram socket outside its folders (sendto)", "send to a datagram socket outside its folders (sendmsg)", "make a socket pair",
+		"make web the owner of a socket (FIOSETOWN)", "make web the owner of a socket (SIOCSPGRP)",
+		"turn on signal-driven I/O (F_SETFL O_ASYNC)", "turn on signal-driven I/O (FIOASYNC)",
+		"create shared memory (shmget)", "attach web's shared memory (shmat)", "create a message queue (msgget)",
+		"create a semaphore set (semget)", "change its parent-death signal (prctl)",
+		"leave its process group (setpgid)", "start a session of its own (setsid)", "set a limit (prlimit64)", "set a limit (setrlimit)"}
 	for what := range legacy {
 		seccompOnly = append(seccompOnly, what)
 	}
@@ -408,6 +592,25 @@ func TestConfinedRunner(t *testing.T) {
 		if noLandlock.Refused[what] {
 			t.Errorf("with seccomp only, the runner still could not %s: the check does not prove Landlock", what)
 		}
+	}
+}
+
+// TestRunnerThreadFloodStaysInTheRunner floods threads in a confined
+// runner: the runner stops at its cap, and the account can still start
+// threads.
+func TestRunnerThreadFloodStaysInTheRunner(t *testing.T) {
+	requireRunnerConfinement(t)
+	tg := newRunnerTargets(t)
+	open, msg := runRunnerProbe(t, tg, "flood-nolimits")
+	if open.Threads < floodTarget {
+		t.Fatalf("with no limits the runner reached %d threads of %d (%s), so the check proves nothing", open.Threads, floodTarget, msg)
+	}
+	capped, msg := runRunnerProbe(t, tg, "flood")
+	if capped.Threads != 0 || !strings.Contains(msg, "stopped before the turn ended") {
+		t.Fatalf("the confined runner reached %d threads, turn error %q", capped.Threads, msg)
+	}
+	if got := floodThreads(64); got < 64 {
+		t.Fatalf("after the flood this account started too few threads: %d", got)
 	}
 }
 

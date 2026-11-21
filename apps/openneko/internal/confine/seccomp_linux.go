@@ -16,6 +16,10 @@ const (
 	// makes callers fall back to clone.
 	retENOSYS = unix.SECCOMP_RET_ERRNO | uint32(unix.ENOSYS)
 
+	// asm-generic values, the same on amd64 and arm64.
+	fioSetOwn = 0x8901
+	fioAsync  = 0x5452
+
 	argLow  = 16
 	argHigh = 20
 
@@ -23,8 +27,10 @@ const (
 		unix.CLONE_NEWUSER | unix.CLONE_NEWPID | unix.CLONE_NEWNET | unix.CLONE_NEWTIME
 )
 
-// refusedCalls open a socket, reach another process, signal it, change
-// the metadata of a file by path, watch a path, or widen the kernel surface.
+// refusedCalls open a socket, reach another process, signal it, share
+// memory or a queue with it, leave the runner's process group, raise a
+// limit, change the metadata of a file by path, watch a path, or widen the
+// kernel surface.
 // Landlock below ABI 9 cannot refuse a connect to a named socket, so the
 // runner opens no socket at all; no Landlock ABI covers metadata.
 var refusedCalls = []uintptr{
@@ -46,6 +52,10 @@ var refusedCalls = []uintptr{
 	unix.SYS_UNSHARE, unix.SYS_SETNS,
 	unix.SYS_BPF, unix.SYS_PERF_EVENT_OPEN, unix.SYS_USERFAULTFD,
 	unix.SYS_KEYCTL, unix.SYS_ADD_KEY, unix.SYS_REQUEST_KEY,
+	unix.SYS_SHMGET, unix.SYS_SHMAT, unix.SYS_SHMCTL, unix.SYS_MSGGET, unix.SYS_MSGSND, unix.SYS_MSGRCV, unix.SYS_MSGCTL,
+	unix.SYS_SEMGET, unix.SYS_SEMOP, unix.SYS_SEMTIMEDOP, unix.SYS_SEMCTL,
+	unix.SYS_MQ_OPEN, unix.SYS_MQ_UNLINK, unix.SYS_MQ_TIMEDSEND, unix.SYS_MQ_TIMEDRECEIVE, unix.SYS_MQ_NOTIFY, unix.SYS_MQ_GETSETATTR,
+	unix.SYS_SETPGID, unix.SYS_SETSID, unix.SYS_SETRLIMIT,
 }
 
 // newestKnownCall is the highest call number this build knows. A newer
@@ -65,14 +75,16 @@ func argRules(pid uint32) map[uintptr][]cond {
 	return map[uintptr][]cond{
 		unix.SYS_TGKILL:            {{arg: 0, values: []uint32{pid}}},
 		unix.SYS_PIDFD_OPEN:        {{arg: 0, values: []uint32{pid}}},
-		unix.SYS_PRLIMIT64:         {{arg: 0, values: []uint32{0, pid}}},
+		unix.SYS_PRLIMIT64:         {{arg: 0, values: []uint32{0, pid}}, {arg: 2, values: []uint32{0}}},
+		unix.SYS_PRCTL:             {{arg: 0, except: true, values: []uint32{unix.PR_SET_PDEATHSIG}}},
 		unix.SYS_SCHED_SETAFFINITY: {{arg: 0, values: []uint32{0, pid}}},
 		unix.SYS_SETPRIORITY:       {{arg: 0, values: []uint32{unix.PRIO_PROCESS}}, {arg: 1, values: []uint32{0, pid}}},
 		unix.SYS_UTIMENSAT:         {{arg: 1, values: []uint32{0}}},
 		unix.SYS_SENDTO:            {{arg: 4, values: []uint32{0}}},
 		unix.SYS_FCNTL: {{arg: 1, except: true, values: []uint32{
 			unix.F_SETOWN, unix.F_SETOWN_EX, unix.F_SETSIG, unix.F_SETLEASE, unix.F_NOTIFY}}},
-		unix.SYS_IOCTL: {{arg: 1, except: true, values: []uint32{unix.TIOCSTI, unix.TIOCLINUX}}},
+		unix.SYS_IOCTL: {{arg: 1, except: true, values: []uint32{unix.TIOCSTI, unix.TIOCLINUX,
+			fioSetOwn, unix.SIOCSPGRP, fioAsync}}},
 	}
 }
 
@@ -176,6 +188,16 @@ func runnerFilter(pid int) ([]unix.SockFilter, error) {
 		jump(jset, unix.CLONE_THREAD, 0, 1),
 		stmt(ret, retAllow),
 		stmt(ret, retEPERM),
+	)
+	// fcntl(F_SETFL) may not turn on O_ASYNC, which signals the owner.
+	p = append(p,
+		jump(jeq, unix.SYS_FCNTL, 0, 6),
+		stmt(ldAbs, argLow+8),
+		jump(jeq, unix.F_SETFL, 0, 3),
+		stmt(ldAbs, argLow+16),
+		jump(jset, unix.O_ASYNC, 0, 1),
+		stmt(ret, retEPERM),
+		stmt(ldAbs, 0),
 	)
 	rules := argRules(uint32(pid))
 	nrs := make([]uintptr, 0, len(rules))

@@ -46,6 +46,10 @@ const (
 // runnerTurnGrace lets web's own stop come first.
 var runnerTurnGrace = time.Minute
 
+// brokerWindow is the span in which a turn may ask for maxBrokerRequests
+// connections.
+var brokerWindow = time.Minute
+
 func socketPair() (parent, child *os.File, err error) {
 	syscall.ForkLock.RLock()
 	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
@@ -238,13 +242,17 @@ func killGroup(pid int) error {
 // connected descriptor.
 func (s *Server) serveBroker(ctx context.Context, broker *net.UnixConn, gate *sandbox.Gate) {
 	requests := bufio.NewReader(broker)
-	for n := 1; ; n++ {
+	since, n := time.Now(), 0
+	for {
 		line, err := requests.ReadString('\n')
 		if err != nil {
 			return
 		}
-		if n > maxBrokerRequests {
-			_, _ = broker.Write([]byte(fmt.Sprintf("-the turn asked for more than %d connections\n", maxBrokerRequests)))
+		if time.Since(since) >= brokerWindow {
+			since, n = time.Now(), 0
+		}
+		if n++; n > maxBrokerRequests {
+			_, _ = broker.Write([]byte(fmt.Sprintf("-the turn asked for more than %d connections in %s\n", maxBrokerRequests, brokerWindow)))
 			_ = broker.Close()
 			return
 		}
@@ -354,6 +362,46 @@ func (b *brokerClient) get(ctx context.Context, name string) (net.Conn, error) {
 	return net.FileConn(f)
 }
 
+// RunnerLimits bound what one runner may use. Each is a hard limit that the
+// runner sets on itself before it confines itself and cannot raise after.
+type RunnerLimits struct {
+	CPUSeconds   uint64
+	AddressSpace uint64
+	FileSize     uint64
+	OpenFiles    uint64
+	// Threads is how many more tasks of this account the runner may start.
+	Threads uint64
+}
+
+const (
+	runnerAddressSpace = 8 << 30
+	runnerOpenFiles    = 1024
+	runnerThreads      = 256
+)
+
+// runnerLimitsFor bounds CPU time by the turn's deadline and a file by what
+// one sandbox command may return.
+func runnerLimitsFor(spec json.RawMessage) RunnerLimits {
+	return RunnerLimits{
+		CPUSeconds:   uint64(runnerDeadline(spec) / time.Second),
+		AddressSpace: runnerAddressSpace,
+		FileSize:     sandbox.MaxTransfer,
+		OpenFiles:    runnerOpenFiles,
+		Threads:      runnerThreads,
+	}
+}
+
+var runnerLimitsOff bool
+
+// SetRunnerLimitsOff stops this process's agent runner from limiting itself,
+// so a proof test can show each limit holds. It panics outside a test binary.
+func SetRunnerLimitsOff(off bool) {
+	if !testing.Testing() {
+		panic("serve.SetRunnerLimitsOff works only in a test binary")
+	}
+	runnerLimitsOff = off
+}
+
 // runnerRun replaces the harness in a test's runner.
 var runnerRun func(context.Context, harness.Turn) (int, error)
 
@@ -409,6 +457,9 @@ func RunRunner(ctx context.Context, confine func(folders []string) error) error 
 			}
 			return confine(RunnerFolders(environ))
 		}
+	}
+	if !runnerLimitsOff {
+		srv.limit = func(spec json.RawMessage) error { return limitRunner(runnerLimitsFor(spec)) }
 	}
 	srv.defaults()
 	srv.handleStream(ctx, link, reader)

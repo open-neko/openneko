@@ -24,6 +24,9 @@ import (
 
 const runnerProbeEnv = "OPENNEKO_TEST_RUNNER_PROBE"
 
+// floodTarget is above the runner's thread cap of 256 more tasks.
+const floodTarget = 400
+
 type runnerProbeIn struct {
 	Mode                          string
 	ABI                           int
@@ -32,6 +35,8 @@ type runnerProbeIn struct {
 	Stream, Datagram, Abstract    string
 	Docker, DBus                  string
 	Parent                        int
+	Shm                           int
+	NProc                         uint64
 	ParentAddr                    uintptr
 	Loosen                        string
 }
@@ -55,7 +60,13 @@ func TestRunnerProbeChild(t *testing.T) {
 				workspace = v
 			}
 		}
-		b, _ := json.Marshal(runnerChecks(ctx, in, workspace))
+		var res probeResult
+		if strings.HasPrefix(in.Mode, "flood") {
+			res.Threads = floodThreads(floodTarget)
+		} else {
+			res = runnerChecks(ctx, in, workspace)
+		}
+		b, _ := json.Marshal(res)
 		_, err := turn.Out.Write(append(b, '\n'))
 		return 0, err
 	})
@@ -115,6 +126,7 @@ func runRunnerProbe(t *testing.T, tg runnerTargets, mode string) (probeResult, s
 		case "event":
 			_ = json.Unmarshal(f.Event, &res)
 		case "exit":
+			removeProbeLeftovers(in)
 			_ = os.Remove(in.Outside)
 			_ = os.Remove(filepath.Join(tg.workspace, "tool"))
 			_ = os.WriteFile(in.Victim, []byte("keep me"), 0o600)
@@ -140,6 +152,8 @@ type probeResult struct {
 	Notes   []string        `json:"notes"`
 	Refused map[string]bool `json:"refused"`
 	Allowed map[string]bool `json:"allowed"`
+	Limited map[string]bool `json:"limited"`
+	Threads int             `json:"threads"`
 }
 
 // webSecret stands for a secret in web's memory.

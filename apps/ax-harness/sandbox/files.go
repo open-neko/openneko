@@ -12,8 +12,11 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/internal/localtool"
 )
 
+// MaxTransfer is the most that one command's output files may add.
+const MaxTransfer = 128 << 20
+
 const (
-	maxTransfer = 128 << 20
+	maxTransfer = MaxTransfer
 	maxBody     = 192 << 20
 )
 

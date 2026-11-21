@@ -53,7 +53,7 @@ func TestRootComposeSetsPassComposeConfig(t *testing.T) {
 			}
 			cmd := exec.Command("docker", append(args, "config", "-q")...)
 			cmd.Dir = "../../.."
-			cmd.Env = cleanComposeEnv("OPENNEKO_VERSION=v6.0.0")
+			cmd.Env = cleanComposeEnv("OPENNEKO_VERSION=v6.0.0", "OPENNEKO_SANDBOX_KEY=k")
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Errorf("docker compose config: %v\n%s", err, out)
 			}

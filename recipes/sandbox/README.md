@@ -52,8 +52,10 @@ Earlier releases put `sandbox.sock` in `openneko-run`. On an upgrade,
 the sandbox, web and serve again with it. The old socket file stays in
 `openneko-run` with nothing listening on it.
 
-Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` to require a key on the
-socket as well.
+Set `OPENNEKO_SANDBOX_KEY` in the shell or in `.env` (for example
+`openssl rand -hex 32`). The sandbox does not start without it: only a
+request with the key opens a run, so another process that reaches the
+socket cannot.
 
 ## Run with a native install
 
@@ -310,15 +312,15 @@ or removed. OpenNeko writes them back into its own copy of the run.
 |---|---|---|
 | `GET /v2/health` | | `{"status":"ok"}`, no key needed |
 | `GET /v2/check` | | `{"status":"ok","egress":"closed"}` with the key, 401 without it. `egress` is `closed` or `open`. The status page uses it. |
-| `POST /v2/runs/{run}` | `org`, `label`, `hosts` | `{"token":"..."}`: the run's token. Only the control side (the key, or no `Authorization` on a sandbox without a key) opens a run. 409 when the run exists. |
+| `POST /v2/runs/{run}` | `org`, `label`, `hosts` | `{"token":"..."}`: the run's token. Only the control side (the key) opens a run. 409 when the run exists. |
 | `POST /v2/runs/{run}/exec` | `fresh` (true on the run's first command), `root`, `command`, `dir`, `skill_dir`, `env`, `timeout_seconds` (1 to 3600), `max_output` (1,000 to 1,000,000), `dirs`, `put` (`path`, `mode`, `data` in base64), `delete`, `egress` (`org`, `label`, `hosts`) | `exit_code`, `output`, `timed_out`, `truncated`, `dirs`, `changed` (`path`, `mode`, `data`), `deleted`, `skipped` (`path`, `reason`) |
 | `DELETE /v2/runs/{run}` | | 204 |
 
 `{run}` is `run-` and 8 to 64 letters or digits. Every path in the body
 and the answer is relative to the run's folder, with `/` between parts.
 `dir`, `skill_dir` and the `env` values must stay inside the run;
-`PYTHONPATH` takes a `:` list. With `OPENNEKO_SANDBOX_KEY` set, every
-request except health needs `Authorization: Bearer <key>`. A run's token
+`PYTHONPATH` takes a `:` list. The sandbox needs `OPENNEKO_SANDBOX_KEY`,
+and every request except health needs `Authorization: Bearer <key>`. A run's token
 allows only the exec and the end of that run. With the token, the run
 takes the egress list, org and label that the control side opened it
 with: an exec body with `egress` gets 403. When the sandbox no longer knows

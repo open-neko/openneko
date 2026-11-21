@@ -39,14 +39,10 @@ func pathRun(path string) (id string, exec bool) {
 	return rest, false
 }
 
-// authorize returns the request with its scope, or nil. The sandbox key, or
-// no Authorization at all on a sandbox without a key, is the control side.
+// authorize returns the request with its scope, or nil. Only the sandbox
+// key is the control side.
 func (s *Server) authorize(r *http.Request) *http.Request {
-	header := r.Header.Get("Authorization")
-	if s.Key == "" && header == "" {
-		return r
-	}
-	token, ok := strings.CutPrefix(header, "Bearer ")
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || token == "" {
 		return nil
 	}

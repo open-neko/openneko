@@ -26,6 +26,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/neko/apps/openneko/internal/testpg"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 type runningServe struct {
@@ -51,7 +52,7 @@ func freeTCP(t *testing.T) string {
 
 // confinedServe starts openneko serve in a one-account layout, in production
 // mode, with a GraphJin child and the sandbox at sandboxURL.
-func confinedServe(t *testing.T, l native.Layout, home, dsn, sandboxURL string) runningServe {
+func confinedServe(t *testing.T, l native.Layout, home, dsn string, box sandbox.Config) runningServe {
 	t.Helper()
 	bin := releaseBinary(t)
 	rs := runningServe{socket: native.ServeEnv(l)["OPENNEKO_SERVE_SOCKET"], gjAddr: freeTCP(t), tokenKey: bytes.Repeat([]byte{7}, 32)}
@@ -74,7 +75,7 @@ func confinedServe(t *testing.T, l native.Layout, home, dsn, sandboxURL string) 
 		t.Fatal(err)
 	}
 	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "XDG_CONFIG_HOME=" + filepath.Join(home, ".config"),
-		"OPENNEKO_ENV=production", "GO_ENV=agentic", "OPENNEKO_SANDBOX_URL=" + sandboxURL}
+		"OPENNEKO_ENV=production", "GO_ENV=agentic", "OPENNEKO_SANDBOX_URL=" + box.URL, "OPENNEKO_SANDBOX_KEY=" + box.Key}
 	for k, v := range native.ServeEnv(l) {
 		env = append(env, k+"="+v)
 	}
@@ -208,7 +209,7 @@ func TestConfinedServeDoesItsWork(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rs := confinedServe(t, l, home, dsn, box.URL)
+	rs := confinedServe(t, l, home, dsn, box)
 	if !rs.state.Confined || rs.state.Mechanism != "landlock" || !rs.host.Confined || rs.host.Mechanism != "landlock" {
 		t.Fatalf("serve reports its network part %+v and its turn part %+v", rs.state, rs.host)
 	}
@@ -402,7 +403,7 @@ func TestServeStopsWithItsNetworkPart(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(home, ".config", "openneko"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		return confinedServe(t, l, home, dsn, "")
+		return confinedServe(t, l, home, dsn, sandbox.Config{})
 	}
 
 	rs := start()

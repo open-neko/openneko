@@ -110,6 +110,9 @@ func (s *Server) ListenAndServe(ctx context.Context, address string) error {
 const minTCPKeyLength = 32
 
 func (s *Server) listen(address string) (net.Listener, error) {
+	if s.Key == "" {
+		return nil, errors.New("set OPENNEKO_SANDBOX_KEY: only a request with the key opens a run; make one with: openssl rand -hex 32")
+	}
 	path, isUnix := strings.CutPrefix(address, "unix://")
 	if !isUnix {
 		if len(s.Key) < minTCPKeyLength {

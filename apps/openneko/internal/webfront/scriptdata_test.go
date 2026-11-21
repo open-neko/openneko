@@ -130,7 +130,7 @@ func startRecipeSandbox(t *testing.T, tcp bool) sandbox.Config {
 		t.Fatalf("sandbox build: %s", sandboxBuildFail)
 	}
 	root := testsock.Dir(t)
-	cfg := sandbox.Config{URL: "unix://" + filepath.Join(root, "sandbox.sock")}
+	cfg := sandbox.Config{URL: "unix://" + filepath.Join(root, "sandbox.sock"), Key: "sandbox-key-" + strings.Repeat("1", 32)}
 	listen := cfg.URL
 	if tcp {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")

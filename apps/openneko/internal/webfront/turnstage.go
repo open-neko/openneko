@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 // stageBootID keeps this process's stages apart from those of an earlier
@@ -448,41 +450,91 @@ func (s *turnStage) copyBack() error {
 			if err != nil {
 				return err
 			}
-			data, err := readStagedFile(root, rel, seen)
+			f, err := openStagedFile(root, rel, seen, sandbox.MaxTransfer)
 			if err != nil {
 				log.Printf("[agent-run] artifact %s skipped: %v", rel, err)
 				return nil
 			}
+			defer f.Close()
 			if info, err := os.Lstat(target); err == nil && !info.Mode().IsRegular() {
 				if err := os.RemoveAll(target); err != nil {
 					return err
 				}
 			}
-			return os.WriteFile(target, data, 0o644)
+			if err := copyCapped(target, f, sandbox.MaxTransfer); err != nil {
+				log.Printf("[agent-run] artifact %s skipped: %v", rel, err)
+			}
+			return nil
 		}
 		return nil
 	})
 }
 
-// readStagedFile reads a file that the runner wrote, only when the opened
-// file is the regular file the walk saw and has no other name.
-func readStagedFile(root *os.Root, rel string, seen fs.FileInfo) ([]byte, error) {
+// openStagedFile opens a file that the runner wrote, only when the opened
+// file is the regular file the walk saw, has no other name, holds no hole
+// and is at most limit bytes.
+func openStagedFile(root *os.Root, rel string, seen fs.FileInfo, limit int64) (*os.File, error) {
 	f, err := root.OpenFile(filepath.FromSlash(rel), stagedOpenFlags, 0)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 	info, err := f.Stat()
+	if err == nil {
+		err = stagedFileOK(f, info, seen, limit)
+	}
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+func stagedFileOK(f *os.File, info, seen fs.FileInfo, limit int64) error {
+	switch {
+	case !info.Mode().IsRegular() || (seen != nil && !os.SameFile(info, seen)):
+		return errors.New("the file changed after the scan")
+	case !singleLink(info):
+		return errors.New("the file has another name outside the run")
+	case info.Size() > limit:
+		return fmt.Errorf("the file holds %d bytes, over the limit of %d MiB", info.Size(), limit>>20)
+	case hasHole(f, info.Size()):
+		return errors.New("the file is sparse")
+	}
+	return nil
+}
+
+// copyCapped writes at most limit bytes of src to target.
+func copyCapped(target string, src io.Reader, limit int64) error {
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(out, io.LimitReader(src, limit+1))
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil && n > limit {
+		err = fmt.Errorf("the file grew over the limit of %d MiB", limit>>20)
+	}
+	if err != nil {
+		_ = os.Remove(target)
+	}
+	return err
+}
+
+// readStagedFile reads a file that the runner wrote, as openStagedFile
+// allows it.
+func readStagedFile(root *os.Root, rel string, seen fs.FileInfo, limit int64) ([]byte, error) {
+	f, err := openStagedFile(root, rel, seen, limit)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || !os.SameFile(info, seen) {
-		return nil, errors.New("the file changed after the scan")
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err == nil && int64(len(data)) > limit {
+		err = fmt.Errorf("the file grew over the limit of %d MiB", limit>>20)
 	}
-	if !singleLink(info) {
-		return nil, errors.New("the file has another name outside the run")
-	}
-	return io.ReadAll(f)
+	return data, err
 }
 
 // finish is the finally block of the launcher after the agent core: the

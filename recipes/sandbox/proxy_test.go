@@ -161,7 +161,7 @@ func startEgress(t *testing.T, opts ...func(*Server, *Proxy)) *egressRig {
 	root := shortSocketDir(t)
 	_ = os.Chmod(root, 0o755)
 	_ = os.Chmod(filepath.Dir(root), 0o755)
-	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23100, Users: 4,
+	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), Key: testKey, BaseUID: 23100, Users: 4,
 		GID: os.Getgid(), SwitchUsers: os.Geteuid() == 0, PATH: "/usr/bin:/bin",
 		EgressProxy: proxyAddr, EgressControl: "unix://" + filepath.Join(controlDir, "control.sock")}
 	socket := filepath.Join(root, "sandbox.sock")

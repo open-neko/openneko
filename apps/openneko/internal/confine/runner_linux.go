@@ -1,12 +1,18 @@
 package confine
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 const runnerMechanism = "landlock+seccomp"
 
-// runnerGaps names what the agent runner keeps. Its seccomp filter closes,
-// on every ABI: sockets, new processes, the reach into and signals to other
-// processes, truncate and metadata changes by path, and path watches.
+// runnerGaps names what the agent runner keeps. On every ABI its seccomp
+// filter closes sockets, new processes, the reach into other processes,
+// shared memory and queues, and truncate, metadata changes and watches by
+// path. It closes signals to other processes by kill, tkill, pidfd,
+// sigqueue, descriptor owners (F_SETOWN, F_SETOWN_EX, FIOSETOWN, SIOCSPGRP)
+// and O_ASYNC; tgkill reaches only the runner's own threads.
 func runnerGaps(abi int) []string {
 	out := []string{"the metadata (size, times, extended attributes) of a path it names"}
 	if abi < 2 {
@@ -14,6 +20,9 @@ func runnerGaps(abi int) []string {
 	}
 	if abi < 5 {
 		out = append(out, "ioctl on a device it opened (ABI 5)")
+	}
+	if os.Getuid() == 0 {
+		out = append(out, "the thread cap: the kernel ignores RLIMIT_NPROC for root; run openneko as another user")
 	}
 	return out
 }

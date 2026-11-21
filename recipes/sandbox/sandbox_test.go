@@ -33,7 +33,7 @@ func startSandboxWith(t *testing.T, switchUsers bool, set func(*Server)) (*Serve
 	root := shortSocketDir(t)
 	_ = os.Chmod(root, 0o755)
 	_ = os.Chmod(filepath.Dir(root), 0o755)
-	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 4, GID: os.Getgid(), SwitchUsers: switchUsers, PATH: "/usr/bin:/bin"}
+	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), Key: testKey, BaseUID: 23000, Users: 4, GID: os.Getgid(), SwitchUsers: switchUsers, PATH: "/usr/bin:/bin"}
 	set(server)
 	socket := filepath.Join(root, "sandbox.sock")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -67,8 +67,11 @@ func newClient(socket string) *testClient {
 		var d net.Dialer
 		return d.DialContext(ctx, "unix", socket)
 	}}
-	return &testClient{http: &http.Client{Transport: transport}, base: "http://sandbox", run: "run-" + hex.EncodeToString(id[:])}
+	return &testClient{http: &http.Client{Transport: transport}, base: "http://sandbox", run: "run-" + hex.EncodeToString(id[:]), key: testKey}
 }
+
+// testKey is the control key of a test sandbox.
+var testKey = "test-control-" + strings.Repeat("k", 32)
 
 func (c *testClient) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	var reader io.Reader
@@ -591,7 +594,7 @@ func TestSandboxChecksTheKey(t *testing.T) {
 }
 
 func TestSandboxRefusesTCPWithoutALongKey(t *testing.T) {
-	for _, key := range []string{"", "sandbox-key", strings.Repeat("k", minTCPKeyLength-1)} {
+	for _, key := range []string{"sandbox-key", strings.Repeat("k", minTCPKeyLength-1)} {
 		if l, err := (&Server{Key: key}).listen("127.0.0.1:0"); err == nil {
 			l.Close()
 			t.Fatalf("a TCP listener with a key of %d characters was opened", len(key))

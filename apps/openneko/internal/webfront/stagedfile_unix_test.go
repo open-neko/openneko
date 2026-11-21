@@ -3,11 +3,15 @@
 package webfront
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func TestCopyBackReadsNoFileOutsideTheRun(t *testing.T) {
@@ -56,7 +60,7 @@ func TestCopyBackReadsNoFileOutsideTheRun(t *testing.T) {
 			t.Fatal(err)
 		}
 		replace(p)
-		if data, err := readStagedFile(root, name, seen); err == nil {
+		if data, err := readStagedFile(root, name, seen, 1<<20); err == nil {
 			t.Errorf("read %q after the swap: %q", name, data)
 		}
 	}
@@ -102,4 +106,85 @@ func TestCopyBackReadsNoFileOutsideTheRun(t *testing.T) {
 			t.Fatal("the read blocked on a pipe")
 		}
 	})
+}
+
+// TestRunnerFilesAreReadWithALimit plants a sparse file far over the limits
+// and one just over them: web refuses each without reading it.
+func TestRunnerFilesAreReadWithALimit(t *testing.T) {
+	t.Setenv("OPENNEKO_AGENT_RUNS_DIR", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OPENNEKO_SANDBOX_URL", "")
+	host, err := turnWorkspace("org", "thread-1", "run-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := stageTurn(host, stageOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(st.Dir)
+	art := st.Workspace.ArtifactRoot
+	sized := func(p string, size int64, sparse bool) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if sparse {
+			if err := f.Truncate(size); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		if _, err := io.CopyN(f, zeroReader{}, size); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sized(filepath.Join(art, "huge.bin"), 100<<30, true)
+	sized(filepath.Join(art, "hole.bin"), 1<<20, true)
+	sized(filepath.Join(art, "over.bin"), sandbox.MaxTransfer+1, false)
+	sized(filepath.Join(art, "at.bin"), 1<<20, false)
+	if err := st.copyBack(); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]bool{"huge.bin": false, "hole.bin": false, "over.bin": false, "at.bin": true} {
+		_, err := os.Stat(filepath.Join(host.ArtifactRoot, name))
+		if (err == nil) != want {
+			t.Errorf("artifact %s came back: %v, want %v", name, err == nil, want)
+		}
+	}
+
+	skills := t.TempDir()
+	sized(filepath.Join(skills, "big", "SKILL.md"), 100<<30, true)
+	sized(filepath.Join(skills, "over", "SKILL.md"), skillArchiveMax+1, false)
+	writeTestFile(t, filepath.Join(skills, "small", "SKILL.md"), "ok")
+	hashes := hashSkillTree(skills)
+	for _, rel := range []string{"big/SKILL.md", "over/SKILL.md"} {
+		if !strings.HasPrefix(hashes[rel], "refused: ") {
+			t.Errorf("skill file %s hashed as %q, want a refusal", rel, hashes[rel])
+		}
+	}
+	if len(hashes["small/SKILL.md"]) != 64 {
+		t.Errorf("small skill file hashed as %q", hashes["small/SKILL.md"])
+	}
+	root, err := os.OpenRoot(skills)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	info, _ := root.Lstat("over/SKILL.md")
+	if _, err := readStagedFile(root, "over/SKILL.md", info, skillArchiveMax); err == nil || !strings.Contains(err.Error(), "over the limit") {
+		t.Errorf("read an oversized skill file: %v", err)
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }

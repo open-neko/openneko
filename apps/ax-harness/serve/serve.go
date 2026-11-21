@@ -122,6 +122,7 @@ type Server struct {
 	runnerSeq     atomic.Int64
 	unconfined    sync.Once
 	confine       func(environ []string) error
+	limit         func(spec json.RawMessage) error
 
 	mu      sync.Mutex
 	running int
@@ -268,6 +269,12 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 			exit(2, err)
 		}
 		return
+	}
+	if s.limit != nil {
+		if err := s.limit(start.Spec); err != nil {
+			exit(2, fmt.Errorf("the agent runner could not limit itself, so the turn did not run: %w", err))
+			return
+		}
 	}
 	if s.confine != nil {
 		if err := s.confine(start.Environ); err != nil {

@@ -33,11 +33,14 @@ func hostileRunner(mode string) {
 	switch mode {
 	case "hostile-exit":
 		_, _ = link.Write([]byte(`{"code":0,"type":"exit"}` + "\n"))
-	case "hostile-broker":
+	case "hostile-broker", "paced-broker":
 		answers := bufio.NewReader(broker)
 		n := 0
 		last := ""
-		for range maxBrokerRequests + 100 {
+		for i := range maxBrokerRequests + 100 {
+			if mode == "paced-broker" && i == maxBrokerRequests {
+				time.Sleep(time.Second)
+			}
 			if _, err := broker.Write([]byte("nothing\n")); err != nil {
 				break
 			}
@@ -177,8 +180,34 @@ func TestBrokerCapsTheRequestsOfATurn(t *testing.T) {
 		if json.Unmarshal(frame.Event, &got) != nil {
 			t.Fatalf("frame = %+v", frame)
 		}
-		want := fmt.Sprintf("-the turn asked for more than %d connections", maxBrokerRequests)
+		want := fmt.Sprintf("-the turn asked for more than %d connections in 1m0s", maxBrokerRequests)
 		if got.Answers != maxBrokerRequests+1 || got.Last != want {
+			t.Fatalf("the broker answered %d requests, the last with %q", got.Answers, got.Last)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("no broker report")
+	}
+	_ = c.conn.Close()
+}
+
+// TestBrokerKeepsALongTurnThatPacesItsRequests: a turn that asks for more
+// connections in all than the cap, but not within one window, gets each.
+func TestBrokerKeepsALongTurnThatPacesItsRequests(t *testing.T) {
+	brokerWindow = 500 * time.Millisecond
+	t.Cleanup(func() { brokerWindow = time.Minute })
+	server := runnerServer(t, "paced-broker", &Server{})
+	c := dial(t, startServer(t, server), Frame{Type: "start", Spec: json.RawMessage(spec)})
+	hostilePids(t, c)
+	select {
+	case frame := <-c.frames:
+		var got struct {
+			Answers int
+			Last    string
+		}
+		if json.Unmarshal(frame.Event, &got) != nil {
+			t.Fatalf("frame = %+v", frame)
+		}
+		if got.Answers != maxBrokerRequests+100 || !strings.Contains(got.Last, "serve passes no connection named") {
 			t.Fatalf("the broker answered %d requests, the last with %q", got.Answers, got.Last)
 		}
 	case <-time.After(30 * time.Second):

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -66,6 +67,30 @@ func skillFileHash(content []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// hashSkillFile hashes a skill file of at most skillArchiveMax bytes. A
+// larger or sparse file gets a mark in place of a hash, so that it shows as
+// changed and the capture refuses it with its reason.
+func hashSkillFile(path, rel string) (string, bool) {
+	f, err := os.OpenFile(path, stagedOpenFlags, 0)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", false
+	}
+	if err := stagedFileOK(f, info, nil, skillArchiveMax); err != nil {
+		log.Printf("[agent-run] skill file %s not read: %v", rel, err)
+		return "refused: " + err.Error(), true
+	}
+	sum := sha256.New()
+	if n, err := io.Copy(sum, io.LimitReader(f, skillArchiveMax+1)); err != nil || n > skillArchiveMax {
+		return "refused: the file changed while it was read", true
+	}
+	return hex.EncodeToString(sum.Sum(nil)), true
+}
+
 // hashSkillTree is hashSkillTree(): regular files under each skill folder;
 // files at the top and links are left out.
 func hashSkillTree(root string) skillFileHashes {
@@ -85,8 +110,8 @@ func hashSkillTree(root string) skillFileHashes {
 			case e.IsDir():
 				walk(filepath.Join(dir, e.Name()), rel)
 			case e.Type().IsRegular() && prefix != "":
-				if data, err := os.ReadFile(filepath.Join(dir, e.Name())); err == nil {
-					out[rel] = skillFileHash(data)
+				if hash, ok := hashSkillFile(filepath.Join(dir, e.Name()), rel); ok {
+					out[rel] = hash
 				}
 			}
 		}
@@ -410,8 +435,9 @@ func (a *API) captureSkillEdits(ctx context.Context, orgID, runID string, act ru
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		data, err := readStagedFile(root, p, info)
+		data, err := readStagedFile(root, p, info, skillArchiveMax)
 		if err != nil {
+			log.Printf("[agent-run] run %s skill file %s skipped: %v", runID, p, err)
 			continue
 		}
 		files = append(files, stagedSkillFile{Path: p, Content: data})

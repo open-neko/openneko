@@ -5,7 +5,7 @@
 # with web and serve: openneko-sandbox-socket, which holds only its socket.
 x-sandbox-env: &sandbox-env
   OPENNEKO_SANDBOX_URL: unix:///run/openneko-sandbox/sandbox.sock
-  OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+  OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:?set OPENNEKO_SANDBOX_KEY to a random key of at least 32 characters, for example from openssl rand -hex 32}
 
 services:
   openneko-sandbox:
@@ -18,7 +18,7 @@ services:
       OPENNEKO_SANDBOX_GID: "1001"
       OPENNEKO_SANDBOX_EGRESS_PROXY: openneko-egress:3128
       OPENNEKO_SANDBOX_EGRESS_CONTROL: unix:///run/openneko-egress/control.sock
-      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:-}
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:?set OPENNEKO_SANDBOX_KEY to a random key of at least 32 characters, for example from openssl rand -hex 32}
     volumes:
       - openneko-sandbox-socket:/run/openneko-sandbox
       - openneko-sandbox-runs:/var/lib/openneko/sandbox-runs
