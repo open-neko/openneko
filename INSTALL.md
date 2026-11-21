@@ -16,6 +16,7 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 - PostgreSQL 16 or later with the `vector` extension (pgvector 0.6.0 or later) for production and native installs (`--mode demo` and `--mode dev` run a bundled Postgres container)
 - An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
 - On Linux, for agent turns: kernel 5.13 or later with `landlock` in the active security modules, and seccomp. Without them, OpenNeko starts but refuses every agent turn in production mode. See [Agent confinement](#agent-confinement-linux).
+- On macOS, for agent turns: the system call `sandbox_init`, which macOS 15 has. Without it, OpenNeko starts but refuses every agent turn in production mode. See [Agent confinement (macOS)](#agent-confinement-macos).
 
 ## Install
 
@@ -524,6 +525,26 @@ then say "the container engine blocks Landlock". Update the engine, or give
 the container a seccomp profile that allows the calls. A distribution
 package may ship its own `/usr/share/containers/seccomp.json`; check that
 file for `landlock_create_ruleset`.
+
+### Agent confinement (macOS)
+
+On macOS, each agent turn runs in an `openneko agent-runner` process that
+confines itself with a Seatbelt profile before agent code runs
+([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-runner-confines-itself-macos)).
+The runner applies the profile to itself with `sandbox_init`, the call
+behind `/usr/bin/sandbox-exec`. It needs no cgo and runs no other program.
+The proof tests run on macOS 15 on every push.
+
+Apple marks `sandbox_init` and `sandbox-exec` as deprecated, but macOS 15
+still has both. If a later macOS removes the call, `openneko serve` refuses
+every agent turn in production mode with one line: "agent confinement:
+off. macOS <version> has no sandbox_init, the call that confines an agent
+runner, so agent turns are off". The same applies when macOS refuses the
+profile. The web app, data reads and workflows without an agent step still
+work. `openneko doctor` shows the state, and `openneko release-check
+--serve-socket` fails.
+
+On macOS, `openneko serve` itself is not confined yet.
 
 ### Model keys
 

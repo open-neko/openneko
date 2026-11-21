@@ -496,6 +496,50 @@ left out, which must fail named checks. `TestConfinedServeDoesItsWork`
 (`internal/webfront`) runs a whole turn with a fake model through the door
 descriptor in a confined runner.
 
+### The runner confines itself (macOS)
+
+On macOS, the runner reads its setup and start frames, then applies a
+Seatbelt profile to itself with `sandbox_init` (found at run time in
+libSystem, with no cgo). The profile is built for each turn from the same
+`confine.Spec` as on Linux. It refuses by default and allows only:
+
+- read and write on the folders of its turn, and read on the time zone
+  files;
+- read of `/`, `/usr/lib`, `/System/Library`, the dyld cache and cryptexes,
+  `/dev/null`, `/dev/urandom` and `/dev/random`;
+- the metadata (size, times) of any path;
+- sysctl reads, except `kern.procargs` and `kern.procargs2`, which give the
+  arguments and environment of another process;
+- signals and process information for itself only.
+
+It allows no network rule, no fork, no program to run and no Mach service.
+So the runner holds the two sockets that serve passed and the connections
+that the broker passes, and can open no other. It cannot read another
+turn's files, the config folder or the home folder, and cannot signal serve
+or web or read their environment. macOS matches rules on the resolved path,
+so each path goes in the profile both as named and resolved (`/var` and
+`/tmp` are links into `/private`). A path with a quote, a backslash or a
+control character is refused.
+
+The one gap: the runner can read the metadata of a path that it names.
+
+Fail closed: with no `sandbox_init`, or a profile that macOS refuses,
+serve refuses every agent turn in production mode with the same lines as
+on Linux (start, status page, doctor, each refused turn, and
+`release-check --serve-socket`, which prints `runner_confinement=seatbelt`).
+
+Proof tests, run on the `macos-15` GitHub runner with `CI` set, so they
+fail when they cannot run: `TestConfinedRunner`
+(`internal/cli/runner_confine_darwin_test.go`) runs the 17 checks of the
+CONF0 macOS probe and three more (truncate by path, the parent's
+arguments, a file it wrote) in a real runner. It runs them unconfined as a
+control, confined, and then with one rule added at a time; each added rule
+must open the checks that it covers, and each check must be covered.
+`TestRunnerRefusesATurnWhenItCannotConfine` covers no workspace, no
+`sandbox_init` and a refused profile. `TestConfinedRunnerTurn`
+(`internal/webfront`) runs a whole turn of the release binary's runner with
+a fake model through the door descriptor.
+
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.
 Migration 0128 removed the setting that did that. Admin chat plans GraphJin
