@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/open-neko/neko/apps/openneko/internal/confine"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
@@ -91,13 +92,22 @@ func hostSpec(f serveFolders) confine.Spec {
 	return spec
 }
 
+// turnHostStart is what the turn part reads from files that its
+// confinement closes, such as a Docker secret under /run/secrets.
+type turnHostStart struct {
+	sandbox sandbox.Config
+	hostID  string
+}
+
 // confineTurnHost confines the part of serve that starts agent runners where
 // the OS lets a confined process start a runner that confines itself.
-func confineTurnHost(out io.Writer, f serveFolders, development bool) (confine.State, error) {
+func confineTurnHost(out io.Writer, f serveFolders, development bool) (confine.State, turnHostStart, error) {
+	start := turnHostStart{sandbox: sandbox.Config{URL: f.sandboxURL, Key: secretenv.Get("OPENNEKO_SANDBOX_KEY")}, hostID: confine.HostID()}
 	if !confine.Stacks {
-		return confine.State{Reason: fmt.Sprintf("on %s the agent runners confine themselves, and a confined process cannot start them", confine.Kernel())}, nil
+		return confine.State{Reason: fmt.Sprintf("on %s the agent runners confine themselves, and a confined process cannot start them", confine.Kernel())}, start, nil
 	}
-	return confinePart(out, "the agent turn part of openneko serve", hostSpec(f), []string{os.TempDir(), f.agentRuns}, development)
+	st, err := confinePart(out, "the agent turn part of openneko serve", hostSpec(f), []string{os.TempDir(), f.agentRuns}, development)
+	return st, start, err
 }
 
 // confineServe confines the network part of serve for good. When the system
@@ -219,7 +229,7 @@ func turnsOffLine(st confine.State) string {
 	return fmt.Sprintf("agent confinement: off. %s, so agent turns are off", st.Reason)
 }
 
-const unconfinedHint = `an admin can run agent turns without OS confinement on this system: Admin, Settings, Agent, "Run agent turns without OS confinement on this system" (INSTALL.md, "Agent confinement")`
+const unconfinedHint = `the host operator can allow agent turns without OS confinement on this host: openneko confinement allow-unconfined --reason "..." (INSTALL.md, "Agent confinement")`
 
 // postgresCertPaths lists where the Postgres client looks for TLS files: the
 // URL, the PG variables and ~/.postgresql.

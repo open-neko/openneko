@@ -263,7 +263,7 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	t.Setenv("OPENNEKO_ENV", "production")
 	cleanServeEnv(t)
-	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, confine.State{}, confine.Available())
+	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, turnHostStart{sandbox: sandbox.Config{}}, confine.State{}, confine.Available())
 	if err != nil {
 		t.Fatal(err)
 	}

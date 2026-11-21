@@ -171,7 +171,7 @@ func TestAnotherAccountCannotReachTheSocketsOrTheSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	serveSock := filepath.Join(layout.Run(), "serve.sock")
-	if _, err := serveAgentTurns(ctx, io.Discard, serveSock, 1, sandbox.Config{}, confine.State{}, confine.State{}); err != nil {
+	if _, err := serveAgentTurns(ctx, io.Discard, serveSock, 1, turnHostStart{sandbox: sandbox.Config{}}, confine.State{}, confine.State{}); err != nil {
 		t.Fatal(err)
 	}
 	stopAdmin, err := serveWebAdmin(layout.WebAdmin(), http.NotFoundHandler())
@@ -217,7 +217,7 @@ func TestSocketsInAnOpenFolderShutOutAnotherAccount(t *testing.T) {
 	}
 	listeners := map[string]func(string) error{
 		"serve": func(path string) error {
-			_, err := serveAgentTurns(ctx, io.Discard, path, 1, sandbox.Config{}, confine.State{}, confine.State{})
+			_, err := serveAgentTurns(ctx, io.Discard, path, 1, turnHostStart{sandbox: sandbox.Config{}}, confine.State{}, confine.State{})
 			return err
 		},
 		"config check": func(path string) error {

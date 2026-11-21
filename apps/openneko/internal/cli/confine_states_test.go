@@ -52,7 +52,7 @@ func TestNoRunnerConfinementIsSaidOnStartDoctorAndReleaseCheck(t *testing.T) {
 	cleanServeEnv(t)
 	sock := filepath.Join(testsock.Dir(t), "serve.sock")
 	ctx, stop := context.WithCancel(context.Background())
-	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, notBuilt, notBuilt)
+	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, turnHostStart{sandbox: sandbox.Config{}}, notBuilt, notBuilt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestDoctorReportsWhatServeDoes(t *testing.T) {
 	stubConfinement(t, confine.State{Mechanism: "landlock", Reason: off.Reason}, off)
 	sock := filepath.Join(testsock.Dir(t), "serve.sock")
 	ctx, stop := context.WithCancel(context.Background())
-	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, confine.State{Mechanism: "landlock", Reason: off.Reason}, confine.State{Mechanism: "landlock", Reason: off.Reason})
+	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, turnHostStart{sandbox: sandbox.Config{}}, confine.State{Mechanism: "landlock", Reason: off.Reason}, confine.State{Mechanism: "landlock", Reason: off.Reason})
 	if err != nil {
 		t.Fatal(err)
 	}

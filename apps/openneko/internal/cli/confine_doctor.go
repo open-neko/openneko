@@ -104,15 +104,17 @@ func serveConfinementLines(ctx context.Context, out io.Writer, socket string, st
 	return failed
 }
 
-// turnsOffDoctorLines prints why agent turns are off and the admin setting
-// that turns them on without confinement.
+// turnsOffDoctorLines prints why agent turns are off and the host command
+// that allows them without confinement.
 func turnsOffDoctorLines(ctx context.Context, out io.Writer, line, reason string) bool {
 	on, admin, err := unconfinedTurnsState(ctx, webAdminSocket())
 	switch {
 	case err != nil:
-		fmt.Fprintf(out, "%s\n  the admin setting for turns without confinement cannot be read: %v\n", line, err)
+		fmt.Fprintf(out, "%s\n  the override for turns without confinement cannot be read: %v\n", line, err)
 	case on:
 		fmt.Fprintf(out, "agent confinement: FAIL, %s (%s)\n", admin, reason)
+	case admin != "":
+		fmt.Fprintf(out, "%s\n  the override for turns without confinement does not apply: %s\n  %s\n", line, admin, unconfinedHint)
 	default:
 		fmt.Fprintf(out, "%s\n  %s\n", line, unconfinedHint)
 	}
