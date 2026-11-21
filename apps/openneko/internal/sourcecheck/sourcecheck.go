@@ -68,8 +68,9 @@ type Input struct {
 }
 
 type Target struct {
-	Host string
-	Port float64
+	Host           string
+	Port           float64
+	Database, User string
 }
 
 var Steps = []string{"resolve", "port", "tls", "login", "schema", "read_only"}
@@ -78,24 +79,35 @@ const TableLimit = 1000
 
 // Refusal is the reason that a stored password with target t may not go to
 // host and port; port nil means the default port of kind.
-func (t Target) Refusal(kind, host string, port *float64) string {
+func (t Target) Refusal(kind, host string, port *float64, database, user string) (field, message string) {
 	p := defaultPorts[strings.ToLower(strings.TrimSpace(kind))]
 	if port != nil {
 		p = *port
 	}
-	_, message := t.refusal(strings.TrimSpace(host), p)
-	return message
+	return t.refusal(strings.TrimSpace(host), p, strings.TrimSpace(database), strings.TrimSpace(user))
 }
 
-func (t Target) refusal(host string, port float64) (string, string) {
+func (t Target) refusal(host string, port float64, database, user string) (string, string) {
 	if t.Host == "" {
 		return "secretRef", PasswordHasNoTarget
 	}
 	if !strings.EqualFold(strings.TrimSpace(t.Host), host) || t.Port != port {
 		return "host", fmt.Sprintf("The saved password belongs to %s on port %s. OpenNeko sends it to no other host or port. Save the password again for this host and port.", t.Host, portText(t.Port))
 	}
+	if t.Database == "" || t.User == "" {
+		return "secretRef", PasswordHasNoLogin
+	}
+	login := fmt.Sprintf("The saved password belongs to the database %s and the login %s. OpenNeko sends it with no other database or login. Save the password again for this database and login.", t.Database, t.User)
+	if t.Database != database {
+		return "dbname", login
+	}
+	if t.User != user {
+		return "user", login
+	}
 	return "", ""
 }
+
+const PasswordHasNoLogin = "The saved password has no database and login. Save it again in the source card, or at Admin, Settings, GraphJin config, with the source's database and login."
 
 const PasswordHasNoTarget = "The saved password has no host and port. Save it again in the source card, or at Admin, Settings, GraphJin config with the source's host and port."
 
@@ -756,7 +768,7 @@ func Check(ctx context.Context, in Input) Result {
 		return finish()
 	}
 	if t := in.PasswordTarget; t != nil && in.Password != "" {
-		if field, message := t.refusal(host, port); message != "" {
+		if field, message := t.refusal(host, port, strings.TrimSpace(in.Database), strings.TrimSpace(in.User)); message != "" {
 			findings = append(findings, Finding{Step: "resolve", Status: "fail", Field: field, Message: message})
 			return finish()
 		}

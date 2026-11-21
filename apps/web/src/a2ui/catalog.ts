@@ -345,6 +345,8 @@ export interface SourceSecretInputProps {
   type?: unknown;
   host?: unknown;
   port?: unknown;
+  dbname?: unknown;
+  user?: unknown;
   value?: unknown;
   /** A problem with this answer, shown beside the field. */
   error?: string;

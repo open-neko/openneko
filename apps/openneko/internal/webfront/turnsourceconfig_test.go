@@ -250,6 +250,11 @@ func TestTurnSourceConfigDatabase(t *testing.T) {
 	}
 	seed(t, db, `update data_source_secret set host = $1, port = $2::int where name = 'erp-password'`, dbHost, dbPort)
 	check = str(admin.checkSource(ctx, sourceCheckIn{OrgID: "org", RunID: in.RunID, Answers: answers("erp-password")}))
+	if strings.Contains(check, plantedSourcePass) || !strings.Contains(check, `The saved password has no database and login.`) {
+		t.Errorf("check with a password that has no database and login: %s", check)
+	}
+	seed(t, db, `update data_source_secret set dbname = 'postgres', login = $1 where name = 'erp-password'`, u.User.Username())
+	check = str(admin.checkSource(ctx, sourceCheckIn{OrgID: "org", RunID: in.RunID, Answers: answers("erp-password")}))
 	if strings.Contains(check, plantedSourcePass) || !strings.Contains(check, `"step":"login","status":"fail"`) {
 		t.Errorf("check with a wrong password: %s", check)
 	}

@@ -11,6 +11,8 @@ type SourceSecretSummary = {
   description: string | null;
   host?: string | null;
   port?: number | null;
+  dbname?: string | null;
+  login?: string | null;
   allowUnverifiedTls?: boolean;
   updatedAt: string;
 };
@@ -26,6 +28,8 @@ export default function SourceSecretsPanel({
   const [value, setValue] = useState("");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
+  const [dbname, setDbname] = useState("");
+  const [login, setLogin] = useState("");
   const [allowUnverified, setAllowUnverified] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -49,6 +53,8 @@ export default function SourceSecretsPanel({
           description: description.trim() || null,
           host: host.trim(),
           port: port.trim(),
+          dbname: dbname.trim(),
+          user: login.trim(),
           allowUnverifiedTls: allowUnverified,
         }),
       });
@@ -58,6 +64,8 @@ export default function SourceSecretsPanel({
       if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
       await refresh();
       setName("");
+      setDbname("");
+      setLogin("");
       setDescription("");
       setValue("");
       setHost("");
@@ -97,7 +105,7 @@ export default function SourceSecretsPanel({
         <div>
           <h2 className="settings-card-title">Connection secrets</h2>
           <p className="settings-card-copy">
-            Named credentials for GraphJin source registration requests. OpenNeko sends a password only to the host and port saved with it.
+            Named credentials for GraphJin source registration requests. OpenNeko sends a password only to the host and port saved with it, with the database and login saved with it.
           </p>
         </div>
       </div>
@@ -152,7 +160,27 @@ export default function SourceSecretsPanel({
             autoComplete="off"
           />
         </Field>
-        <div className="flex items-end md:col-span-2">
+        <Field label="Database" htmlFor="source-secret-dbname">
+          <Input
+            id="source-secret-dbname"
+            value={dbname}
+            onChange={(e) => setDbname(e.target.value)}
+            placeholder="warehouse"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </Field>
+        <Field label="Login" htmlFor="source-secret-login">
+          <Input
+            id="source-secret-login"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            placeholder="openneko_read"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </Field>
+        <div className="flex items-end">
           <Checkbox
             label="Allow a server certificate that does not verify"
             checked={allowUnverified}
@@ -163,7 +191,7 @@ export default function SourceSecretsPanel({
           <Button
             type="button"
             variant="secondary"
-            disabled={saving || !name.trim() || !value || !host.trim() || !port.trim()}
+            disabled={saving || !name.trim() || !value || !host.trim() || !port.trim() || !dbname.trim() || !login.trim()}
             onClick={saveSecret}
           >
             Save
@@ -187,7 +215,7 @@ export default function SourceSecretsPanel({
                 {secret.description ?? "No description"}
               </span>
               <span className="min-w-0 truncate text-text3">
-                {secret.host ? `${secret.host}:${secret.port}` : "No host: save again"}
+                {secret.host && secret.dbname && secret.login ? `${secret.host}:${secret.port} · ${secret.dbname} · ${secret.login}` : "No host, database or login: save again"}
               </span>
               <span className="text-xs text-text3">
                 {formatDate(secret.updatedAt)}

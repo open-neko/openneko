@@ -471,7 +471,12 @@ func TestSourceConfigAdminAdapterInGo(t *testing.T) {
 	if st != "failed" || !strings.Contains(errText, "belongs to attacker.example on port 5432") {
 		t.Fatalf("an approved register_source sent a stored password to another host: %s %s", st, errText)
 	}
-	seed(t, db, `update data_source_secret set host = 'crm.db' where name = 'crm-pass'`)
+	seed(t, db, `update data_source_secret set host = 'crm.db', dbname = 'crm', login = 'postgres' where name = 'crm-pass'`)
+	st, errText = execSourceConfig(jsObjOf("action", "register_source", "name", "crm", "kind", "database", "type", "postgres", "host", "crm.db", "port", float64(5432), "dbname", "crm", "user", "reader", "secretRef", "crm-pass"))
+	if st != "failed" || !strings.Contains(errText, "belongs to the database crm and the login postgres") {
+		t.Fatalf("an approved register_source sent a stored password with another login: %s %s", st, errText)
+	}
+	seed(t, db, `update data_source_secret set login = 'reader' where name = 'crm-pass'`)
 	mu.Lock()
 	applyErr = "apply failed with password " + secretVal
 	mu.Unlock()

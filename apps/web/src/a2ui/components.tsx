@@ -1266,6 +1266,8 @@ function SourceSecretInputView({
   const secretName = sourceSecretName(sourceName);
   const host = typeof props.host === "string" ? props.host.trim() : "";
   const port = secretPort(props.port, props.type);
+  const dbname = typeof props.dbname === "string" ? props.dbname.trim() : "";
+  const user = typeof props.user === "string" ? props.user.trim() : "";
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -1280,6 +1282,10 @@ function SourceSecretInputView({
       setError("Enter the host before you save the password. OpenNeko sends it only to that host and port.");
       return;
     }
+    if (!dbname || !user) {
+      setError("Enter the database and the login before you save the password. OpenNeko sends it only with that database and login.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -1292,6 +1298,8 @@ function SourceSecretInputView({
           description: `Password for the ${sourceName} source`,
           host,
           port,
+          dbname,
+          user,
         }),
       });
       const result = (await response.json().catch(() => ({}))) as {

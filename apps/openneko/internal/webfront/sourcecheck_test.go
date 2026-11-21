@@ -41,12 +41,12 @@ func TestSourceCheckRoute(t *testing.T) {
 		t.Fatalf("no secret: %s", w.Body)
 	}
 	const planted = "planted-source-check-4f2a"
-	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"`+planted+`","host":"`+host+`","port":`+port+`}`, admin)
+	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"`+planted+`","host":"`+host+`","port":`+port+`,"dbname":"postgres","user":"`+u.User.Username()+`"}`, admin)
 	w = call(f, "POST", path, body, admin)
 	if strings.Contains(w.Body.String(), planted) || !strings.Contains(w.Body.String(), `"step":"login","status":"fail","message":"The database refused the login`) {
 		t.Fatalf("planted: %s", w.Body)
 	}
-	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"`+pw+`","host":"`+host+`","port":`+port+`}`, admin)
+	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"`+pw+`","host":"`+host+`","port":`+port+`,"dbname":"postgres","user":"`+u.User.Username()+`"}`, admin)
 	w = call(f, "POST", path, body, admin)
 	if !strings.Contains(w.Body.String(), `"step":"login","status":"ok"`) || !strings.Contains(w.Body.String(), `"serverVersion":"PostgreSQL `) {
 		t.Fatalf("stored password: %s", w.Body)
@@ -55,7 +55,7 @@ func TestSourceCheckRoute(t *testing.T) {
 	if w := call(f, "POST", path, other, admin); !strings.Contains(w.Body.String(), `"message":"The saved password belongs to `+host+` on port `+port+`.`) {
 		t.Fatalf("another host: %s", w.Body)
 	}
-	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"`+planted+`","host":"`+host+`","port":`+port+`}`, admin)
+	call(f, "PUT", "/api/v1/settings/source-secrets", `{"name":"db.pw","value":"`+planted+`","host":"`+host+`","port":`+port+`,"dbname":"postgres","user":"`+planted+`"}`, admin)
 	if w := call(f, "POST", path, `{"host":"`+host+`","port":`+port+`,"dbname":"postgres","user":"`+planted+`","secretRef":["db.pw"]}`, admin); !strings.Contains(w.Body.String(), `"message":"The database refused the login [REDACTED] with this password.`) {
 		t.Fatalf("redact: %s", w.Body)
 	}
