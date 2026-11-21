@@ -9,12 +9,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 // startingGraphjin answers as the supervisor does while GraphJin starts: 503
@@ -148,8 +149,7 @@ func TestAxTurnStopsWhileDataStarts(t *testing.T) {
 func TestAxTurnWaitsForDataTools(t *testing.T) {
 	clearAxEnv(t, nil)
 	gj, ep := startingEndpoint(t, 2, 5*time.Second)
-	dir, _ := os.MkdirTemp("", "ax")
-	defer os.RemoveAll(dir)
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "s.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {

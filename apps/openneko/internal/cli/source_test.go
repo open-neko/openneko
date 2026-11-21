@@ -6,10 +6,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 const failedCheck = `{"check":{"ok":false,"supported":true,"type":"mysql","host":"db.internal","port":3306,"database":"shop","user":"writer",
@@ -22,11 +23,7 @@ const failedCheck = `{"check":{"ok":false,"supported":true,"type":"mysql","host"
 func runSourceCheck(t *testing.T, stdin string, reply string, args ...string) (map[string]any, string, error) {
 	t.Helper()
 	var body map[string]any
-	dir, err := os.MkdirTemp("", "wa")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "web-admin.sock")
 	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/admin/sources/check" {

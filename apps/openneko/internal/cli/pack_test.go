@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/testmode"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func TestPackUploadReadsHostArchive(t *testing.T) {
@@ -124,11 +125,7 @@ func TestPackCustomReviewAndApproval(t *testing.T) {
 
 func runPackCommand(t *testing.T, handler http.Handler, args ...string) (string, error) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "wa")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "web-admin.sock")
 	stop, err := serveWebAdmin(socket, handler)
 	if err != nil {
@@ -327,11 +324,7 @@ func TestPackUninstallRetainsHistoryAndData(t *testing.T) {
 }
 
 func TestWebAdminSocketIsOwnerOnly(t *testing.T) {
-	dir, err := os.MkdirTemp("", "wa")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "web-admin.sock")
 	if err := os.WriteFile(socket, nil, 0o600); err != nil {
 		t.Fatal(err)

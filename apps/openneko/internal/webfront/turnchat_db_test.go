@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
@@ -76,10 +77,7 @@ func fakeModel(t *testing.T, responses []string) *httptest.Server {
 
 func startServe(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "chat")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
 	ln, err := serve.Listen(socket)
 	if err != nil {

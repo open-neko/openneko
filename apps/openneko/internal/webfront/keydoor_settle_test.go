@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,17 +17,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
 func listenDoor(t *testing.T, door *llm.KeyDoor) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "door")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	dir := testsock.Dir(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	path := filepath.Join(dir, keydoor.SocketName)

@@ -91,12 +91,9 @@ type scriptedServe struct {
 
 func newScriptedServe(t *testing.T, scripts [][]json.RawMessage) *scriptedServe {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "ax")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	dir := testsock.Dir(t)
 	f := &scriptedServe{socket: filepath.Join(dir, "serve.sock")}
+	var err error
 	if f.ln, err = net.Listen("unix", f.socket); err != nil {
 		t.Fatal(err)
 	}
@@ -409,8 +406,7 @@ var plainCfg = &llm.AxBackendConfig{Route: llm.AxModelRoute{Provider: "openai", 
 // on serve's socket.
 func TestAxTurnBridgesTools(t *testing.T) {
 	clearAxEnv(t, nil)
-	dir, _ := os.MkdirTemp("", "ax")
-	defer os.RemoveAll(dir)
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "s.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
@@ -506,8 +502,7 @@ func TestAxTurnCancelReaperAndFaults(t *testing.T) {
 		saved := axKillGrace
 		axKillGrace = 20 * time.Millisecond
 		defer func() { axKillGrace = saved }()
-		dir, _ := os.MkdirTemp("", "ax")
-		defer os.RemoveAll(dir)
+		dir := testsock.Dir(t)
 		socket := filepath.Join(dir, "s.sock")
 		ln, _ := net.Listen("unix", socket)
 		defer ln.Close()
@@ -601,8 +596,7 @@ func TestAgentCoreThroughServe(t *testing.T) {
 	}))
 	defer model.Close()
 
-	dir, _ := os.MkdirTemp("", "ax")
-	defer os.RemoveAll(dir)
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
 	ln, err := serve.Listen(socket)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
@@ -27,10 +28,7 @@ func serveDoor(t *testing.T, socket string) {
 // strictServe runs serve as production does: it refuses a frame with a key.
 func strictServe(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "door")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
 	ln, err := serve.Listen(socket)
 	if err != nil {

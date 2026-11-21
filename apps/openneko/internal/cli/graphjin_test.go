@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func TestGraphjinImportUpdate(t *testing.T) {
@@ -55,11 +56,7 @@ func TestGraphjinImportRefusesUnselectedInstallation(t *testing.T) {
 }
 
 func TestGraphjinImportCallsWebAdminSocket(t *testing.T) {
-	dir, err := os.MkdirTemp("", "wa")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "web-admin.sock")
 	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/admin/graphjin/import" {
