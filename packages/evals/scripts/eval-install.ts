@@ -453,7 +453,7 @@ export class EvalEpisode {
   }
 
   // Async, because the driver process may serve the source that the job queries.
-  async jobsRun(kind: string, orgId: string, at?: Date): Promise<Record<string, unknown>> {
+  async jobsRun(kind: string, orgId: string, at?: Date, timeoutMs = 120_000): Promise<Record<string, unknown>> {
     const args = ["jobs", "run", kind, "--org", orgId, ...(at ? ["--at", at.toISOString()] : [])];
     const child = spawn(this.host.binary, args, {
       env: { ...process.env, ...this.env() },
@@ -463,7 +463,7 @@ export class EvalEpisode {
     let stderr = "";
     child.stdout.on("data", (chunk) => (stdout += chunk));
     child.stderr.on("data", (chunk) => (stderr += chunk));
-    const timer = setTimeout(() => child.kill("SIGKILL"), 120_000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
     const status = await new Promise<number | null>((done, reject) => {
       child.once("error", reject);
       child.once("close", (code) => done(code));
@@ -619,9 +619,22 @@ export class EvalEpisode {
     return child;
   }
 
+  // Runs the playbook pass on the episode's runs and appends its result to
+  // OPENNEKO_EVAL_PLAYBOOK_LOG.
+  private async playbookLearn(log: string): Promise<void> {
+    const [run] = await this.query<{ org_id: string }>(`select org_id from work_run order by created_at desc limit 1`, []);
+    if (!run) return;
+    const line = await this.jobsRun("playbook_learn", run.org_id, undefined, 30 * 60_000)
+      .then((result) => ({ database: this.database, result }))
+      .catch((cause) => ({ database: this.database, error: String(cause) }));
+    await writeFile(log, `${JSON.stringify(line)}\n`, { flag: "a" });
+  }
+
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    const playbookLog = process.env.OPENNEKO_EVAL_PLAYBOOK_LOG;
+    if (playbookLog && this.web && this.serve) await this.playbookLearn(playbookLog).catch(() => {});
     await Promise.allSettled([stopChild(this.web), stopChild(this.serve)]);
     await this.events?.end();
     await this.deactivate();
