@@ -31,7 +31,6 @@ const RunnerLinksEnv = "OPENNEKO_RUNNER_LINKS"
 const (
 	linkSocket   = "link.sock"
 	brokerSocket = "broker.sock"
-	maxNameLine  = 64
 )
 
 // sioAFUnixGetPeerPID is SIO_AF_UNIX_GETPEERPID of afunix.h.
@@ -212,7 +211,7 @@ func (s *Server) serveBrokerSockets(ctx context.Context, ln net.Listener, pid in
 
 func (s *Server) brokerSocket(ctx context.Context, c net.Conn, gate *sandbox.Gate) {
 	_ = c.SetReadDeadline(time.Now().Add(brokerDial))
-	name, err := readNameLine(c)
+	name, err := readNameLine(c, maxNameLine)
 	_ = c.SetReadDeadline(time.Time{})
 	if err != nil {
 		_ = c.Close()
@@ -250,23 +249,6 @@ func (s *Server) brokerSocket(ctx context.Context, c net.Conn, gate *sandbox.Gat
 	default:
 		refuse(fmt.Errorf("serve passes no connection named %q", name))
 	}
-}
-
-// readNameLine reads one short line a byte at a time, so no byte after it
-// is taken from the connection.
-func readNameLine(r io.Reader) (string, error) {
-	var b strings.Builder
-	one := make([]byte, 1)
-	for b.Len() <= maxNameLine {
-		if _, err := io.ReadFull(r, one); err != nil {
-			return "", err
-		}
-		if one[0] == '\n' {
-			return b.String(), nil
-		}
-		b.WriteByte(one[0])
-	}
-	return "", errors.New("the line is too long")
 }
 
 // splice carries bytes both ways until one side ends or ctx ends.
@@ -318,37 +300,6 @@ func (r plainRunner) Wait() error {
 		return fmt.Errorf("exit status %d", st.ExitCode())
 	}
 	return nil
-}
-
-// socketBroker is the runner's end of the broker.
-type socketBroker struct{ path string }
-
-func (b socketBroker) dialer(name string) func(context.Context) (net.Conn, error) {
-	return func(ctx context.Context) (net.Conn, error) {
-		var d net.Dialer
-		c, err := d.DialContext(ctx, "unix", b.path)
-		if err != nil {
-			return nil, fmt.Errorf("the broker: %w", err)
-		}
-		if deadline, ok := ctx.Deadline(); ok {
-			_ = c.SetDeadline(deadline)
-		}
-		mark := make([]byte, 1)
-		if _, err := c.Write([]byte(name + "\n")); err == nil {
-			_, err = io.ReadFull(c, mark)
-		}
-		if err != nil {
-			_ = c.Close()
-			return nil, fmt.Errorf("the broker gave no answer: %v", err)
-		}
-		if mark[0] != '+' {
-			reason, _ := bufio.NewReader(io.LimitReader(c, 4<<10)).ReadString('\n')
-			_ = c.Close()
-			return nil, errors.New(strings.TrimSpace(reason))
-		}
-		_ = c.SetDeadline(time.Time{})
-		return c, nil
-	}
 }
 
 // RunRunner is the agent runner: one turn, on the link socket in the folder
