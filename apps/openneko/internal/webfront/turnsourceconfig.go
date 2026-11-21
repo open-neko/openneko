@@ -238,13 +238,17 @@ func openAPIImportSurface(confirm any, surfaceID string) []any {
 	host := jsTemplate(jsLookup(confirm, "host"))
 	input := jsObjOf("id", "spec", "component", "OpenApiSpecInput", "label", "OpenAPI specification", "url", jsLookup(confirm, "url"),
 		"value", jsObjOf("path", "/openApiSpec"))
+	subtitle := "Check the address. OpenNeko fetches it from " + host + " only when you press Import."
 	if base, ok := jsField(confirm, "baseUrl"); ok {
 		input.set("baseUrl", base)
+		if baseHost := urlHost(jsTemplate(base)); baseHost != "" && baseHost != urlHost("https://"+host) {
+			subtitle += " API calls and the API credential go to " + baseHost + ". That host differs from the fetch host " + host + "."
+		}
 	}
 	return []any{jsObjOf("version", a2uiVersion, "createSurface", jsObjOf("surfaceId", surfaceID, "catalogId", a2uiCatalogID,
 		"dataModel", &jsObj{}, "components", []any{
 			jsObjOf("id", "root", "component", "Answer", "eyebrow", "OPENAPI IMPORT", "title", "Import from "+host,
-				"subtitle", "Check the address. OpenNeko fetches it from "+host+" only when you press Import.", "children", []any{"spec"}),
+				"subtitle", subtitle, "children", []any{"spec"}),
 			input,
 		}))}
 }

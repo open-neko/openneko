@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
@@ -42,6 +43,7 @@ type ActionRow = {
   payload: unknown;
   riskLevel: string | null;
   summary: string | null;
+  facts?: { headline: string; lines: string[]; flags: string[] } | null;
   scope: string;
   status: string;
   minutesSaved: number | null;
@@ -318,7 +320,7 @@ function ActionsPageInner() {
                 rows: group.rows.map<ActRowData>((r) => ({
                   id: r.id,
                   tone: rowToneFor(r),
-                  headline: r.summary || r.kind,
+                  headline: r.facts?.headline || r.kind,
                   detail: describeOutcome(outcomeOf(r), r.executionError ?? r.failureReason, systemForActionKind(r.kind)),
                   target: r.target,
                   kind: r.kind,
@@ -420,8 +422,16 @@ function ActionReadingPane({
           </span>
         </div>
         <h2 className="font-display text-ui-section font-extrabold tracking-[-0.02em] leading-[1.2] text-text">
-          {action.summary || action.kind}
+          {action.facts?.headline || action.kind}
         </h2>
+        {action.facts?.flags.length ? (
+          <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label="What is unusual">
+            {action.facts.flags.map((flag) => <li key={flag}><Badge variant="watch">{flag}</Badge></li>)}
+          </ul>
+        ) : null}
+        {action.summary ? (
+          <p className="m-0 mt-2 text-ui-caption text-text3 break-words">The agent&apos;s description: {action.summary}</p>
+        ) : null}
         <div className="text-ui-body-sm text-text2 mt-2 leading-[1.5]">
           Proposed by <span className="text-text font-semibold">{workflowDisplayName(action.workflow)}</span>
           {action.triggeredByObservation ? <> · triggered by “{action.triggeredByObservation.title}”</> : null}

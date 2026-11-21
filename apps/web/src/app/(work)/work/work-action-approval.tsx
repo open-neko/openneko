@@ -2,6 +2,7 @@
 
 import { Check, Loader2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { createApprovalPasskeyAssertion, sendApproval, type PasskeyAssertionPayload } from "@/lib/passkey";
@@ -11,6 +12,7 @@ import type { ApprovalItem, ToolItem } from "./work-types";
 type ActionRequestSnapshot = {
   status: string;
   result: ApprovalItem["result"];
+  facts: ApprovalItem["facts"];
 };
 
 async function fetchActionRequestSnapshot(
@@ -24,6 +26,7 @@ async function fetchActionRequestSnapshot(
   const body = (await res.json()) as {
     actionRequest?: {
       status?: string;
+      facts?: ApprovalItem["facts"];
       rejectionReason?: string | null;
       failureReason?: string | null;
     };
@@ -71,7 +74,7 @@ async function fetchActionRequestSnapshot(
         : {}),
     };
   }
-  return { status, result };
+  return { status, result, facts: body.actionRequest?.facts ?? null };
 }
 
 export function ActionApprovalRow({
@@ -95,6 +98,7 @@ export function ActionApprovalRow({
   const [localStatus, setLocalStatus] = useState<string | null>(null);
   const [localResult, setLocalResult] =
     useState<ApprovalItem["result"]>(null);
+  const [localFacts, setLocalFacts] = useState<ApprovalItem["facts"]>(null);
 
   useEffect(() => {
     if (approval.result) return;
@@ -106,6 +110,7 @@ export function ActionApprovalRow({
         approval.actionKind,
       );
       if (cancelled || !snapshot) return;
+      setLocalFacts(snapshot.facts);
       setLocalStatus(snapshot.status);
       setLocalResult(snapshot.result);
       if (snapshot.status === "approved") {
@@ -124,10 +129,9 @@ export function ActionApprovalRow({
     localDecision,
   ]);
 
-  const headline =
-    approval.intent ??
-    approval.summary ??
-    `Agent wants to run "${approval.actionKind}".`;
+  const facts = approval.facts ?? localFacts;
+  const headline = facts?.headline ?? approvalActionLabel(approval.actionKind);
+  const agentText = approval.intent ?? approval.summary;
   const effectiveResult = approval.result ?? localResult;
   const pending =
     approval.decision === "pending_approval" &&
@@ -314,6 +318,28 @@ export function ActionApprovalRow({
           </Button>
         ) : null}
       </div>
+
+      {facts && (facts.lines.length > 0 || facts.flags.length > 0) ? (
+        <div className="work-action-row-facts grid gap-1 px-3 pb-2 text-ui-caption">
+          {facts.flags.length > 0 ? (
+            <ul className="m-0 flex list-none flex-wrap gap-1 p-0" aria-label="What is unusual">
+              {facts.flags.map((flag) => (
+                <li key={flag}><Badge variant="watch">{flag}</Badge></li>
+              ))}
+            </ul>
+          ) : null}
+          {facts.lines.length > 0 ? (
+            <ul className="m-0 grid list-none gap-0.5 p-0 text-text2">
+              {facts.lines.map((line, index) => <li key={index} className="break-words">{line}</li>)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {agentText ? (
+        <p className="work-action-row-agent m-0 px-3 pb-2 text-ui-caption text-text3 break-words">
+          The agent&apos;s description: {agentText}
+        </p>
+      ) : null}
 
       {pending && rejectMode ? (
         <div className="work-action-row-decision">

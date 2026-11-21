@@ -252,6 +252,9 @@ func actionTools(b turnBinding, be toolBackend) []toolDef {
 			requestID, _ := jsField(request, "id")
 			requestStatus, _ := jsField(request, "status")
 			event := jsObjOf("type", "action_request_emit", "action_request_id", requestID, "kind", kind, "scope", scope)
+			if facts, ok := jsField(request, "facts"); ok {
+				event.set("facts", facts)
+			}
 			if hasRisk {
 				event.set("risk_level", risk)
 			}
@@ -408,6 +411,9 @@ func (b turnBinding) runPackAction(ctx context.Context, be toolBackend, kind, sc
 		event.set("intent", intent)
 	}
 	event.set("summary", intent)
+	if facts, ok := jsField(request, "facts"); ok {
+		event.set("facts", facts)
+	}
 	if riskLevel != nil {
 		event.set("risk_level", riskLevel)
 	}

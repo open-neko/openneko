@@ -475,7 +475,8 @@ func (a *API) createActionRequestInGo(ctx context.Context, in *jsObj) (*jsObj, e
 		return nil, err
 	}
 
-	return jsObjOf("id", record.ID, "status", record.Status), nil
+	facts := a.approvalFactsFor(ctx, orgID, kind, target, payloadObj)
+	return jsObjOf("id", record.ID, "status", record.Status, "facts", jsFromGo(facts)), nil
 }
 
 func (a *API) listEnabledPolicies(ctx context.Context, orgID string) ([]*jsObj, error) {

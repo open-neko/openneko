@@ -298,6 +298,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
           actionKind: event.kind,
           intent: event.intent ?? null,
           summary: event.summary ?? null,
+          facts: event.facts ?? null,
           decision: event.decision,
           result: null,
         };

@@ -197,6 +197,7 @@ type approvalOut struct {
 	TriggeredByObservation *observationTitle `json:"triggeredByObservation"`
 	Kind                   string            `json:"kind"`
 	Target                 *string           `json:"target"`
+	Facts                  *approvalFacts    `json:"facts"`
 	Payload                storedJSON        `json:"payload"`
 	RiskLevel              *string           `json:"riskLevel"`
 	Summary                *string           `json:"summary"`
@@ -350,8 +351,12 @@ func (a *API) approvals(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	actions := []approvalOut{}
+	domains, known := a.orgEmailDomains(ctx, act.OrgID), a.knownActionHost(ctx, act.OrgID)
 	for _, o := range all {
 		if visible(o.Kind, o.Scope, workflowIDOf(o.Workflow)) {
+			payload, _ := jsParse(o.Payload)
+			facts := buildApprovalFacts(o.Kind, o.Target, payload, domains, known)
+			o.Facts = &facts
 			actions = append(actions, o)
 		}
 	}
@@ -368,23 +373,24 @@ func workflowIDOf(w *approvalWorkflow) string {
 var actionStatuses = []string{"draft", "pending_approval", "approved", "rejected", "expired", "executed", "failed", "cancelled"}
 
 type actionRequestOut struct {
-	ID                       string     `json:"id"`
-	WorkflowRunID            *string    `json:"workflowRunId"`
-	TriggeredByObservationID *string    `json:"triggeredByObservationId"`
-	PolicyID                 *string    `json:"policyId"`
-	Scope                    string     `json:"scope"`
-	Kind                     string     `json:"kind"`
-	Target                   *string    `json:"target"`
-	Payload                  storedJSON `json:"payload"`
-	RiskLevel                *string    `json:"riskLevel"`
-	Status                   string     `json:"status"`
-	Summary                  *string    `json:"summary"`
-	ApprovedByUserID         *string    `json:"approvedByUserId"`
-	ApprovedAt               *string    `json:"approvedAt"`
-	RejectionReason          *string    `json:"rejectionReason"`
-	FailureReason            *string    `json:"failureReason"`
-	CreatedAt                string     `json:"createdAt"`
-	UpdatedAt                string     `json:"updatedAt"`
+	ID                       string         `json:"id"`
+	WorkflowRunID            *string        `json:"workflowRunId"`
+	TriggeredByObservationID *string        `json:"triggeredByObservationId"`
+	PolicyID                 *string        `json:"policyId"`
+	Scope                    string         `json:"scope"`
+	Kind                     string         `json:"kind"`
+	Target                   *string        `json:"target"`
+	Payload                  storedJSON     `json:"payload"`
+	RiskLevel                *string        `json:"riskLevel"`
+	Status                   string         `json:"status"`
+	Summary                  *string        `json:"summary"`
+	ApprovedByUserID         *string        `json:"approvedByUserId"`
+	ApprovedAt               *string        `json:"approvedAt"`
+	RejectionReason          *string        `json:"rejectionReason"`
+	FailureReason            *string        `json:"failureReason"`
+	CreatedAt                string         `json:"createdAt"`
+	UpdatedAt                string         `json:"updatedAt"`
+	Facts                    *approvalFacts `json:"facts,omitempty"`
 
 	approvedAt *time.Time
 }
@@ -472,6 +478,7 @@ func (a *API) actionRequests(w http.ResponseWriter, r *http.Request) {
 			shown = append(shown, o)
 		}
 	}
+	a.withApprovalFacts(ctx, act.OrgID, shown)
 	sendJSON(w, http.StatusOK, map[string]any{"actionRequests": shown})
 }
 
@@ -540,6 +547,9 @@ func (a *API) actionRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	withFacts := []actionRequestOut{req}
+	a.withApprovalFacts(ctx, act.OrgID, withFacts)
+	req = withFacts[0]
 	rows, err := a.DB.Query(ctx, `
 		select id::text, executor, command_or_operation, payload, result, external_ref, status, error,
 		  started_at, finished_at, created_at
