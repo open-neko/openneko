@@ -119,7 +119,13 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.Runner[0], s.Runner[1:]...)
 	cmd.Env = append([]string{}, s.RunnerEnv...)
-	cmd.Stderr = os.Stderr
+	logOut := s.runnerLog
+	if logOut == nil {
+		logOut = os.Stderr
+	}
+	stderr := newRunnerLog(logOut, fmt.Sprintf("agent runner %d", s.runnerSeq.Add(1)))
+	defer stderr.Close()
+	cmd.Stderr = stderr
 	cmd.ExtraFiles = []*os.File{linkChild, brokerChild}
 	cmd.SysProcAttr = runnerAttr()
 	cmd.Cancel = func() error { return killGroup(cmd.Process.Pid) }

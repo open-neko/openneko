@@ -86,3 +86,56 @@ func TestWebFetchStaysOnAllowlist(t *testing.T) {
 		t.Fatal("wildcard match is wrong")
 	}
 }
+
+func TestWebFetchRefusesSharedAndNAT64Addresses(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"8.8.8.8": true, "2001:4860:4860::8888": true, "100.63.255.255": true, "100.128.0.1": true,
+		"100.64.0.1": false, "100.127.255.254": false, "64:ff9b::a00:1": false, "64:ff9b::808:808": false, "64:ff9b:1::1": false,
+		"10.0.0.1": false, "127.0.0.1": false, "169.254.169.254": false, "::1": false, "fd00::1": false, "::ffff:100.64.0.1": false,
+	} {
+		if got := publicIP(net.ParseIP(addr)); got != want {
+			t.Errorf("publicIP(%s) = %v, want %v", addr, got, want)
+		}
+	}
+}
+
+func TestWebFetchChecksTheTargetBehindAProxy(t *testing.T) {
+	var asked []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Host)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("through the proxy"))
+	}))
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+	web, err := Open("*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	web.proxy = func(*http.Request) (*url.URL, error) { return proxyURL, nil }
+	names := map[string]string{"public.test": "93.184.216.34", "shared.test": "100.64.1.1", "nat64.test": "64:ff9b::a9fe:a9fe",
+		"private.test": "10.1.2.3", "mixed.test": "10.1.2.3"}
+	web.lookup = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		out := []net.IPAddr{{IP: net.ParseIP(names[host])}}
+		if host == "mixed.test" {
+			out = append([]net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, out...)
+		}
+		return out, nil
+	}
+	fetch := func(target string) error {
+		input, _ := json.Marshal(map[string]string{"url": target})
+		_, err := web.Fetch(context.Background(), input)
+		return err
+	}
+	if err := fetch("http://public.test/page"); err != nil || len(asked) != 1 || asked[0] != "public.test" {
+		t.Fatalf("a public host through the proxy: %v, the proxy saw %v", err, asked)
+	}
+	for _, target := range []string{"http://shared.test/", "http://nat64.test/", "http://private.test/", "http://mixed.test/", "http://100.64.0.1/", "http://[64:ff9b::a00:1]/", "http://169.254.169.254/"} {
+		if err := fetch(target); err == nil || !strings.Contains(err.Error(), "public addresses") {
+			t.Errorf("%s through the proxy: %v", target, err)
+		}
+	}
+	if len(asked) != 1 {
+		t.Fatalf("the proxy got a request for a host that is not public: %v", asked)
+	}
+}

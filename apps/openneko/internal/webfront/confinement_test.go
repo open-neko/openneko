@@ -25,15 +25,17 @@ func TestAdminServicesShowServesConfinement(t *testing.T) {
 		wantDetail string
 		wantPrefix bool
 	}{
-		{&confine.State{Mechanism: "landlock", ABI: 8, Confined: true, Gaps: []string{"connect to a named socket outside its list (ABI 9)"}}, nil, "", "ok",
-			"openneko serve runs under landlock ABI 8: it cannot read the config folder or other files of this account. This kernel cannot refuse: connect to a named socket outside its list (ABI 9).", false},
+		{&confine.State{Mechanism: "landlock", ABI: 8, Confined: true, Gaps: []string{"connect to a named socket outside its list (ABI 9)"}}, &confine.State{Mechanism: "landlock+seccomp", ABI: 8, Confined: true}, "", "ok",
+			"openneko serve runs under landlock ABI 8: it cannot read the config folder or other files of this account. This kernel cannot refuse: connect to a named socket outside its list (ABI 9). Each agent turn runs in a runner under landlock+seccomp ABI 8: it opens no socket and reaches only the files of its turn.", false},
 		{&confine.State{Mechanism: "landlock", ABI: 8, Confined: true}, &confine.State{Mechanism: "landlock+seccomp", ABI: 8, Confined: true}, "", "ok",
 			"openneko serve runs under landlock ABI 8: it cannot read the config folder or other files of this account. Each agent turn runs in a runner under landlock+seccomp ABI 8: it opens no socket and reaches only the files of its turn.", false},
 		{&confine.State{Mechanism: "landlock", Reason: "Linux 4.18.0 has no Landlock"}, &confine.State{Mechanism: "landlock+seccomp", Reason: "Linux 4.18.0 has no Landlock"},
 			"agent confinement: off. Linux 4.18.0 has no Landlock, so agent turns are off", "failing", "agent confinement: off. Linux 4.18.0 has no Landlock, so agent turns are off", false},
 		{&confine.State{Mechanism: "landlock", Reason: "OPENNEKO_SERVE_CONFINE=off in development mode"}, nil, "", "failing",
 			"openneko serve runs unconfined: OPENNEKO_SERVE_CONFINE=off in development mode", false},
-		{&confine.State{Reason: "confinement on darwin is not built yet"}, nil, "", "ok", "Confinement of openneko serve on " + runtime.GOOS + " is not built yet", true},
+		{&confine.State{Reason: "confinement on darwin is not built yet"}, &confine.State{Mechanism: "seatbelt", Confined: true}, "", "ok", "Confinement of openneko serve on " + runtime.GOOS + " is not built yet", true},
+		{&confine.State{Reason: "confinement on windows is not built yet"}, &confine.State{Reason: "confinement on windows is not built yet"}, "", "failing",
+			"agent confinement: not available on this system yet: agent turns run unconfined", false},
 		{nil, nil, "", "failing", "openneko serve did not report its confinement; run serve from the same release as web", false},
 	} {
 		socket := filepath.Join(dir, "serve"+string(rune('a'+i))+".sock")

@@ -37,11 +37,14 @@ func confinementService() externalService {
 			if !runner.state.Confined && runner.state.Mechanism != "" {
 				return "", "", fmt.Errorf("agent runners run unconfined: %s", runner.state.Reason)
 			}
-			if !st.Confined {
-				if st.Mechanism == "" {
-					return fmt.Sprintf("Confinement of openneko serve on %s is not built yet: %s.", runtime.GOOS, st.Reason), "", nil
-				}
+			if !st.Confined && st.Mechanism != "" {
 				return "", "", fmt.Errorf("openneko serve runs unconfined: %s", st.Reason)
+			}
+			if !runner.state.Confined && runner.production {
+				return "", "", errors.New(confine.NotAvailable + ": agent turns run unconfined")
+			}
+			if !st.Confined {
+				return fmt.Sprintf("Confinement of openneko serve on %s is not built yet: %s.", runtime.GOOS, st.Reason), "", nil
 			}
 			detail := fmt.Sprintf("openneko serve runs under %s: it cannot read the config folder or other files of this account.", st)
 			if len(st.Gaps) > 0 {
@@ -58,8 +61,9 @@ func confinementService() externalService {
 }
 
 type runnerState struct {
-	state    confine.State
-	turnsOff string
+	state      confine.State
+	turnsOff   string
+	production bool
 }
 
 // serveConfinement asks serve over its agent socket how the OS confines it
@@ -87,6 +91,6 @@ func serveConfinement(ctx context.Context, socket string) (confine.State, runner
 	if len(status.RunnerConfinement) > 0 {
 		_ = json.Unmarshal(status.RunnerConfinement, &runner.state)
 	}
-	runner.turnsOff = status.TurnsOff
+	runner.turnsOff, runner.production = status.TurnsOff, status.RequireDoor
 	return st, runner, nil
 }
