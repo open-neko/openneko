@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -14,7 +15,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -28,7 +31,10 @@ import (
 type runningServe struct {
 	socket, addr, gjAddr string
 	tokenKey             []byte
-	state                confine.State
+	state, host          confine.State
+	pid                  int
+	exited               <-chan struct{}
+	logs                 *lockedBuffer
 }
 
 var listenLine = regexp.MustCompile(`openneko serve listening on (\S+)`)
@@ -98,10 +104,11 @@ func confinedServe(t *testing.T, l native.Layout, home, dsn, sandboxURL string) 
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		st, _, err := serveConfinement(ctx, rs.socket)
+		st, err := serveConfinement(ctx, rs.socket)
 		cancel()
 		if m := listenLine.FindStringSubmatch(logs.String()); err == nil && m != nil {
-			rs.state, rs.addr = st, m[1]
+			rs.state, rs.host, rs.addr = st.network, st.host, m[1]
+			rs.pid, rs.exited, rs.logs = cmd.Process.Pid, exited, logs
 			return rs
 		}
 		select {
@@ -202,10 +209,10 @@ func TestConfinedServeDoesItsWork(t *testing.T) {
 	}
 
 	rs := confinedServe(t, l, home, dsn, box.URL)
-	if !rs.state.Confined || rs.state.Mechanism != "landlock" {
-		t.Fatalf("serve reports %+v", rs.state)
+	if !rs.state.Confined || rs.state.Mechanism != "landlock" || !rs.host.Confined || rs.host.Mechanism != "landlock" {
+		t.Fatalf("serve reports its network part %+v and its turn part %+v", rs.state, rs.host)
 	}
-	t.Logf("serve: %s", rs.state)
+	t.Logf("serve: network part %s, turn part %s", rs.state, rs.host)
 	if runner, confined := serveRunner(t, rs.socket); runner != "process" || !confined.Confined || confined.Mechanism != "landlock+seccomp" {
 		t.Fatalf("serve runs turns %q under %+v, want each in a confined agent runner process", runner, confined)
 	}
@@ -334,4 +341,99 @@ func envOrDefault(name, def string) string {
 		return v
 	}
 	return def
+}
+
+// networkChild finds the serve-network child of the serve with pid.
+func networkChild(t *testing.T, pid int) int {
+	t.Helper()
+	procs, _ := filepath.Glob("/proc/[0-9]*/stat")
+	for _, p := range procs {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		fields := strings.Fields(string(raw[strings.LastIndexByte(string(raw), ')')+1:]))
+		if len(fields) < 2 || fields[1] != strconv.Itoa(pid) {
+			continue
+		}
+		dir := filepath.Dir(p)
+		if cmdline, _ := os.ReadFile(filepath.Join(dir, "cmdline")); strings.Contains(string(cmdline), "serve-network") {
+			child, _ := strconv.Atoi(filepath.Base(dir))
+			return child
+		}
+	}
+	t.Fatalf("serve %d has no serve-network child", pid)
+	return 0
+}
+
+func processGone(pid int, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil || strings.Contains(string(raw), ") Z ") {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
+
+// TestServeStopsWithItsNetworkPart: the network part gets no credentials
+// folder and no sandbox key, stops when serve stops, and serve stops when
+// the network part dies.
+func TestServeStopsWithItsNetworkPart(t *testing.T) {
+	if !confine.Available().Confined && os.Getenv("CI") == "" {
+		t.Skip("no Landlock")
+	}
+	pool := testpg.Pool(t, "0121_file_content.sql")
+	dsn := testpg.URL(t)
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	dsn += sep + "search_path=" + url.QueryEscape(pool.Config().ConnConfig.RuntimeParams["search_path"])
+	start := func() runningServe {
+		base := t.TempDir()
+		l := native.Layout{Root: filepath.Join(base, "data")}
+		if err := l.Prepare(); err != nil {
+			t.Fatal(err)
+		}
+		home := filepath.Join(base, "home")
+		if err := os.MkdirAll(filepath.Join(home, ".config", "openneko"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return confinedServe(t, l, home, dsn, "")
+	}
+
+	rs := start()
+	child := networkChild(t, rs.pid)
+	environ, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", child))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{"OPENNEKO_SERVE_CREDENTIALS=", "OPENNEKO_SANDBOX_KEY="} {
+		if strings.Contains(string(environ), gone) {
+			t.Errorf("the network part holds %s", gone)
+		}
+	}
+	if err := syscall.Kill(rs.pid, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if !processGone(child, 10*time.Second) {
+		t.Fatal("the network part runs on after serve stopped")
+	}
+
+	rs = start()
+	child = networkChild(t, rs.pid)
+	if err := syscall.Kill(child, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-rs.exited:
+	case <-time.After(10 * time.Second):
+		t.Fatal("serve runs on after its network part died")
+	}
+	if !strings.Contains(rs.logs.String(), "the network part of openneko serve stopped") {
+		t.Fatalf("serve log:\n%s", rs.logs.String())
+	}
 }

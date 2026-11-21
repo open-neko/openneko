@@ -52,11 +52,11 @@ func TestNoRunnerConfinementIsSaidOnStartDoctorAndReleaseCheck(t *testing.T) {
 	cleanServeEnv(t)
 	sock := filepath.Join(testsock.Dir(t), "serve.sock")
 	ctx, stop := context.WithCancel(context.Background())
-	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, notBuilt)
+	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, notBuilt, notBuilt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = checkServeSocket(context.Background(), sock)
+	_, _, _, err = checkServeSocket(context.Background(), sock)
 	stop()
 	<-done
 	if err == nil || !strings.Contains(err.Error(), confine.NotAvailable) {

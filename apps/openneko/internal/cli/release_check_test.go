@@ -53,12 +53,12 @@ func TestReleaseCheckSchedulerReadsTheAdminSocket(t *testing.T) {
 
 func TestReleaseCheckServeSocket(t *testing.T) {
 	ctx := context.Background()
-	if _, _, err := checkServeSocket(ctx, ""); err == nil {
+	if _, _, _, err := checkServeSocket(ctx, ""); err == nil {
 		t.Fatal("an unset socket passed")
 	}
 	dir := testsock.Dir(t)
 	socket := filepath.Join(dir, "serve.sock")
-	if _, _, err := checkServeSocket(ctx, socket); err == nil {
+	if _, _, _, err := checkServeSocket(ctx, socket); err == nil {
 		t.Fatal("a missing socket passed")
 	}
 	ln, err := net.Listen("unix", socket)
@@ -74,26 +74,30 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 			_ = conn.Close()
 		}
 	}()
-	if _, _, err := checkServeSocket(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not report") {
+	if _, _, _, err := checkServeSocket(ctx, socket); err == nil || !strings.Contains(err.Error(), "did not report") {
 		t.Fatalf("a socket that gives no status: err = %v", err)
 	}
 	_ = ln.Close()
 	confined := confine.State{Mechanism: "landlock", ABI: 8, Confined: true}
+	seatbelt := confine.State{Mechanism: "seatbelt", Confined: true}
 	oldRunner := runnerAvailable
 	defer func() { runnerAvailable = oldRunner }()
 	runnerAvailable = func() confine.State { return confine.State{Mechanism: "landlock+seccomp", ABI: 8, Confined: true} }
 	for i, c := range []struct {
-		env   map[string]string
-		state confine.State
-		want  []string
+		env            map[string]string
+		state, network confine.State
+		want           []string
 	}{
-		{nil, confined, nil},
-		{nil, confine.State{Reason: "confinement on darwin is not built yet"}, nil},
-		{nil, confine.State{Mechanism: "landlock", Reason: "no Landlock"}, []string{"runs unconfined in production mode", "no Landlock"}},
-		{map[string]string{"OPENAI_API_KEY": "sk-1", "HF_TOKEN": "hf"}, confined, []string{"secret variables", "OPENAI_API_KEY", "HF_TOKEN"}},
-		{map[string]string{"OPENNEKO_DATABASE_URL": "postgres://u:p@db/x", "NEKO_SECRET_KEY": "s", "AWS_SECRET_ACCESS_KEY": "a"}, confined,
+		{nil, confined, confined, nil},
+		{nil, confine.State{Reason: "on macOS 15.5 the agent runners confine themselves, and a confined process cannot start them"}, seatbelt, nil},
+		{nil, confine.State{Reason: "confinement on windows is not built yet"}, confine.State{Reason: "confinement on windows is not built yet"}, nil},
+		{nil, confine.State{Mechanism: "landlock", Reason: "no Landlock"}, confined, []string{"runs unconfined in production mode", "no Landlock"}},
+		{nil, confined, confine.State{Mechanism: "seatbelt", Reason: "macOS refused the profile"}, []string{"network part of openneko serve runs unconfined", "refused the profile"}},
+		{nil, confined, confine.State{Mechanism: "landlock", Reason: "no Landlock"}, []string{"network part of openneko serve runs unconfined", "no Landlock"}},
+		{map[string]string{"OPENAI_API_KEY": "sk-1", "HF_TOKEN": "hf"}, confined, confined, []string{"secret variables", "OPENAI_API_KEY", "HF_TOKEN"}},
+		{map[string]string{"OPENNEKO_DATABASE_URL": "postgres://u:p@db/x", "NEKO_SECRET_KEY": "s", "AWS_SECRET_ACCESS_KEY": "a"}, confined, confined,
 			[]string{"secret variables", "OPENNEKO_DATABASE_URL", "NEKO_SECRET_KEY", "AWS_SECRET_ACCESS_KEY"}},
-		{map[string]string{"OPENNEKO_ENV": "development"}, confined, []string{"development mode"}},
+		{map[string]string{"OPENNEKO_ENV": "development"}, confined, confined, []string{"development mode"}},
 	} {
 		cleanServeEnv(t)
 		t.Setenv("OPENNEKO_ENV", "production")
@@ -102,14 +106,13 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 		}
 		path := filepath.Join(dir, fmt.Sprintf("serve-%d.sock", i))
 		sctx, stop := context.WithCancel(ctx)
-		done, err := serveAgentTurns(sctx, io.Discard, path, 1, sandbox.Config{}, c.state)
+		done, err := serveAgentTurns(sctx, io.Discard, path, 1, sandbox.Config{}, c.state, c.network)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var got confine.State
-		got, _, err = checkServeSocket(ctx, path)
-		if err == nil && got.String() != c.state.String() {
-			t.Errorf("release-check read the confinement %q, serve has %q", got, c.state)
+		got, gotNetwork, _, err := checkServeSocket(ctx, path)
+		if err == nil && (got.String() != c.state.String() || gotNetwork.String() != c.network.String()) {
+			t.Errorf("release-check read the confinement %q and %q, serve has %q and %q", got, gotNetwork, c.state, c.network)
 		}
 		stop()
 		<-done
