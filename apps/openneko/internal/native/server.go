@@ -224,3 +224,17 @@ func LoadServer(path string) (Server, error) {
 	s.Old = OldAccounts{AgentUser: old.AgentUser, Group: old.Group}
 	return s, s.Validate()
 }
+
+// BaseOf names the folder of the install, config, data or sandbox, that
+// holds dir.
+func (s Server) BaseOf(dir string) string {
+	for _, base := range []string{s.DataDir, s.ConfigDir, s.SandboxDir} {
+		if base == "" {
+			continue
+		}
+		if rel, err := filepath.Rel(base, dir); err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
+			return base
+		}
+	}
+	return dir
+}

@@ -135,7 +135,7 @@ jobs:
           docker run --rm -e OPENNEKO_TEST_SERVER_INSTALL=1 -e OPENNEKO_TEST_TWO_ACCOUNT_EXE=/old \
             -v /tmp/openneko-two-accounts:/old:ro -v /tmp/cli.test:/cli.test:ro \
             debian:bookworm-slim /cli.test -test.v -test.run 'TestServerInstall|TestServerRestore|TestServerUpgrade' | tee /tmp/server-install.log
-          for t in TestServerInstallOneAccount TestServerRestoreOwners TestServerUpgradeFromTwoAccounts; do
+          for t in TestServerInstallOneAccount TestServerInstallStopsARunningInstall TestServerRestoreOwners TestServerUpgradeFromTwoAccounts; do
             grep -q -- "--- PASS: $t" /tmp/server-install.log
           done
           if grep -- '--- SKIP' /tmp/server-install.log; then

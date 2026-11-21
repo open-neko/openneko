@@ -62,7 +62,7 @@ func (l Layout) Log(name string) string {
 func (l Layout) DataFolders() map[string]string {
 	return map[string]string{
 		"files": l.Files(), "file-index": l.Index(), "subscriptions": l.Subscriptions(),
-		"credentials": l.Credentials(), "graphjin": filepath.Dir(l.GraphJin()), "agent-runs": l.AgentRuns(),
+		"credentials": l.Credentials(), "graphjin": filepath.Dir(l.GraphJin()),
 	}
 }
 
