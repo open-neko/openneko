@@ -453,12 +453,11 @@ own Unix sockets, the name service socket, and the Mach services that name
 lookup and TLS certificate checks use (`com.apple.dnssd.service`,
 `com.apple.trustd`, `com.apple.SystemConfiguration.DNSConfiguration` and a
 few logging and directory services). It can fork, run the `openneko` and
-DuckDB programs, and signal its own children. It reads the same named
-sysctls as the runner, and the interface list (`net.routetable`) for name
-lookup. It cannot read another process's arguments, environment or record.
-It binds a Unix socket only at the real path of each of its own sockets
-(`/tmp` resolves to `/private/tmp`). It can read the metadata of a path
-that it names.
+DuckDB programs, and signal its own children. It binds a Unix socket only
+at the real path of each of its own sockets (`/tmp` resolves to
+`/private/tmp`). It has the two gaps of the runner: it can read the
+metadata of a path that it names, and the arguments, environment and
+process record of every process of the same account.
 
 When macOS has no `sandbox_init`, the network part starts unconfined and
 says so, as on a Linux kernel with no Landlock. When macOS refuses the
@@ -647,11 +646,7 @@ libSystem, with no cgo). The profile is built for each turn from the same
 - read of `/`, `/usr/lib`, `/System/Library`, the dyld cache and cryptexes,
   `/dev/null`, `/dev/urandom` and `/dev/random`;
 - the metadata (size, times) of any path;
-- reads of the sysctls that the Go runtime and libSystem need, each one
-  named (`hw.ncpu`, `hw.pagesize`, `kern.osrelease` and the like), and
-  `kern.proc.pid` for its own process. Every other sysctl is refused, so
-  `kern.procargs`, `kern.procargs2` and `kern.proc.pid` of another process,
-  which give its arguments, environment and record, are refused;
+- sysctl reads;
 - signals and process information for itself only.
 
 It allows no network rule, no fork, no program to run and no Mach service.
@@ -659,12 +654,18 @@ So the runner holds the two sockets that serve passed and the connections
 that the broker passes, and can open no other. The broker passes at most
 1024 connections a minute to a turn and ends a turn that asks for more. It cannot read another
 turn's files, the config folder or the home folder, and cannot signal serve
-or web or read their environment. macOS matches rules on the resolved path,
+or web. macOS matches rules on the resolved path,
 so each path goes in the profile both as named and resolved (`/var` and
 `/tmp` are links into `/private`). A path with a quote, a backslash or a
 control character is refused.
 
-The one gap: the runner can read the metadata of a path that it names.
+Two gaps: the runner can read the metadata of a path that it names, and
+the arguments, environment and process record of every process of the same
+account (`kern.procargs2`, `kern.proc.pid`). On macOS 15.8 Seatbelt does not
+check a sysctl read by number: a profile that refuses every sysctl but a
+named list still lets the runner read them (proved on the `macos-15`
+runner). Keep secrets out of the environment of each process of the
+OpenNeko account (INSTALL.md, "Agent confinement (macOS)").
 
 Fail closed: with no `sandbox_init`, or a profile that macOS refuses,
 serve refuses every agent turn in production mode with the same lines as
@@ -676,7 +677,9 @@ fail when they cannot run: `TestConfinedRunner`
 (`internal/cli/runner_confine_darwin_test.go`) runs the 17 checks of the
 CONF0 macOS probe and more (truncate by path, a file it wrote, and the
 arguments, environment and record of a web stand-in that holds a planted
-secret in each) in a real runner. It runs them unconfined as a
+secret in each) in a real runner. The test fails when a check of the
+stand-in is open and the runner's gaps do not name it, and when macOS
+refuses all of them and the gap is still listed. It runs them unconfined as a
 control, confined, and then with one rule added at a time; each added rule
 must open the checks that it covers, and each check must be covered.
 `TestRunnerRefusesATurnWhenItCannotConfine` covers no workspace, no

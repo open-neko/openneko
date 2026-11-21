@@ -42,7 +42,6 @@ var runnerLoosened = map[string][]string{
 	"(allow file-write*)": {"write outside its folders", "truncate a file outside its folders"},
 	"(allow process-fork) (allow process-exec) (allow file-read*)": {"run another program", "run a file it wrote"},
 	"(allow signal)": {"signal web (kill 0)"},
-	"(allow sysctl-read) (allow process-info*)": {"read web's arguments and environment", "read web's arguments", "read web's process record"},
 }
 
 func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probeResult {
@@ -89,7 +88,7 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 		refused("send to the system log socket", sendUnixgram("/var/run/syslog"))
 	}
 	tool := filepath.Join(workspace, "tool")
-	err = copyFile("/usr/bin/true", tool)
+	err = copyFile(in.Source, tool)
 	if err == nil {
 		err = runOutput(exec.Command(tool))
 	}
@@ -124,7 +123,10 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 		}
 	}
 	in := runnerProbeIn{Secret: filepath.Join(config, "secret-key"), Home: home, Outside: filepath.Join(other, "planted-by-runner"),
-		Victim: filepath.Join(other, "victim"), Parent: os.Getpid(), Web: startWebStandIn(t)}
+		Victim: filepath.Join(other, "victim"), Parent: os.Getpid(), Web: startWebStandIn(t), Source: filepath.Join(workspace, "true-source")}
+	if err := copyFile("/usr/bin/true", in.Source); err != nil {
+		t.Fatal(err)
+	}
 	for p, body := range map[string]string{in.Secret: "planted-secret-key", filepath.Join(home, ".zsh_history"): "planted", in.Victim: "keep me"} {
 		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -162,7 +164,7 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 // truncate, the parent's arguments and a file it wrote, inside a real agent
 // runner. Each refusal must open when one rule loosens the profile.
 func TestConfinedRunner(t *testing.T) {
-	requireRunnerConfinement(t)
+	st := requireRunnerConfinement(t)
 	tg := newRunnerTargets(t)
 	serveFakeDoor(t)
 
@@ -182,6 +184,7 @@ func TestConfinedRunner(t *testing.T) {
 	if len(got.Refused) != len(control.Refused) || len(got.Refused) < 17 {
 		t.Fatalf("the runner ran %d checks confined and %d unconfined", len(got.Refused), len(control.Refused))
 	}
+	checkProcargsGap(t, "the confined runner", st, control, got)
 	for what, refused := range got.Refused {
 		if !refused {
 			t.Errorf("the confined runner could %s", what)

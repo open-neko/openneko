@@ -32,7 +32,7 @@ type networkProbeIn struct {
 	Loosen, Mode                              string
 	Secret, Login, Credentials, Home, RunFile string
 	Files, Index, Subs, GraphJin, Check       string
-	Outside, Stream, TCP, Chain               string
+	Outside, Stream, TCP, Chain, Source       string
 	Parent, Web                               int
 }
 
@@ -41,11 +41,10 @@ type networkProbeIn struct {
 var networkLoosened = map[string][]string{
 	"(allow file-read*)": {"read the planted secret key", "read the main database login", "list the config folder", "list the home folder",
 		"read the serve credentials", "read an agent run file", "let a child it starts read the planted secret key"},
-	"(allow file-write*)":                       {"write outside its folders"},
-	"(allow process-exec) (allow file-read*)":   {"run another program", "run a file it wrote"},
-	"(allow signal)":                            {"signal web (kill 0)"},
-	"(allow sysctl-read) (allow process-info*)": {"read web's arguments and environment", "read web's arguments", "read web's process record"},
-	"(allow network*)":                          {"connect to a Unix socket outside its list"},
+	"(allow file-write*)":                     {"write outside its folders"},
+	"(allow process-exec) (allow file-read*)": {"run another program", "run a file it wrote"},
+	"(allow signal)":                          {"signal web (kill 0)"},
+	"(allow network*)":                        {"connect to a Unix socket outside its list"},
 }
 
 // TestServeNetworkSleeper is a child that the network probe starts: it tries
@@ -112,7 +111,7 @@ func TestServeNetworkProbeChild(t *testing.T) {
 	}
 	refused("run another program", err)
 	tool := filepath.Join(in.Files, "tool")
-	if err = copyFile("/usr/bin/true", tool); err == nil {
+	if err = copyFile(in.Source, tool); err == nil {
 		err = runOutput(exec.Command(tool))
 	}
 	refused("run a file it wrote", err)
@@ -261,6 +260,10 @@ func newNetworkTargets(t *testing.T) networkTargets {
 	if err != nil {
 		t.Fatal(err)
 	}
+	in.Source = filepath.Join(in.Files, "true-source")
+	if err := copyFile("/usr/bin/true", in.Source); err != nil {
+		t.Fatal(err)
+	}
 	in.Chain = filepath.Join(in.Subs, "www.apple.com-chain.pem")
 	if err := os.WriteFile(in.Chain, chain, 0o600); err != nil {
 		t.Fatal(err)
@@ -328,6 +331,7 @@ func TestConfinedServeNetworkPart(t *testing.T) {
 	if len(got.Refused) != len(control.Refused) || len(got.Refused) < 13 {
 		t.Fatalf("the probe ran %d checks confined and %d unconfined", len(got.Refused), len(control.Refused))
 	}
+	checkProcargsGap(t, "the confined network part", confine.Available(), control, got)
 	for what, refused := range got.Refused {
 		if !refused {
 			t.Errorf("the confined network part could %s", what)
@@ -340,7 +344,7 @@ func TestConfinedServeNetworkPart(t *testing.T) {
 			t.Logf("neither run could %s here", what)
 		}
 	}
-	if len(got.Allowed) < 9 {
+	if len(got.Allowed) < 8 {
 		t.Fatalf("the probe ran %d allowed checks", len(got.Allowed))
 	}
 	if fileExists(tg.in.Outside) {
