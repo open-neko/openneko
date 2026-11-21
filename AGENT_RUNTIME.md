@@ -564,12 +564,16 @@ limits and confines itself for good, before any agent code runs:
   256 threads, which the Go runtime enforces (`debug.SetMaxThreads`); and
   `RLIMIT_NPROC` at the account's task count at the start of the turn plus
   256 for each turn that serve runs at once (`OPENNEKO_SERVE_MAX_TURNS`).
-  The kernel counts `RLIMIT_NPROC` over every task of the account, so a
-  thread flood stops in the runner and the account keeps room for web and
-  serve. The runners share that room: each leaves enough for every runner
-  beside it to reach its own 256 threads. Native code in a runner that
-  starts threads past the Go runtime can use the room of the runners
-  beside it; their thread starts then fail. A runner that cannot start a
+  The kernel counts `RLIMIT_NPROC` over every task of the account, also
+  the tasks that `/proc` in a container does not show (other containers
+  with the same uid, or the host). The runner reads that count from the
+  kernel: it lowers its soft limit step by step and tries a fork, which
+  fails when the count has reached the limit. A thread flood stops in the
+  runner and the account keeps room for web and serve. The Go runtime
+  holds each runner to 256 threads, so a flood of Go threads leaves room
+  for every runner beside it. Native code is not bound by the Go cap: it
+  can take the room of the runners beside it, and their thread starts
+  then fail. A runner that cannot start a
   thread ends only its own turn, with the line "the agent runner could not
   start another thread". The kernel does not apply `RLIMIT_NPROC` to root:
   run OpenNeko as another user, or the status page names the gap.
