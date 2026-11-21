@@ -81,7 +81,12 @@ func (a *API) actionPolicies(w http.ResponseWriter, r *http.Request) {
 	if policies == nil {
 		policies = []actionPolicy{}
 	}
-	sendJSON(w, http.StatusOK, map[string]any{"policies": policies})
+	choices, err := a.pendingPackChoices(r.Context(), act.OrgID)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]any{"policies": policies, "packChoices": choices})
 }
 
 func (a *API) actionPolicyGet(w http.ResponseWriter, r *http.Request) {

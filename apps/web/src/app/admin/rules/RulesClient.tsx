@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { matchesListSearch } from "@/lib/list-search";
 import SkillLearnCard from "./SkillLearnCard";
 import ProposedRules, { type RuleProposal } from "./ProposedRules";
+import PackChoices, { type PackChoice } from "./PackChoices";
 import TeamProposals, { type TeamProposal } from "./TeamProposals";
 
 type Policy = {
@@ -109,6 +110,7 @@ export default function RulesClient() {
   const [query, setQuery] = useState("");
   const [proposals, setProposals] = useState<RuleProposal[]>([]);
   const [teamProposals, setTeamProposals] = useState<TeamProposal[]>([]);
+  const [packChoices, setPackChoices] = useState<PackChoice[]>([]);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
@@ -128,11 +130,12 @@ export default function RulesClient() {
     void fetch("/api/v1/policies", { cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<{ policies: Policy[] }>;
+        return r.json() as Promise<{ policies: Policy[]; packChoices?: PackChoice[] }>;
       })
       .then((policiesResult) => {
         if (cancelled) return;
         setPolicies(policiesResult.policies ?? []);
+        setPackChoices(policiesResult.packChoices ?? []);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -194,6 +197,7 @@ export default function RulesClient() {
 
         <ProposedRules proposals={proposals} onDecided={() => setRevision((n) => n + 1)} />
 
+        <PackChoices choices={packChoices} onDecided={() => setRevision((n) => n + 1)} />
         <TeamProposals proposals={teamProposals} onDecided={() => setRevision((n) => n + 1)} />
 
         {error ? (

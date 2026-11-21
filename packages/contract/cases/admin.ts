@@ -343,4 +343,16 @@ export const adminCases: Case[] = [
     request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
   },
   { op: "PATCH /policies/{policyId}", name: "needs a change", status: 400, request: (c) => ({ params: { policyId: c.ids.unknownId }, body: {} }) },
+  {
+    op: "POST /policies/{policyId}/pack-choice", name: "needs ask or auto", status: 400,
+    request: (c) => ({ params: { policyId: c.ids.unknownId }, body: { mode: "never" } }),
+  },
+  {
+    op: "POST /policies/{policyId}/pack-choice", name: "refuses a rule with no waiting choice", status: 404,
+    request: (c) => ({ params: { policyId: c.ids.unknownId }, body: { mode: "ask" } }),
+  },
+  {
+    op: "POST /policies/{policyId}/pack-choice", name: "refuses a member", as: "member", status: 403,
+    request: (c) => ({ params: { policyId: c.ids.unknownId }, body: { mode: "ask" } }),
+  },
 ];
