@@ -76,6 +76,27 @@ var Steps = []string{"resolve", "port", "tls", "login", "schema", "read_only"}
 
 const TableLimit = 1000
 
+// Refusal is the reason that a stored password with target t may not go to
+// host and port; port nil means the default port of kind.
+func (t Target) Refusal(kind, host string, port *float64) string {
+	p := defaultPorts[strings.ToLower(strings.TrimSpace(kind))]
+	if port != nil {
+		p = *port
+	}
+	_, message := t.refusal(strings.TrimSpace(host), p)
+	return message
+}
+
+func (t Target) refusal(host string, port float64) (string, string) {
+	if t.Host == "" {
+		return "secretRef", PasswordHasNoTarget
+	}
+	if !strings.EqualFold(strings.TrimSpace(t.Host), host) || t.Port != port {
+		return "host", fmt.Sprintf("The saved password belongs to %s on port %s. OpenNeko sends it to no other host or port. Save the password again for this host and port.", t.Host, portText(t.Port))
+	}
+	return "", ""
+}
+
 const PasswordHasNoTarget = "The saved password has no host and port. Save it again in the source card, or at Admin, Settings, GraphJin config with the source's host and port."
 
 const ClearTextRefused = "The server asked for the password in clear text, so OpenNeko did not send it. Ask the database administrator to use scram-sha-256 for this login."
@@ -735,13 +756,8 @@ func Check(ctx context.Context, in Input) Result {
 		return finish()
 	}
 	if t := in.PasswordTarget; t != nil && in.Password != "" {
-		if t.Host == "" {
-			findings = append(findings, Finding{Step: "resolve", Status: "fail", Field: "secretRef", Message: PasswordHasNoTarget})
-			return finish()
-		}
-		if !strings.EqualFold(strings.TrimSpace(t.Host), host) || t.Port != port {
-			findings = append(findings, Finding{Step: "resolve", Status: "fail", Field: "host", Message: fmt.Sprintf(
-				"The saved password belongs to %s on port %s. OpenNeko sends it to no other host or port. Save the password again for this host and port.", t.Host, portText(t.Port))})
+		if field, message := t.refusal(host, port); message != "" {
+			findings = append(findings, Finding{Step: "resolve", Status: "fail", Field: field, Message: message})
 			return finish()
 		}
 	}

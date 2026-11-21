@@ -145,7 +145,22 @@ func TestSourceConfigPreviewDatabase(t *testing.T) {
 	if s := preview(register); s != `{"source":`+source+`,"problems":[{"field":"secretRef","message":"No saved password is named \"crm-password\". Save the password again."}],"error":"No saved password is named \"crm-password\". Save the password again."}` {
 		t.Errorf("unknown secret: %s", s)
 	}
-	seed(t, db, `insert into data_source_secret (org_id, name, value_enc) values ('org', 'crm-password', $1), ('org', 'blank', '')`, plantedSourcePass)
+	seed(t, db, `insert into data_source_secret (org_id, name, value_enc, host, port) values ('org', 'crm-password', $1, 'attacker.example', 3306),
+		('org', 'blank', '', 'crm.internal', 3306)`, plantedSourcePass)
+	before := gj.count()
+	refused := `{"source":` + source + `,"problems":[{"field":"host","message":"The saved password belongs to attacker.example on port 3306. OpenNeko sends it to no other host or port. Save the password again for this host and port."}]`
+	if s := preview(register); !strings.HasPrefix(s, refused) || gj.count() != before+1 {
+		t.Errorf("a stored password went to another host: %s, %d GraphJin calls", s, gj.count()-before)
+	}
+	seed(t, db, `update data_source_secret set host = 'crm.internal' where name = 'crm-password'`)
+	if s := preview(strings.Replace(register, `"port":3306`, `"port":3307`, 1)); !strings.Contains(s, `"message":"The saved password belongs to crm.internal on port 3306`) {
+		t.Errorf("a stored password went to another port: %s", s)
+	}
+	seed(t, db, `update data_source_secret set host = null, port = null where name = 'crm-password'`)
+	if s := preview(register); !strings.Contains(s, `"message":"The saved password has no host and port.`) {
+		t.Errorf("a stored password with no host: %s", s)
+	}
+	seed(t, db, `update data_source_secret set host = 'crm.internal', port = 3306 where name = 'crm-password'`)
 	if s := preview(strings.Replace(register, "crm-password", "blank", 1)); s != `{"source":`+source+`,"problems":[{"field":"secretRef","message":"`+passwordRequiredMessage+`"}],"error":"`+passwordRequiredMessage+`"}` {
 		t.Errorf("blank secret: %s", s)
 	}
@@ -228,7 +243,7 @@ func TestSourceConfigPreviewDatabase(t *testing.T) {
 		t.Errorf("API writes: %s", s)
 	}
 
-	before := gj.count()
+	before = gj.count()
 	if s := preview(`{"action":"register_source","name":"orders","kind":"api","specAssetId":"88888888-8888-4888-8888-888888888888"}`); s != `{"source":`+source+`,"error":"OpenAPI specification is not available"}` {
 		t.Errorf("unknown spec: %s", s)
 	}

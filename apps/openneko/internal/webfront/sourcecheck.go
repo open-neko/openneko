@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -104,4 +105,49 @@ func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (so
 		}
 	}
 	return sourcecheck.Check(ctx, in), nil
+}
+
+type sourcePasswordRefusal string
+
+func (e sourcePasswordRefusal) Error() string { return string(e) }
+
+// storedSourcePassword is the stored password named ref, for a source
+// at host and port only.
+func (a *API) storedSourcePassword(ctx context.Context, orgID, ref, kind, host string, port *float64) (string, error) {
+	var enc string
+	var storedHost *string
+	var storedPort *int
+	err := a.DB.QueryRow(ctx, `select value_enc, host, port from data_source_secret where org_id = $1 and name = $2 limit 1`,
+		orgID, ref).Scan(&enc, &storedHost, &storedPort)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("no stored source secret named \"%s\"; add it in GraphJin Config first", ref)
+	}
+	if err != nil {
+		return "", err
+	}
+	target := sourcecheck.Target{Host: deref(storedHost)}
+	if storedPort != nil {
+		target.Port = float64(*storedPort)
+	}
+	if message := target.Refusal(kind, host, port); message != "" {
+		return "", sourcePasswordRefusal(message)
+	}
+	return config.MaybeDecryptValue(a.SecretsDir, enc)
+}
+
+// sourcePasswordResolver gives buildGraphjinConfigUpdate the stored password
+// for the database source that payload describes.
+func (a *API) sourcePasswordResolver(ctx context.Context, orgID string, payload *jsObj, got func(ref, password string)) func(string) (string, error) {
+	return func(ref string) (string, error) {
+		var port *float64
+		if v := payload.vals["port"]; jsTruthy(v) {
+			n := numberOf(v)
+			port = &n
+		}
+		password, err := a.storedSourcePassword(ctx, orgID, ref, selectedText(payload.vals["type"], "postgres"), trimmedText(payload.vals["host"]), port)
+		if err == nil && got != nil {
+			got(ref, password)
+		}
+		return password, err
+	}
 }
