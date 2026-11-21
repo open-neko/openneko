@@ -432,7 +432,7 @@ func TestSandboxSocketBelongsToTheSharedGroup(t *testing.T) {
 		t.Skip("only root can hand the socket to another group")
 	}
 	root := shortSocketDir(t)
-	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 1, GID: 23999, SwitchUsers: true, PATH: "/usr/bin:/bin"}
+	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), Key: testKey, BaseUID: 23000, Users: 1, GID: 23999, SwitchUsers: true, PATH: "/usr/bin:/bin"}
 	socket := filepath.Join(root, "sandbox.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
