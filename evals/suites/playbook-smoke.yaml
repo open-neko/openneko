@@ -1,0 +1,13 @@
+schema_version: openneko.eval.suite/v1
+id: playbook-smoke
+version: 1.0.0
+description: Six threads that failed or wasted queries before, to run the playbook pass end to end.
+cases:
+  - { ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml }
+  - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-customers-q1-2025.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-stock-tool-crib.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-category-components.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-vendor-spend-2025.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-reorder-saddle.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-top-resellers.yaml }
