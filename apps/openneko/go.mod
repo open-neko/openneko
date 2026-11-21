@@ -329,3 +329,5 @@ replace github.com/dosco/graphjin/mongodriver => github.com/dosco/graphjin/mongo
 replace github.com/dosco/graphjin/cassandradriver => github.com/dosco/graphjin/cassandradriver v0.0.0-20261031100023-6f14910d5e64
 
 replace github.com/dosco/graphjin/clickhousedriver => github.com/dosco/graphjin/clickhousedriver v0.0.0-20261031100023-6f14910d5e64
+
+replace github.com/atotto/clipboard => ./third_party/clipboard
