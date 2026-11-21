@@ -688,7 +688,7 @@ export class EvalEpisode {
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
-    if (process.env.OPENNEKO_EVAL_DREAM_MODE === "learn" && this.web && this.serve) {
+    if (["learn", "loop"].includes(process.env.OPENNEKO_EVAL_DREAM_MODE ?? "") && this.web && this.serve) {
       await this.dreamLearn().catch(async (cause) => {
         const file = process.env.OPENNEKO_EVAL_DREAM_STORE;
         if (file) await writeFile(`${file}.log`, `${JSON.stringify({ database: this.database, error: String(cause) })}\n`, { flag: "a" });
@@ -863,7 +863,7 @@ export class EvalInstallHost {
       );
       if (options.org) await this.createOrg(database, options.org);
       await episode.start(options);
-      if (process.env.OPENNEKO_EVAL_DREAM_MODE === "use") await episode.dreamSeed();
+      if (["use", "loop"].includes(process.env.OPENNEKO_EVAL_DREAM_MODE ?? "")) await episode.dreamSeed();
       return episode;
     } catch (cause) {
       await episode.stop().catch(() => {});
