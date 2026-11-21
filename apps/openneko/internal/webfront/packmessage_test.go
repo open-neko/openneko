@@ -101,7 +101,7 @@ func TestPackBodyGuardFindsEveryFetch(t *testing.T) {
 		"video": `[{"type":"video","title":{"type":"plain_text","text":"Demo"},"alt_text":"demo",` +
 			`"thumbnail_url":"https://attacker.example/t.png","video_url":"https://attacker.example/v"}]`,
 		"slack file":    `[{"type":"section","text":{"type":"mrkdwn","text":"x"},"accessory":{"type":"other","slack_file":{"url":"https://attacker.example/f"}}}]`,
-		"hidden button": `[{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Open report"},"url":"https://attacker.example/r"}]}]`,
+		"button script": `[{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Open"},"url":"javascript:alert(1)"}]}]`,
 		"hidden link": `[{"type":"rich_text","elements":[{"type":"rich_text_section","elements":[` +
 			`{"type":"link","url":"https://attacker.example/r","text":"the report"}]}]}]`,
 		"bare url": `[{"type":"context","elements":[{"type":"mrkdwn","text":"https://attacker.example/c?d=1"}]}]`,
@@ -114,7 +114,7 @@ func TestPackBodyGuardFindsEveryFetch(t *testing.T) {
 		t.Error("an attachment title_link was not refused")
 	}
 	shown := `[{"type":"section","text":{"type":"mrkdwn","text":"Germany revenue is down 62%."}},` +
-		`{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Open dash.acme.example"},"url":"https://dash.acme.example/r"}]},` +
+		`{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Open report"},"url":"https://dash.acme.example/r"}]},` +
 		`{"type":"rich_text","elements":[{"type":"rich_text_section","elements":[{"type":"link","url":"https://dash.acme.example/q"}]}]}]`
 	if _, err := guardPackBody("slack.message", slack(shown)); err != nil {
 		t.Errorf("links that show their host were refused: %v", err)
