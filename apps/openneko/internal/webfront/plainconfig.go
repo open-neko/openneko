@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 )
 
 const (
@@ -44,7 +46,8 @@ type gitRepo struct{ dir string }
 
 func (g gitRepo) run(args ...string) ([]byte, error) {
 	cmd := exec.Command("git", append([]string{"-c", "safe.directory=*", "--git-dir", g.dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0")
+	clean, _ := secretenv.Split(os.Environ())
+	cmd.Env = append(clean, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

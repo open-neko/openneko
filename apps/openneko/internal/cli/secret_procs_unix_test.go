@@ -45,6 +45,10 @@ var plantedSecrets = map[string]string{
 	"AWS_ACCESS_KEY_ID":                    "planted-aws-key-id",
 	"AWS_SECRET_ACCESS_KEY":                "planted-aws-secret",
 	"AWS_SESSION_TOKEN":                    "planted-aws-session",
+	"OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL":   "https://hooks.example/planted-audit-webhook",
+	"OPENNEKO_SANDBOX_URL":                 "https://box:planted-sandbox-login@sandbox.example:8443",
+	"NEKO_EMBEDDING_URL":                   "https://embed.example/v1?api-key=planted-embedding-query",
+	"GJ_REPORTS_URL":                       "postgres://r:planted-gj-url@db/reports",
 }
 
 // processBlock is what another process of the account reads of pid: its
@@ -128,8 +132,11 @@ func TestSecretStandIn(t *testing.T) {
 			return
 		}
 		for _, name := range []string{"OPENNEKO_SESSION_SECRET", "NEKO_PG_PASSWORD", "NEKO_EMBEDDING_API_KEY", "OPENNEKO_SANDBOX_KEY",
-			"OPENNEKO_GITHUB_TOKEN", "OPENNEKO_JOBS_WAKE_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN"} {
+			"OPENNEKO_GITHUB_TOKEN", "OPENNEKO_JOBS_WAKE_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"} {
 			secretReport(role, "has "+name+"="+strconv.FormatBool(secretenv.Get(name) == plantedSecrets[name]))
+		}
+		for _, name := range []string{"OPENNEKO_SANDBOX_URL", "NEKO_EMBEDDING_URL"} {
+			secretReport(role, "has "+name+"="+strconv.FormatBool(os.Getenv(name) == plantedSecrets[name]))
 		}
 		secretReport(role, "ready")
 	case "serve":
@@ -138,6 +145,7 @@ func TestSecretStandIn(t *testing.T) {
 			return
 		}
 		secretReport(role, "has OPENNEKO_SANDBOX_KEY="+strconv.FormatBool(secretenv.Get("OPENNEKO_SANDBOX_KEY") == plantedSecrets["OPENNEKO_SANDBOX_KEY"]))
+		secretReport(role, "has OPENNEKO_SANDBOX_URL="+strconv.FormatBool(os.Getenv("OPENNEKO_SANDBOX_URL") == plantedSecrets["OPENNEKO_SANDBOX_URL"]))
 		in := networkStart{FileStore: filestore.FromEnv(""), GraphJinSecrets: graphJinSecrets()}
 		line, _ := json.Marshal(in)
 		secretReport(role, "ready")
@@ -163,7 +171,7 @@ func TestSecretStandIn(t *testing.T) {
 			secretReport(role, "error "+err.Error())
 			return
 		}
-		for _, name := range []string{"GJ_DATABASE_PASSWORD", "OTEL_EXPORTER_OTLP_HEADERS"} {
+		for _, name := range []string{"GJ_DATABASE_PASSWORD", "OTEL_EXPORTER_OTLP_HEADERS", "GJ_REPORTS_URL"} {
 			secretReport(role, "has "+name+"="+strconv.FormatBool(os.Getenv(name) == plantedSecrets[name]))
 		}
 		secretReport(role, "ready")
