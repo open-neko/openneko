@@ -141,8 +141,11 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		if err != nil {
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}
-		if err := client.SetEgress(sandbox.Egress{Org: getenv("OPENNEKO_MCP_ORG_ID"), Label: getenv("OPENNEKO_HARNESS_RUN_ID"),
-			Hosts: splitList(getenv("OPENNEKO_HARNESS_EGRESS_HOSTS"))}); err != nil {
+		egress, err := sandbox.TurnEgress(getenv)
+		if err == nil {
+			err = client.SetEgress(egress)
+		}
+		if err != nil {
 			_ = client.Close()
 			return failed(fmt.Errorf("terminal unavailable: %w", err))
 		}

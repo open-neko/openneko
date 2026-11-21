@@ -5,7 +5,6 @@ package main
 import (
 	"cmp"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +78,7 @@ type Server struct {
 
 	mu        sync.Mutex
 	runs      map[string]*run
+	sessions  map[string]*session
 	used      map[int]bool
 	probeOpen bool
 }
@@ -193,6 +193,7 @@ func (s *Server) prepareWorkspaces() error {
 //
 //	GET    /v2/health
 //	GET    /v2/check            the health check with the key; egress is closed or open
+//	POST   /v2/runs/{run}       the control side opens a run with its egress list; the answer holds the run's token
 //	POST   /v2/runs/{run}/exec  writes the files sent, runs the command, returns the files it changed
 //	DELETE /v2/runs/{run}       kills the run's commands and removes its folder and home
 func (s *Server) Handler() http.Handler {
@@ -205,12 +206,15 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "egress": s.egress()})
 	})
+	mux.HandleFunc("POST /v2/runs/{run}", s.openRun)
 	mux.HandleFunc("POST /v2/runs/{run}/exec", s.exec)
 	mux.HandleFunc("DELETE /v2/runs/{run}", s.end)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/health" && !s.authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+		if r.URL.Path != "/v2/health" {
+			if r = s.authorize(r); r == nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 		mux.ServeHTTP(w, r)
 	})
@@ -235,14 +239,6 @@ func (s *Server) procNet() string {
 	return "/proc/net"
 }
 
-func (s *Server) authorized(r *http.Request) bool {
-	if s.Key == "" {
-		return true
-	}
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return ok && subtle.ConstantTimeCompare([]byte(token), []byte(s.Key)) == 1
-}
-
 func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("run")
 	var req execBody
@@ -263,6 +259,20 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request) {
 	if err := checkEgress(req.Egress); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if runScope(r) != "" {
+		if req.Egress != nil {
+			http.Error(w, "the egress list, org and label come from the control side", http.StatusForbidden)
+			return
+		}
+		s.mu.Lock()
+		grant, ok := s.sessionGrant(id)
+		s.mu.Unlock()
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		req.Egress = &grant
 	}
 	s.reap()
 	run, status, err := s.run(id, req.Fresh, req.TimeoutSeconds)
@@ -399,6 +409,7 @@ func (s *Server) end(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	run, ok := s.runs[id]
 	delete(s.runs, id)
+	delete(s.sessions, id)
 	s.mu.Unlock()
 	if ok {
 		s.retire(id, run)
@@ -463,6 +474,7 @@ func (s *Server) reap() {
 			delete(s.runs, id)
 		}
 	}
+	s.reapSessions()
 	s.mu.Unlock()
 	for id, r := range expired {
 		s.retire(id, r)

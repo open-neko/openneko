@@ -25,10 +25,16 @@ import (
 
 func startSandbox(t *testing.T, switchUsers bool) (*Server, string) {
 	t.Helper()
+	return startSandboxWith(t, switchUsers, func(*Server) {})
+}
+
+func startSandboxWith(t *testing.T, switchUsers bool, set func(*Server)) (*Server, string) {
+	t.Helper()
 	root := shortSocketDir(t)
 	_ = os.Chmod(root, 0o755)
 	_ = os.Chmod(filepath.Dir(root), 0o755)
 	server := &Server{Workspaces: filepath.Join(root, "runs"), Homes: filepath.Join(root, "homes"), BaseUID: 23000, Users: 4, GID: os.Getgid(), SwitchUsers: switchUsers, PATH: "/usr/bin:/bin"}
+	set(server)
 	socket := filepath.Join(root, "sandbox.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

@@ -6,8 +6,6 @@ package sandbox
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +26,9 @@ import (
 type Config struct {
 	URL string
 	Key string
+	// Run, when set, is the run that the control side opened; the client
+	// then sends no egress list, which the control side fixed.
+	Run string
 	// Dial, when set, gives each connection to the sandbox in place of a
 	// dial to the URL's host. The agent runner gets connections this way.
 	Dial func(ctx context.Context) (net.Conn, error) `json:"-"`
@@ -103,6 +104,7 @@ type Client struct {
 	dirs    map[string]bool
 	data    *scriptData
 	egress  Egress
+	fixed   bool
 }
 
 // NewClient accepts unix:///path, http:// and https:// URLs.
@@ -122,9 +124,11 @@ func NewClient(cfg Config, workspace string) (*Client, error) {
 		t.DialTLSContext = nil
 		httpClient = &http.Client{Transport: t}
 	}
-	var id [12]byte
-	_, _ = rand.Read(id[:])
-	return &Client{http: httpClient, base: base, key: cfg.Key, run: "run-" + hex.EncodeToString(id[:]), workspace: filepath.Clean(workspace), synced: map[string]fileState{}, dirs: map[string]bool{}}, nil
+	run := cfg.Run
+	if run == "" {
+		run = newRunID()
+	}
+	return &Client{http: httpClient, base: base, key: cfg.Key, run: run, fixed: cfg.Run != "", workspace: filepath.Clean(workspace), synced: map[string]fileState{}, dirs: map[string]bool{}}, nil
 }
 
 func transport(raw string) (*http.Client, string, error) {
@@ -251,8 +255,10 @@ func (c *Client) send(ctx context.Context, body execBody) (execAnswer, error) {
 		return execAnswer{}, fmt.Errorf("terminal refused the command: %w", err)
 	}
 	body.Fresh, body.Dirs, body.Put, body.Delete = !c.started, dirs, put, remove
-	egress := c.egress
-	body.Egress = &egress
+	if !c.fixed {
+		egress := c.egress
+		body.Egress = &egress
+	}
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return execAnswer{}, err

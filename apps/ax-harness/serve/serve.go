@@ -345,7 +345,9 @@ type RunnerSetup struct {
 	RequireDoor bool   `json:"require_door"`
 	Path        string `json:"path,omitempty"`
 	SandboxURL  string `json:"sandbox_url,omitempty"`
-	SandboxKey  string `json:"sandbox_key,omitempty"`
+	// SandboxRun is the run that serve opened in the sandbox; the runner
+	// holds no sandbox key.
+	SandboxRun string `json:"sandbox_run,omitempty"`
 	// Confine makes the runner confine itself before the turn's agent code
 	// runs, and refuse the turn when it cannot.
 	Confine bool `json:"confine,omitempty"`

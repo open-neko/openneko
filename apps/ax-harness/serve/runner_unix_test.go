@@ -43,6 +43,8 @@ func TestMain(m *testing.M) {
 			<-ctx.Done()
 			return 1, ctx.Err()
 		}
+	case "hostile-sandbox":
+		runnerRun = hostileSandbox
 	case "door-only":
 		os.Exit(checkDoorOnly())
 	}
@@ -338,7 +340,13 @@ func TestBrokerPassesConnectedDescriptors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	boxSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "sandbox") })}
+	boxSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/exec") {
+			_, _ = io.WriteString(w, `{"token":"run-token"}`)
+			return
+		}
+		_, _ = io.WriteString(w, "sandbox")
+	})}
 	go func() { _ = boxSrv.Serve(box) }()
 	defer boxSrv.Close()
 
@@ -358,12 +366,17 @@ func TestBrokerPassesConnectedDescriptors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s := &Server{Sandbox: sandbox.Config{URL: "unix://" + filepath.Join(dir, "sandbox.sock")}}
-	go func() { s.serveBroker(ctx, serveEnd); _ = serveEnd.Close() }()
+	gate, err := sandbox.NewGate(s.Sandbox, sandbox.Egress{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Close()
+	go func() { s.serveBroker(ctx, serveEnd, gate); _ = serveEnd.Close() }()
 	b := &brokerClient{conn: runnerEnd, in: bufio.NewReader(runnerEnd)}
 
 	for _, c := range []struct{ name, body string }{{brokerKeyDoor, "door"}, {brokerSandbox, "sandbox"}, {brokerKeyDoor, "door"}} {
 		client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return b.get(ctx, c.name) }, DisableKeepAlives: true}}
-		resp, err := client.Get("http://x/")
+		resp, err := client.Post("http://x/v2/runs/"+gate.Run()+"/exec", "application/json", strings.NewReader("{}"))
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -381,8 +394,122 @@ func TestBrokerPassesConnectedDescriptors(t *testing.T) {
 	s2, _ := unixConn(p2)
 	r2, _ := unixConn(c2)
 	defer r2.Close()
-	go func() { off.serveBroker(ctx, s2); _ = s2.Close() }()
+	go func() { off.serveBroker(ctx, s2, nil); _ = s2.Close() }()
 	if _, err := (&brokerClient{conn: r2, in: bufio.NewReader(r2)}).get(context.Background(), brokerSandbox); err == nil || !strings.Contains(err.Error(), "terminal is off") {
 		t.Fatalf("a sandbox with no URL gave %v", err)
+	}
+}
+
+// hostileSandbox is a runner that tries to choose its own egress list and
+// reach other runs and routes through its sandbox link.
+func hostileSandbox(ctx context.Context, turn harness.Turn) (int, error) {
+	report := map[string]any{"key": turn.Sandbox.Key, "run": turn.Sandbox.Run}
+	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return turn.Sandbox.Dial(ctx) }}}
+	try := func(method, path, body string) int {
+		req, _ := http.NewRequestWithContext(ctx, method, "http://sandbox"+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer guessed")
+		resp, err := client.Do(req)
+		if err != nil {
+			return -1
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	own := "/v2/runs/" + turn.Sandbox.Run
+	report["own_exec"] = try(http.MethodPost, own+"/exec", `{"command":"true","egress":{"org":"org-evil","label":"x","hosts":["evil.example"]}}`)
+	report["other_exec"] = try(http.MethodPost, "/v2/runs/run-0123456789abcdef/exec", `{"command":"true"}`)
+	report["open_run"] = try(http.MethodPost, own, `{"hosts":["evil.example"]}`)
+	report["open_other"] = try(http.MethodPost, "/v2/runs/run-0123456789abcdef", `{"hosts":["evil.example"]}`)
+	report["check"] = try(http.MethodGet, "/v2/check", "")
+	report["end"] = try(http.MethodDelete, own, "")
+	line, _ := json.Marshal(report)
+	_, err := turn.Out.Write(append(line, '\n'))
+	return 0, err
+}
+
+type boxCall struct {
+	method, path, auth string
+	body               map[string]any
+}
+
+func TestARunnerCannotChooseTheSandboxEgress(t *testing.T) {
+	const key = "serve-sandbox-key"
+	var mu sync.Mutex
+	var calls []boxCall
+	ln, err := net.Listen("unix", filepath.Join(testsock.Dir(t), "sandbox.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	box := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := boxCall{method: r.Method, path: r.URL.Path, auth: r.Header.Get("Authorization")}
+		_ = json.NewDecoder(r.Body).Decode(&call.body)
+		mu.Lock()
+		calls = append(calls, call)
+		mu.Unlock()
+		if r.Method == http.MethodPost && !strings.HasSuffix(r.URL.Path, "/exec") {
+			_, _ = io.WriteString(w, `{"token":"run-token"}`)
+			return
+		}
+		_, _ = io.WriteString(w, "{}")
+	})}
+	go func() { _ = box.Serve(ln) }()
+	defer box.Close()
+
+	socket := startServer(t, runnerServer(t, "hostile-sandbox", &Server{Sandbox: sandbox.Config{URL: "unix://" + ln.Addr().String(), Key: key}}))
+	c := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec), Environ: []string{"OPENNEKO_MCP_ORG_ID=org-1", "OPENNEKO_MCP_THREAD_ID=t",
+		"OPENNEKO_HARNESS_RUN_ID=work-run-1", "OPENNEKO_HARNESS_EGRESS_HOSTS=allowed.example, api.allowed.example:8443"}})
+	exit, events := waitExit(t, c)
+	if exit.Code == nil || *exit.Code != 0 || len(events) != 1 {
+		t.Fatalf("exit = %+v, events = %d", exit, len(events))
+	}
+	var report struct {
+		Key       string `json:"key"`
+		Run       string `json:"run"`
+		OwnExec   int    `json:"own_exec"`
+		OtherExec int    `json:"other_exec"`
+		OpenRun   int    `json:"open_run"`
+		OpenOther int    `json:"open_other"`
+		Check     int    `json:"check"`
+		End       int    `json:"end"`
+	}
+	if err := json.Unmarshal(events[0], &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Key != "" || report.Run == "" {
+		t.Fatalf("the runner holds the sandbox key %q, run %q", report.Key, report.Run)
+	}
+	if report.OtherExec != http.StatusForbidden || report.OpenRun != http.StatusForbidden || report.OpenOther != http.StatusForbidden || report.Check != http.StatusForbidden {
+		t.Errorf("serve passed a request outside the runner's run: %+v", report)
+	}
+	ended := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		last := calls[len(calls)-1]
+		return last.method == http.MethodDelete && last.auth == "Bearer "+key
+	}
+	for deadline := time.Now().Add(5 * time.Second); !ended(); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("serve did not end the run with its key at turn end")
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 4 {
+		t.Fatalf("the sandbox got %+v", calls)
+	}
+	open := calls[0]
+	hosts, _ := json.Marshal(open.body["hosts"])
+	if open.method != http.MethodPost || open.path != "/v2/runs/"+report.Run || open.auth != "Bearer "+key ||
+		open.body["org"] != "org-1" || open.body["label"] != "work-run-1" || string(hosts) != `["allowed.example","api.allowed.example:8443"]` {
+		t.Fatalf("serve opened the run as %+v", open)
+	}
+	for _, call := range calls[1:3] {
+		if call.auth != "Bearer run-token" {
+			t.Errorf("the sandbox got %s %s with %q from the runner's link", call.method, call.path, call.auth)
+		}
+	}
+	if calls[1].method != http.MethodPost || calls[1].path != "/v2/runs/"+report.Run+"/exec" || calls[2].method != http.MethodDelete || calls[2].path != "/v2/runs/"+report.Run {
+		t.Errorf("the runner's own calls reached the sandbox as %+v", calls[1:3])
 	}
 }
