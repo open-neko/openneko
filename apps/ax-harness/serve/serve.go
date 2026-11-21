@@ -102,6 +102,10 @@ type Server struct {
 	// reports it. ConfineRunner makes each runner confine itself.
 	RunnerConfinement json.RawMessage
 	ConfineRunner     bool
+	// StartRunner starts each runner on Windows, where a runner cannot
+	// confine itself: it starts the runner confined. With ConfineRunner set
+	// and no StartRunner, Windows serve refuses every turn.
+	StartRunner func(RunnerStart) (RunnerProcess, error)
 	// TurnsOff, when set, refuses every agent turn with this text. Host
 	// model calls and embedding calls still run.
 	TurnsOff string

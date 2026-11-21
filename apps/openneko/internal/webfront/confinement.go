@@ -47,7 +47,11 @@ func (a *API) confinementService() externalService {
 				return "", "", errors.New(confine.NotAvailable + ": agent turns run unconfined")
 			}
 			if !st.network.Confined {
-				return fmt.Sprintf("Confinement of openneko serve on %s is not built yet: %s.", runtime.GOOS, st.network.Reason), "", nil
+				detail := fmt.Sprintf("Confinement of openneko serve on %s is not built yet: %s.", runtime.GOOS, st.network.Reason)
+				if st.runner.Confined {
+					detail += fmt.Sprintf(" Each agent turn runs in a runner under %s: it reaches no network and only the files of its turn.", st.runner)
+				}
+				return detail, "", nil
 			}
 			detail := fmt.Sprintf("The network part of openneko serve (files, GraphJin) runs under %s: it cannot read the config folder or other files of this account.", st.network)
 			if len(st.network.Gaps) > 0 {

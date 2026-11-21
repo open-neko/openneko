@@ -263,6 +263,25 @@ jobs:
           go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli | tee "$RUNNER_TEMP/security.log"
           ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/security.log" "${tests[@]}"
 
+      - name: Windows confinement proofs run and do not skip
+        if: ${{ !cancelled() }}
+        working-directory: apps/openneko
+        env:
+          OPENNEKO_TEST_REQUIRE_CONFINE: "1"
+        run: |
+          set -euo pipefail
+          cmd //c ver
+          tests=(TestConfinedRunnerWindows TestWindowsRunnerRefusesATurnOutsideAnAppContainer TestWindowsRunnersCannotReachEachOther
+            TestWindowsRunnerGetsNoFolderThroughALink TestWindowsStarterKeepsTheTurnInsideAgentRuns TestWindowsTurnsAreOffWithNoAppContainer
+            TestStaleRunnerContainersGo)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli | tee "$RUNNER_TEMP/confine.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
+          cd ../ax-harness
+          tests=(TestWindowsRunnerRunsAWholeTurnThroughItsSockets TestWindowsRunnerStopsWhenTheCallerHangsUp
+            TestWindowsServeRefusesAConfinedTurnWithNoStarter TestWindowsRunnerSocketsTakeOnlyTheRunner)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./serve | tee "$RUNNER_TEMP/runner.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/runner.log" "${tests[@]}"
+
       - name: ax-harness
         if: ${{ !cancelled() }}
         working-directory: apps/ax-harness

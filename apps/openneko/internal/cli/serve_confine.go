@@ -199,7 +199,7 @@ func runnerConfinement(out io.Writer) (st confine.State, turnsOff string) {
 // each refused turn show when agent runners cannot be confined.
 func turnsOffLine(st confine.State) string {
 	if st.Mechanism == "" {
-		return fmt.Sprintf(`%s (%s), so agent turns are off. Run openneko serve on Linux or macOS for agent turns (INSTALL.md, "Agent confinement").`, confine.NotAvailable, st.Reason)
+		return fmt.Sprintf(`%s (%s), so agent turns are off. Run openneko serve on Linux, macOS or Windows for agent turns (INSTALL.md, "Agent confinement").`, confine.NotAvailable, st.Reason)
 	}
 	return fmt.Sprintf(`agent confinement: off. %s, so agent turns are off (INSTALL.md, "Agent confinement").`, st.Reason)
 }

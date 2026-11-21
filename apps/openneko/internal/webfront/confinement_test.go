@@ -41,6 +41,8 @@ func TestAdminServicesShowServesConfinement(t *testing.T) {
 		{&confine.State{Mechanism: "landlock", Reason: "OPENNEKO_SERVE_CONFINE=off in development mode"}, ll, nil, "", "failing",
 			"openneko serve runs unconfined: OPENNEKO_SERVE_CONFINE=off in development mode", false},
 		{&confine.State{Reason: "not built yet"}, &confine.State{Reason: "not built yet"}, &confine.State{Mechanism: "seatbelt", Confined: true}, "", "ok", "Confinement of openneko serve on " + runtime.GOOS + " is not built yet", true},
+		{&confine.State{Reason: "confinement on windows is not built yet"}, &confine.State{Reason: "confinement on windows is not built yet"}, &confine.State{Mechanism: "appcontainer", Confined: true}, "", "ok",
+			"Confinement of openneko serve on " + runtime.GOOS + " is not built yet: confinement on windows is not built yet. Each agent turn runs in a runner under appcontainer: it reaches no network and only the files of its turn.", false},
 		{&confine.State{Reason: "confinement on windows is not built yet"}, &confine.State{Reason: "confinement on windows is not built yet"}, &confine.State{Reason: "confinement on windows is not built yet"}, "", "failing",
 			"agent confinement: not available on this system yet: agent turns run unconfined", false},
 		{nil, nil, nil, "", "failing", "openneko serve did not report its confinement; run serve from the same release as web", false},
