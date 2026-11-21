@@ -177,7 +177,8 @@ func TestApprovals(t *testing.T) {
 
 	w := call(f, "GET", "/api/v1/approvals?filter=fired", "", admin)
 	want := `{"actions":[{"id":"` + arFired + `","workflowRunId":"` + runOrg + `","workflow":{"id":"` + wfOrg + `","name":"Org flow"},` +
-		`"triggeredByObservation":null,"kind":"note","target":null,"payload":{"a":[2],"b":1},"riskLevel":"low","summary":null,` +
+		`"triggeredByObservation":null,"kind":"note","target":null,"facts":{"headline":"Note","lines":["a: 2","b: 1"],"flags":[]},` +
+		`"payload":{"a":[2],"b":1},"riskLevel":"low","summary":null,` +
 		`"scope":"internal","status":"executed","minutesSaved":12,"approvedAt":"2026-11-03T06:00:01.500Z","approverKind":"policy",` +
 		`"approverLabel":"Auto small","rejectionReason":null,"failureReason":null,"outcome":"completed","executionError":null,` +
 		`"runAt":"2026-11-01T08:00:00.123Z","createdAt":"2026-11-03T06:00:00.000Z"}],"count":1,"filter":"fired"}`
@@ -243,7 +244,8 @@ func TestActionRequests(t *testing.T) {
 	want := `{"actionRequest":{"id":"` + arRetry + `","workflowRunId":null,"triggeredByObservationId":null,"policyId":null,` +
 		`"scope":"admin.apps","kind":"user_admin","target":null,"payload":{"a":[2],"b":1},"riskLevel":"low","status":"failed",` +
 		`"summary":null,"approvedByUserId":"admin","approvedAt":"2026-11-03T08:00:00.000Z","rejectionReason":null,"failureReason":null,` +
-		`"createdAt":"2026-11-03T08:00:00.000Z","updatedAt":"2026-11-03T08:00:00.000Z"},"executions":[{"id":"`
+		`"createdAt":"2026-11-03T08:00:00.000Z","updatedAt":"2026-11-03T08:00:00.000Z",` +
+		`"facts":{"headline":"Change a user","lines":["a: 2","b: 1"],"flags":[]}},"executions":[{"id":"`
 	if !strings.HasPrefix(w.Body.String(), want) {
 		t.Fatalf("detail:\n got %s\nwant %s", w.Body.String(), want)
 	}

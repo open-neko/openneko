@@ -17,7 +17,7 @@ export type RuleProposal = {
     appliesToScopes?: string[] | null;
     mode?: string;
     riskThresholdAutoApprove?: string | null;
-    allowedTargets?: { patterns?: unknown } | null;
+    allowedTargets?: { patterns?: unknown; on_miss?: string } | null;
     deniedTargets?: { patterns?: unknown } | null;
     limits?: Record<string, unknown> | null;
     approverRole?: string | null;
@@ -97,6 +97,11 @@ function ProposalRow({ proposal, onDecided }: { proposal: RuleProposal; onDecide
         <Line label="Priority">{rule.priority ?? 100}</Line>
         {rule.riskThresholdAutoApprove ? <Line label="Auto-approve">risk {rule.riskThresholdAutoApprove} and below</Line> : null}
         {allowed ? <Line label="Allowed">{allowed}</Line> : null}
+        {allowed ? (
+          <Line label="Other targets">
+            {rule.allowedTargets?.on_miss === "next" ? "go to the next rule (on_miss: next)" : "are denied"}
+          </Line>
+        ) : null}
         {denied ? <Line label="Denied">{denied}</Line> : null}
         {limits ? <Line label="Limits">{limits}</Line> : null}
         {rule.approverRole ? <Line label="Approver">{rule.approverRole}</Line> : null}

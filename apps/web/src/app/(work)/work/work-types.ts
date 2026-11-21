@@ -71,6 +71,7 @@ export type WorkEvent =
       risk_level?: string;
       intent?: string;
       summary?: string;
+      facts?: ApprovalFacts;
       decision: "auto_approved" | "pending_approval";
     }
   | {
@@ -153,11 +154,14 @@ export type ToolItem = {
   approval?: ApprovalItem;
 };
 
+export type ApprovalFacts = { headline: string; lines: string[]; flags: string[] };
+
 export type ApprovalItem = {
   actionRequestId: string;
   actionKind: string;
   intent: string | null;
   summary: string | null;
+  facts: ApprovalFacts | null;
   decision: "auto_approved" | "pending_approval";
   result:
     | Extract<WorkEvent, { type: "action_request_result" }>

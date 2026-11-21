@@ -188,8 +188,12 @@ func (b turnBinding) proposeAdmin(ctx context.Context, be toolBackend, kind, tar
 	if status == "approved" {
 		emitted = "auto_approved"
 	}
-	if err := be.emitEvent(ctx, jsObjOf("type", "action_request_emit", "action_request_id", requestID, "kind", kind,
-		"scope", "internal", "decision", emitted, "summary", intent, "risk_level", high)); err != nil {
+	event := jsObjOf("type", "action_request_emit", "action_request_id", requestID, "kind", kind,
+		"scope", "internal", "decision", emitted, "summary", intent, "risk_level", high)
+	if facts, ok := jsField(request, "facts"); ok {
+		event.set("facts", facts)
+	}
+	if err := be.emitEvent(ctx, event); err != nil {
 		return toolResult{}, err
 	}
 	note := "Approval-gated: tell the operator what you proposed and end your turn — the approval card is rendered inline."

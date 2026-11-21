@@ -48,6 +48,7 @@ type ActionDetailPayload = {
     riskLevel: string | null;
     status: string;
     summary: string | null;
+    facts?: { headline: string; lines: string[]; flags: string[] } | null;
     approvedByUserId: string | null;
     approvedAt: string | null;
     rejectionReason: string | null;
@@ -310,7 +311,7 @@ export default function ActionPage() {
         </AppHeader>
 
         <PageHeading
-          title={ar.summary || ar.kind}
+          title={ar.facts?.headline || ar.kind}
           meta={OUTCOME_LABEL[outcome]}
           description={[
             ar.kind,
@@ -336,6 +337,8 @@ export default function ActionPage() {
 
         <Section title="Receipt">
           <dl className="grid gap-3.5 m-0">
+            {ar.facts?.flags.length ? <Field label="Unusual">{ar.facts.flags.join(" · ")}</Field> : null}
+            {ar.summary ? <Field label="Agent's description">{ar.summary}</Field> : null}
             <Field label="Proposed">
               <span className="tabular-nums">{formatTime(ar.createdAt)}</span>
               {workflow && (

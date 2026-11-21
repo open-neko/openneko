@@ -567,6 +567,9 @@ func (t *chatTurn) fenceAction(ctx context.Context, rt *runTools, p *jsObj) erro
 	stored, _ := jsField(request, "status")
 	event := jsObjOf("type", "action_request_emit", "action_request_id", id, "kind", kind, "scope", scope,
 		"decision", pick(stored == "approved", "auto_approved", "pending_approval"), "intent", summary, "summary", summary)
+	if facts, ok := jsField(request, "facts"); ok {
+		event.set("facts", facts)
+	}
 	if risk, ok := p.vals["risk_level"]; ok {
 		event.set("risk_level", risk)
 	}
