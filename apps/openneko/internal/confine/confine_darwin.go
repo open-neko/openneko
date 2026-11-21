@@ -2,6 +2,7 @@ package confine
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -94,19 +95,30 @@ func ApplyRunner(spec Spec) (State, error) {
 	return st, nil
 }
 
+// sysctlReads names each sysctl that the Go runtime, libSystem and the TLS
+// checks read. A sysctl outside the list stays refused: kern.procargs2 and
+// kern.proc.pid of another process give its arguments, environment and record.
+const sysctlReads = `(allow sysctl-read
+ (sysctl-name "sysctl.name2oid") (sysctl-name "sysctl.proc_cputype") (sysctl-name "sysctl.proc_native") (sysctl-name "sysctl.proc_translated")
+ (sysctl-name "hw.activecpu") (sysctl-name "hw.byteorder") (sysctl-name "hw.cachelinesize") (sysctl-name "hw.cachelinesize_compat") (sysctl-name "hw.cpufamily") (sysctl-name "hw.cpusubtype") (sysctl-name "hw.cputype")
+ (sysctl-name "hw.l1dcachesize") (sysctl-name "hw.l1icachesize") (sysctl-name "hw.l2cachesize") (sysctl-name "hw.logicalcpu") (sysctl-name "hw.logicalcpu_max") (sysctl-name "hw.machine") (sysctl-name "hw.memsize") (sysctl-name "hw.model")
+ (sysctl-name "hw.ncpu") (sysctl-name "hw.nperflevels") (sysctl-name "hw.packages") (sysctl-name "hw.pagesize") (sysctl-name "hw.pagesize_compat") (sysctl-name "hw.physicalcpu") (sysctl-name "hw.physicalcpu_max")
+ (sysctl-name "hw.tbfrequency") (sysctl-name "hw.tbfrequency_compat") (sysctl-name "hw.vectorunit") (sysctl-name-prefix "hw.optional.") (sysctl-name-prefix "hw.perflevel") (sysctl-name-prefix "machdep.cpu.")
+ (sysctl-name "kern.argmax") (sysctl-name "kern.hostname") (sysctl-name "kern.hv_vmm_present") (sysctl-name "kern.maxfiles") (sysctl-name "kern.maxfilesperproc") (sysctl-name "kern.maxproc") (sysctl-name "kern.ngroups")
+ (sysctl-name "kern.osproductversion") (sysctl-name "kern.osproductversioncompat") (sysctl-name "kern.osrelease") (sysctl-name "kern.ostype") (sysctl-name "kern.osvariant_status") (sysctl-name "kern.osversion")
+ (sysctl-name "kern.secure_kernel") (sysctl-name "kern.usrstack64") (sysctl-name "kern.version") (sysctl-name "security.mac.lockdown_mode_state"))
+`
+
 // The read of "/" itself is needed: without it the CONF0 probe child dies
-// at start on macOS 15.5. The sysctl read of kern.procargs2 gives another
-// process's arguments and environment.
+// at start on macOS 15.5.
 const runnerBase = `(version 1)
 (deny default)
 (allow file-read* (literal "/"))
 (allow file-read* (subpath "/usr/lib") (subpath "/System/Library") (subpath "/System/Volumes/Preboot/Cryptexes") (subpath "/private/var/db/dyld") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))
 (allow file-read-metadata)
-(allow sysctl-read)
-(deny sysctl-read (sysctl-name-prefix "kern.procargs"))
 (allow signal (target self))
 (allow process-info* (target self))
-`
+` + sysctlReads
 
 // serveBase keeps the network and the system services that name lookup and
 // TLS certificate checks reach. A child that it starts runs under the same
@@ -117,8 +129,7 @@ const serveBase = `(version 1)
 (allow file-read* (subpath "/usr/lib") (subpath "/System/Library") (subpath "/System/Volumes/Preboot/Cryptexes") (subpath "/private/var/db/dyld") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))
 (allow file-read* (subpath "/Library/Keychains") (subpath "/Library/Security") (subpath "/private/var/db/mds") (subpath "/private/etc/ssl") (literal "/private/etc/hosts") (literal "/private/etc/resolv.conf") (literal "/private/var/run/resolv.conf") (literal "/private/etc/services") (literal "/private/etc/protocols"))
 (allow file-read-metadata)
-(allow sysctl-read)
-(deny sysctl-read (sysctl-name-prefix "kern.procargs"))
+(allow sysctl-read (sysctl-name-prefix "net.routetable."))
 (allow signal (target self))
 (allow signal (target same-sandbox))
 (allow process-info* (target self))
@@ -129,11 +140,12 @@ const serveBase = `(version 1)
 (allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
 (allow mach-lookup (global-name "com.apple.dnssd.service") (global-name "com.apple.SystemConfiguration.DNSConfiguration") (global-name "com.apple.SystemConfiguration.configd") (global-name "com.apple.system.opendirectoryd.libinfo") (global-name "com.apple.system.opendirectoryd.membership") (global-name "com.apple.trustd") (global-name "com.apple.trustd.agent") (global-name "com.apple.ocspd") (global-name "com.apple.SecurityServer") (global-name "com.apple.system.notification_center") (global-name "com.apple.system.logger") (global-name "com.apple.logd") (global-name "com.apple.diagnosticd"))
 (allow ipc-posix-shm-read-data (ipc-posix-name "apple.shm.notification_center"))
-`
+` + sysctlReads
 
 func profile(base string, spec Spec) (string, error) {
 	var b strings.Builder
 	b.WriteString(base)
+	fmt.Fprintf(&b, "(allow sysctl-read (sysctl-name \"kern.proc.pid.%d\"))\n", os.Getpid())
 	for _, rule := range []struct {
 		allow, format string
 		paths         []string
@@ -143,6 +155,7 @@ func profile(base string, spec Spec) (string, error) {
 		{"file-read* process-exec", "(literal %s)", spec.Exec},
 		{"network-outbound", "(remote unix-socket (path-literal %s))", spec.Sockets},
 		{"network-bind network-inbound", "(local unix-socket (path-literal %s))", spec.Listen},
+		{"file-write-create file-write-unlink", "(literal %s)", spec.Listen},
 		{"network-outbound", "(remote unix-socket (path-literal %s))", spec.Listen},
 	} {
 		for _, p := range rule.paths {

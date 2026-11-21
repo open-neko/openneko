@@ -32,8 +32,8 @@ type networkProbeIn struct {
 	Loosen, Mode                              string
 	Secret, Login, Credentials, Home, RunFile string
 	Files, Index, Subs, GraphJin, Check       string
-	Outside, Stream, TCP                      string
-	Parent                                    int
+	Outside, Stream, TCP, Chain               string
+	Parent, Web                               int
 }
 
 // networkLoosened names, for each rule added to the profile, the checks that
@@ -44,7 +44,7 @@ var networkLoosened = map[string][]string{
 	"(allow file-write*)":                       {"write outside its folders"},
 	"(allow process-exec) (allow file-read*)":   {"run another program", "run a file it wrote"},
 	"(allow signal)":                            {"signal web (kill 0)"},
-	"(allow sysctl-read) (allow process-info*)": {"read web's arguments and environment"},
+	"(allow sysctl-read) (allow process-info*)": {"read web's arguments and environment", "read web's arguments", "read web's process record"},
 	"(allow network*)":                          {"connect to a Unix socket outside its list"},
 }
 
@@ -78,7 +78,7 @@ func TestServeNetworkProbeChild(t *testing.T) {
 	f := serveFolders{files: in.Files, index: in.Index, subsDir: in.Subs, gjConfig: in.GraphJin, checkSocket: in.Check}
 	var log bytes.Buffer
 	st, err := confineServe(&log, f, in.Mode == "control")
-	out := probeResult{Refused: map[string]bool{}, Allowed: map[string]bool{}}
+	out := probeResult{Refused: map[string]bool{}, Allowed: map[string]bool{}, Errors: map[string]string{}}
 	out.Notes = append(out.Notes, strings.TrimSpace(log.String()), fmt.Sprintf("state %s, err %v", st, err))
 	if err != nil {
 		_ = json.NewEncoder(os.Stdout).Encode(out)
@@ -86,14 +86,14 @@ func TestServeNetworkProbeChild(t *testing.T) {
 	}
 	refused := func(what string, err error) {
 		out.Refused[what] = err != nil
-		if err != nil && os.Getenv("OPENNEKO_TEST_VERBOSE") != "" {
-			out.Notes = append(out.Notes, fmt.Sprintf("%s: %v", what, err))
+		if err != nil {
+			out.Errors[what] = err.Error()
 		}
 	}
 	allowed := func(what string, err error) {
 		out.Allowed[what] = err == nil
 		if err != nil {
-			out.Notes = append(out.Notes, fmt.Sprintf("%s: %v", what, err))
+			out.Errors[what] = err.Error()
 		}
 	}
 	for what, p := range map[string]string{"read the planted secret key": in.Secret, "read the main database login": in.Login,
@@ -113,15 +113,11 @@ func TestServeNetworkProbeChild(t *testing.T) {
 	refused("run another program", err)
 	tool := filepath.Join(in.Files, "tool")
 	if err = copyFile("/usr/bin/true", tool); err == nil {
-		err = exec.Command(tool).Run()
+		err = runOutput(exec.Command(tool))
 	}
 	refused("run a file it wrote", err)
 	refused("signal web (kill 0)", unix.Kill(in.Parent, 0))
-	args, err := unix.SysctlRaw("kern.procargs2", in.Parent)
-	if err == nil && !strings.Contains(string(args), "PATH=") {
-		err = errors.New("read no variable")
-	}
-	refused("read web's arguments and environment", err)
+	readWebProcess(in.Web, refused)
 	refused("connect to a Unix socket outside its list", dial("unix", in.Stream))
 
 	kept := filepath.Join(in.Files, "kept.txt")
@@ -135,7 +131,7 @@ func TestServeNetworkProbeChild(t *testing.T) {
 	allowed("listen on the config check socket", listenAndAccept("unix", in.Check))
 	_, err = net.LookupHost("example.com")
 	allowed("resolve a name", err)
-	allowed("verify a TLS certificate with the system trust store", verifyAppleChain())
+	allowed("verify a TLS certificate with the system trust store", verifyAppleChain(in.Chain))
 	exe, _ := os.Executable()
 	allowed("run its own program", exec.Command(exe, "-test.run=^$").Run())
 	got, err := startAndStop(exe, in.Secret)
@@ -176,8 +172,8 @@ func listenAndAccept(network, addr string) error {
 	}
 }
 
-func verifyAppleChain() error {
-	raw, err := os.ReadFile(filepath.Join("testdata", "www.apple.com-chain.pem"))
+func verifyAppleChain(path string) error {
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -249,7 +245,7 @@ func newNetworkTargets(t *testing.T) networkTargets {
 		Credentials: filepath.Join(creds, "database.url"), Home: home, RunFile: filepath.Join(runs, "notes.md"),
 		Files: filepath.Join(base, "data", "files"), Index: filepath.Join(base, "data", "file-index"), Subs: filepath.Join(base, "data", "subs"),
 		GraphJin: filepath.Join(base, "data", "graphjin", "agentic.yml"), Check: filepath.Join(base, "data", "run", "check.sock"),
-		Outside: filepath.Join(other, "planted-by-serve"), Stream: filepath.Join(other, "docker.sock"), Parent: os.Getpid()}
+		Outside: filepath.Join(other, "planted-by-serve"), Stream: filepath.Join(other, "docker.sock"), Parent: os.Getpid(), Web: startWebStandIn(t)}
 	for _, d := range []string{config, creds, home, runs, other, tg.tmp, in.Files, in.Index, in.Subs, filepath.Dir(in.GraphJin), filepath.Dir(in.Check)} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
@@ -260,6 +256,14 @@ func newNetworkTargets(t *testing.T) networkTargets {
 		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	chain, err := os.ReadFile(filepath.Join("testdata", "www.apple.com-chain.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Chain = filepath.Join(in.Subs, "www.apple.com-chain.pem")
+	if err := os.WriteFile(in.Chain, chain, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	if acceptAll(t, "unix", in.Stream) == nil {
 		t.Fatal("cannot listen on", in.Stream)
@@ -318,6 +322,9 @@ func TestConfinedServeNetworkPart(t *testing.T) {
 	for _, n := range got.Notes {
 		t.Logf("confined: %s", n)
 	}
+	for what, e := range got.Errors {
+		t.Logf("confined: %s: %s", what, e)
+	}
 	if len(got.Refused) != len(control.Refused) || len(got.Refused) < 13 {
 		t.Fatalf("the probe ran %d checks confined and %d unconfined", len(got.Refused), len(control.Refused))
 	}
@@ -328,7 +335,7 @@ func TestConfinedServeNetworkPart(t *testing.T) {
 	}
 	for what, ok := range got.Allowed {
 		if !ok && control.Allowed[what] {
-			t.Errorf("the confined network part could not %s", what)
+			t.Errorf("the confined network part could not %s: %s", what, got.Errors[what])
 		} else if !ok {
 			t.Logf("neither run could %s here", what)
 		}
@@ -352,7 +359,7 @@ func TestConfinedServeNetworkPart(t *testing.T) {
 		for _, what := range opens {
 			proved[what] = true
 			if res.Refused[what] {
-				t.Errorf("with %s the network part still could not %s: the check does not prove that rule", rule, what)
+				t.Errorf("with %s the network part still could not %s: the check does not prove that rule: %s", rule, what, res.Errors[what])
 			}
 		}
 	}

@@ -34,7 +34,7 @@ type runnerProbeIn struct {
 	TCP, TCP6, UDP                string
 	Stream, Datagram, Abstract    string
 	Docker, DBus                  string
-	Parent                        int
+	Parent, Web                   int
 	Shm                           int
 	NProc                         uint64
 	ParentAddr                    uintptr
@@ -149,11 +149,12 @@ func requireRunnerConfinement(t *testing.T) confine.State {
 }
 
 type probeResult struct {
-	Notes   []string        `json:"notes"`
-	Refused map[string]bool `json:"refused"`
-	Allowed map[string]bool `json:"allowed"`
-	Limited map[string]bool `json:"limited"`
-	Threads int             `json:"threads"`
+	Notes   []string          `json:"notes"`
+	Refused map[string]bool   `json:"refused"`
+	Allowed map[string]bool   `json:"allowed"`
+	Limited map[string]bool   `json:"limited"`
+	Threads int               `json:"threads"`
+	Errors  map[string]string `json:"errors,omitempty"`
 }
 
 // webSecret stands for a secret in web's memory.
