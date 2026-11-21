@@ -4,6 +4,7 @@ import Link from "next/link";
 import AdminLoad from "./AdminLoad";
 import { AdminShell } from "./AdminShell";
 import { ExternalServicesPanel } from "./ExternalServicesPanel";
+import { StoredPasswordsNotice } from "./StoredPasswordsNotice";
 import { Card } from "@/components/ui/card";
 import { StatCard, StatGrid } from "@/components/ui/stat-card";
 
@@ -137,6 +138,7 @@ function AdminIndex({ overview, authGate }: { overview: AdminOverview; authGate:
         />
       </StatGrid>
 
+      <StoredPasswordsNotice />
       <ExternalServicesPanel />
 
       <AdminCardGroup title="Core" cards={coreCards} />
