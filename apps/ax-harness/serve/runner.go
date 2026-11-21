@@ -171,7 +171,8 @@ type RunnerLimits struct {
 	// Threads caps the threads of the runner's own process.
 	Threads uint64
 	// AccountTasks is how many more tasks of this account the runner lets
-	// the account start, for itself and the runners beside it.
+	// the account start, for itself and the runners beside it. Native code
+	// in one runner can take all of it.
 	AccountTasks uint64
 }
 
