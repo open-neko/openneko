@@ -91,7 +91,7 @@ func TestReleaseCheckServeSocket(t *testing.T) {
 		{nil, confined, confined, nil},
 		{nil, confine.State{Reason: "on macOS 15.5 the agent runners confine themselves, and a confined process cannot start them"}, seatbelt, nil},
 		{nil, confine.State{Reason: "confinement on windows is not built yet"}, confine.State{Reason: "confinement on windows is not built yet"}, nil},
-		{nil, confine.State{Mechanism: "landlock", Reason: "no Landlock"}, confined, []string{"runs unconfined in production mode", "no Landlock"}},
+		{nil, confine.State{Mechanism: "landlock", Reason: "no Landlock"}, confined, []string{"agent runners cannot be confined", "no Landlock"}},
 		{nil, confined, confine.State{Mechanism: "seatbelt", Reason: "macOS refused the profile"}, []string{"network part of openneko serve runs unconfined", "refused the profile"}},
 		{nil, confined, confine.State{Mechanism: "landlock", Reason: "no Landlock"}, []string{"network part of openneko serve runs unconfined", "no Landlock"}},
 		{map[string]string{"OPENAI_API_KEY": "sk-1", "HF_TOKEN": "hf"}, confined, confined, []string{"secret variables", "OPENAI_API_KEY", "HF_TOKEN"}},

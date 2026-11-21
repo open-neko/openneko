@@ -540,7 +540,7 @@ The proof tests run on macOS 15 on every push.
 
 Apple marks `sandbox_init` and `sandbox-exec` as deprecated, but macOS 15
 still has both. If a later macOS removes the call, `openneko serve` refuses
-every agent turn in production mode with one line: "agent confinement:
+every agent turn, in every mode, with one line: "agent confinement:
 off. macOS <version> has no sandbox_init, the call that confines an agent
 runner, so agent turns are off". The same applies when macOS refuses the
 profile. The web app, data reads and workflows without an agent step still
@@ -606,15 +606,14 @@ the config folder, `secrets.json`, the serve credentials or the web admin
 socket token, and it cannot run a file that it wrote. `openneko
 release-check --serve-socket` prints `serve_confinement=` and
 `serve_network_confinement=`, and fails when a part of serve runs
-unconfined in production mode ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
+unconfined ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
 
 The model calls now leave from web. A firewall that let only serve reach
 the model APIs must let web reach them.
 
-Two set-ups put the key in the process that runs the agent loop. Use them
-for development and demos only: `openneko web` with no
-`OPENNEKO_SERVE_SOCKET`, which runs the Ax harness in its own process, and
-the stand-alone harness of the evals. The one-user native install starts
+No set-up puts a model key in the process that runs the agent loop.
+`openneko web` with no `OPENNEKO_SERVE_SOCKET` refuses agent turns, and the
+`ax-harness` binary refuses a turn. The one-user native install starts
 serve with no key, token, password or database URL from your shell, but web
 and serve run as one OS user there. Use it for development and demos only.
 

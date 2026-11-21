@@ -232,15 +232,11 @@ environment holds only `PATH` and `TMPDIR` (test
 `TestRunnerGetsNoControlZoneSecret`). Docker gives each zone its own
 container.
 
-Two paths still carry a key into the process that runs the agent loop,
-and a native install has no separation of web and serve by OS account.
-Use these three for development and demos only:
-
-- With no `OPENNEKO_SERVE_SOCKET`, `openneko web` runs the Ax harness in
-  its own process, and the harness reads the keys there.
-- The stand-alone harness of the evals (`HARNESS_MODEL_API_KEY`) and
-  `openneko serve` with `OPENNEKO_ENV=development` take a real key in a
-  frame.
+With no `OPENNEKO_SERVE_SOCKET`, `openneko web` refuses agent turns, and
+the `ax-harness` binary refuses a turn. One path still carries a key toward
+the agent loop: `openneko serve` with `OPENNEKO_ENV=development` takes a
+real key in a frame. A native install has no separation of web and serve by
+OS account. Use these two for development and demos only.
 
 ## The inference gateway
 
