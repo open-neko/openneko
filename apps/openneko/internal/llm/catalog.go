@@ -122,6 +122,7 @@ var Tasks = []Task{
 	{"bot_names", "Bot names", "Suggests a name for a new bot."},
 	{"skill_lessons", "Skill lessons", "Proposes a skill change from a finished run."},
 	{"research_mission", "Research mission", "Writes the company mission during setup."},
+	{"workflow_compile", "Workflow compiler", "Turns a finished workflow run into a stored query for its next runs."},
 }
 
 func IsTask(task string) bool {
