@@ -12660,8 +12660,8 @@ paths:
                   type: string
                   description: Admin only. Assigns an owner to a workflow that has none; the workflow then runs with the owner's access
                 approveChanges:
-                  type: boolean
-                  description: Admin only. Lifts the hold on API and webhook runs that a run's edit of the workflow put on it
+                  type: string
+                  description: Admin only. The versionHash of the workflow version that the admin read, from GET /workflows. Lifts the hold on API and webhook runs and approves that version; a version that changed since answers 409
       responses:
         '200':
           description: The workflow is updated

@@ -454,18 +454,21 @@ type workflowRefusal string
 func (e workflowRefusal) Error() string { return string(e) }
 
 // apiRunPrincipal is who an API or webhook run of the workflow acts as. A
-// workflow that a run edited after an admin gave it API access waits for
-// the admin to approve the new content.
+// workflow whose version differs from the one an admin approved waits for
+// the admin to approve the new version.
 func (a *API) apiRunPrincipal(ctx context.Context, orgID, workflowID string) (graphjinPrincipal, error) {
-	var held *time.Time
-	if err := a.DB.QueryRow(ctx, `select access_held_at from workflow_definition where org_id = $1 and id = $2`, orgID, workflowID).
-		Scan(&held); err != nil {
+	principal, err := a.workflowPrincipalByID(ctx, orgID, workflowID)
+	if err != nil {
 		return graphjinPrincipal{}, err
 	}
-	if held != nil {
+	held, _, err := a.workflowAccessHeld(ctx, orgID, workflowID)
+	if err != nil {
+		return graphjinPrincipal{}, err
+	}
+	if held {
 		return graphjinPrincipal{}, workflowRefusal("The workflow changed after an admin gave it API access. An admin approves the new content at Admin, Settings, Workflow API before it runs from the API.")
 	}
-	return a.workflowPrincipalByID(ctx, orgID, workflowID)
+	return principal, nil
 }
 
 // workflowPrincipal is who a workflow acts as: its owner with the owner's
