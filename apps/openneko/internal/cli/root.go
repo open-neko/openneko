@@ -150,7 +150,7 @@ Developer ops: eval.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			if graphjinEngineChild(cmd) {
+			if graphjinEngineChild(cmd) || cmd.Name() == agentRunnerCmd {
 				return nil
 			}
 			if err := useServerInstall(cmd, selectedInstance); err != nil {
