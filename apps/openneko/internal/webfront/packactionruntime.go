@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -607,6 +608,9 @@ func (a *API) executeDeclarativePackAction(ctx context.Context, req *actionReque
 	if err != nil {
 		return nil, err
 	}
+	if err := guardPackMessageBody(req.Kind, bodyVal); err != nil {
+		return nil, err
+	}
 
 	headersObj := &jsObj{vals: map[string]any{}}
 	if op.IdempotencyHeader != "" {
@@ -700,6 +704,51 @@ func (a *API) executeDeclarativePackAction(ctx context.Context, req *actionReque
 		CommandOrOperation: &cmdOp,
 		Result:             resultObj,
 	}, nil
+}
+
+var urlInText = regexp.MustCompile(`(?i)[a-z][a-z0-9+.\-]*://|\bwww\.`)
+
+// guardPackMessageBody keeps a message that a pack action posts from making
+// the chat service fetch a URL: previews go off, and blocks hold no URL.
+func guardPackMessageBody(kind string, body any) error {
+	obj, _ := body.(*jsObj)
+	if obj == nil {
+		return nil
+	}
+	if blocks, ok := obj.vals["blocks"]; ok {
+		if found := firstURL(blocks); found != "" {
+			return fmt.Errorf("pack action %s: the message blocks hold the URL %q. OpenNeko does not post blocks with a URL; put the link in the text", kind, found)
+		}
+	}
+	_, hasText := obj.vals["text"]
+	_, hasBlocks := obj.vals["blocks"]
+	if _, hasChannel := obj.vals["channel"]; hasChannel && (hasText || hasBlocks) {
+		obj.set("unfurl_links", false)
+		obj.set("unfurl_media", false)
+	}
+	return nil
+}
+
+func firstURL(v any) string {
+	switch x := v.(type) {
+	case string:
+		if urlInText.MatchString(x) {
+			return x
+		}
+	case *jsObj:
+		for _, k := range x.ordered() {
+			if found := firstURL(x.vals[k]); found != "" {
+				return found
+			}
+		}
+	case []any:
+		for _, item := range x {
+			if found := firstURL(item); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
 }
 
 func requireOptionalObject(payload *jsObj, key, label string) (*jsObj, error) {
