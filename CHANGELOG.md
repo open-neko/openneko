@@ -91,6 +91,7 @@
 * The native install runs on Windows and macOS, on amd64 and arm64, for one user with no admin rights. Each release holds `openneko-native_<version>_darwin_<arch>.tar.gz` and `openneko-native_<version>_windows_<arch>.zip`. `install-native.sh` installs it on macOS, and the new `install-native.ps1` on Windows. `openneko upgrade` downloads the release for the host on all three systems.
 * The server install with two system users stays Linux only. The Docker stack runs on Linux and macOS, and not on Windows.
 * Windows keeps data, logs and the sockets in `%LOCALAPPDATA%\OpenNeko`, the config in `%APPDATA%\OpenNeko` and the program in `%LOCALAPPDATA%\Programs\OpenNeko`. These folders, the secret key, `secrets.json`, the backup key and each backup get an access list that allows only your account and SYSTEM.
+* On Windows, each socket listener (serve, the config check, the key door, web admin and GraphJin) gives its socket's folder an access list for only your account and SYSTEM before it listens. It refuses a folder that it cannot limit.
 * On Windows, serve and web stop with the supervisor through a job object, and `openneko upgrade` moves the running `openneko.exe` aside before it puts the new one in place.
 * On macOS, serve and web stop when the supervisor stops, also when it is killed.
 * The Homebrew cask installs the native archive, with `bin/openneko` and `share/openneko` beside it. `openneko start --native` finds the web app there. The Docker path works from the same cask.
