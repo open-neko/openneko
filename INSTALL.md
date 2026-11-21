@@ -482,8 +482,9 @@ connected.
 On Linux, each agent turn runs in an `openneko agent-runner` process that
 confines itself with Landlock and a seccomp filter before agent code runs
 ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-runner-confines-itself-linux)).
-Without both, `openneko serve` refuses every agent turn in production mode.
-The web app, data reads and workflows without an agent step still work.
+Without both, `openneko serve` still starts, unconfined, and refuses every
+agent turn in production mode. The web app, data reads, host model calls,
+embeddings and workflows without an agent step still work.
 
 The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
 small gaps: rename and link between folders (Linux 5.19) and ioctl on a
@@ -546,6 +547,13 @@ work. `openneko doctor` shows the state, and `openneko release-check
 --serve-socket` fails.
 
 On macOS, `openneko serve` itself is not confined yet.
+
+### Agent confinement (Windows)
+
+Windows runs each agent turn inside `openneko serve`, with no confinement
+by the system yet. The start line, the status page, `openneko doctor` and
+`openneko release-check --serve-socket` say "agent confinement: not
+available on this system yet". `release-check` fails in production mode.
 
 ### Model keys
 

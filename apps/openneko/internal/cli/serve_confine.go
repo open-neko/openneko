@@ -77,8 +77,10 @@ func serveSpec(f serveFolders) confine.Spec {
 	return spec
 }
 
-// confineServe confines serve for good. Production refuses to start when the
-// kernel cannot; development starts unconfined and says so.
+// confineServe confines serve for good. When the kernel cannot, serve starts
+// unconfined and says so, and runnerConfinement refuses every agent turn;
+// host calls, data reads and the rest still run. Production refuses to start
+// only when a kernel that can confine refuses serve's rules.
 func confineServe(out io.Writer, f serveFolders, development bool) (confine.State, error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv(serveConfineEnv)), "off") {
 		if !development {
@@ -95,7 +97,7 @@ func confineServe(out io.Writer, f serveFolders, development bool) (confine.Stat
 			}
 		}
 	}
-	st := confine.Available()
+	st := serveAvailable()
 	var err error
 	if st.Confined {
 		st, err = confine.Apply(serveSpec(f))
@@ -117,7 +119,10 @@ func confineServe(out io.Writer, f serveFolders, development bool) (confine.Stat
 	return st, nil
 }
 
-var runnerAvailable = confine.RunnerAvailable
+var (
+	serveAvailable  = confine.Available
+	runnerAvailable = confine.RunnerAvailable
+)
 
 // runnerConfinement tells how each agent runner will be confined. On Linux
 // in production mode a runner that cannot be confined runs no turn: turnsOff
@@ -137,7 +142,7 @@ func runnerConfinement(out io.Writer, development bool) (st confine.State, confi
 		}
 		return st, true, ""
 	case st.Mechanism == "":
-		fmt.Fprintf(out, "warning: agent runners run unconfined: %s\n", st.Reason)
+		fmt.Fprintf(out, "warning: %s (%s); agent turns run unconfined\n", confine.NotAvailable, st.Reason)
 		return st, false, ""
 	case development:
 		fmt.Fprintf(out, "warning: agent runners run unconfined in development mode: %s\n", st.Reason)

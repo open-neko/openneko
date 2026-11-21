@@ -50,6 +50,8 @@
 * On Linux, the agent runner's seccomp filter also refuses queued signals, `fcntl` owner and signal changes, the scheduling and limit calls on another process, mode, owner, time and attribute changes by path, path watches, socket pairs and datagrams with an address. A call newer than the build gets `ENOSYS`. A file that a sandbox command changes comes back with its mode set through the open file.
 * A native install gives serve its own temp folder, `<data>/tmp`.
 * `openneko release-check --serve-socket` prints `serve_confinement=` and fails when serve runs unconfined in production mode. The status page shows "Agent confinement".
+* On a Linux kernel without Landlock, serve starts and refuses only agent turns; host model calls and embeddings run. On Windows, the start line, status page, `openneko doctor` and `release-check` say "agent confinement: not available on this system yet", and `release-check` fails in production mode.
+* `web_fetch` refuses shared (100.64.0.0/10) and NAT64 addresses, and checks the host's addresses also when web uses a proxy. Serve labels each stderr line of an agent runner and caps it.
 
 ### Sandbox image
 

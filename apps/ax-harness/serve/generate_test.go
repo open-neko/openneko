@@ -91,3 +91,26 @@ func TestServeRunsAnEmbeddingCallWithTheCallersKey(t *testing.T) {
 		t.Fatalf("an embed frame without a request: %+v", got)
 	}
 }
+
+func TestServeRunsHostCallsWhenAgentTurnsAreOff(t *testing.T) {
+	off := "agent confinement: off. Linux 4.18.0 has no Landlock, so agent turns are off"
+	socket := startServer(t, &Server{TurnsOff: off,
+		Generate: func(context.Context, inference.Request, string, string) (inference.Result, error) {
+			return inference.Result{Outputs: map[string]any{"answer": "42"}}, nil
+		},
+		Embed: func(context.Context, embedding.Request, string) (embedding.Result, error) {
+			return embedding.Result{Vectors: [][]float64{{1}}}, nil
+		}})
+	request, _ := json.Marshal(inference.Request{Route: inference.Route{Provider: "openai", Model: "m"}, Signature: "question:string -> answer:string"})
+	if got := frames(t, dial(t, socket, Frame{Type: "generate", Generate: request})); len(got) != 2 || got[0].Type != "result" || *got[1].Code != 0 {
+		t.Fatalf("a host model call with turns off: %+v", got)
+	}
+	embed, _ := json.Marshal(embedding.Request{URL: "http://embed.example/v1", Model: "e", Input: []string{"x"}})
+	if got := frames(t, dial(t, socket, Frame{Type: "embed", Embed: embed})); len(got) != 2 || got[0].Type != "result" || *got[1].Code != 0 {
+		t.Fatalf("an embedding call with turns off: %+v", got)
+	}
+	got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`)}))
+	if last := got[len(got)-1]; last.Type != "exit" || *last.Code != 2 || last.Error != off {
+		t.Fatalf("a turn with turns off: %+v", got)
+	}
+}
