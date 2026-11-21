@@ -470,8 +470,9 @@ only. `openneko release-check --serve-socket` prints `serve_confinement`
 (the turn part), `serve_network_confinement` and `runner_confinement`, and
 fails when a part that the system can confine runs unconfined in production
 mode. The status page shows the state under "Agent confinement". On
-Windows the confinement is not built yet: serve starts and the status page
-says so.
+Windows the confinement is not built yet: serve starts, and the status page
+and release-check say "agent confinement: not available on this system
+yet".
 
 Neither OS can limit the network part to the hosts that the install's
 configuration names without root or admin rights. A root-installed systemd
