@@ -101,7 +101,7 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	ctx, cancel := context.WithTimeout(ctx, runnerDeadline(start.Spec))
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.Runner[0], s.Runner[1:]...)
-	cmd.Env = append([]string{}, s.RunnerEnv...)
+	cmd.Env = append(append([]string{}, s.RunnerEnv...), runnerMallocEnv)
 	logOut := s.runnerLog
 	if logOut == nil {
 		logOut = os.Stderr

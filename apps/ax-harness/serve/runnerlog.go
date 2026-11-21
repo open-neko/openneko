@@ -27,8 +27,13 @@ type runnerLog struct {
 	threads bool
 }
 
+// runnerMallocEnv keeps glibc from giving each runner thread its own 64 MB
+// arena; with cgo on a host with many CPUs, those arenas fill the runner's
+// address-space cap before its thread cap.
+const runnerMallocEnv = "MALLOC_ARENA_MAX=2"
+
 // threadFailures are the Go runtime's lines when it cannot start a thread.
-var threadFailures = []string{"fatal error: thread exhaustion", "runtime: failed to create new OS thread", "fatal error: newosproc"}
+var threadFailures = []string{"fatal error: thread exhaustion", "runtime: failed to create new OS thread", "fatal error: newosproc", "runtime/cgo: pthread_create failed"}
 
 // outOfThreads tells whether the runner wrote that it could not start a
 // thread.

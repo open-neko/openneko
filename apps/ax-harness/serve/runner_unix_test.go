@@ -302,7 +302,7 @@ func checkRunnerHolds(t *testing.T, c *client) {
 		t.Errorf("the runner holds the sockets %v, want only its link and its broker; all: %v", sockets, report.Open)
 	}
 	for _, entry := range report.Env {
-		if !strings.HasPrefix(entry, runnerChildEnv+"=") && !strings.HasPrefix(entry, "PATH=") {
+		if !strings.HasPrefix(entry, runnerChildEnv+"=") && !strings.HasPrefix(entry, "PATH=") && entry != runnerMallocEnv {
 			t.Errorf("the runner got %q from serve's environment", entry)
 		}
 	}
