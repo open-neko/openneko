@@ -813,7 +813,7 @@ func TestManualRunRoute(t *testing.T) {
 		t.Errorf("inactive owner: %d %s", w.Code, w.Body)
 	}
 	seed(t, db, `update workflow_definition set owner_user_id = '', team_approved_by = null where id = $1`, wf.ID)
-	if w := call(front, "POST", path, `{}`, admin); w.Code != 400 || !strings.Contains(w.Body.String(), "Workflow Low stock has no owner.") {
+	if w := call(front, "POST", path, `{}`, admin); w.Code != 400 || !strings.Contains(w.Body.String(), "Workflow Low stock has no owner, so it does not run. An admin assigns an owner") {
 		t.Errorf("no owner: %d %s", w.Code, w.Body)
 	}
 	if runs() != before {
