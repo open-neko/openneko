@@ -125,6 +125,14 @@ func ExitCodeFor(err error) int {
 	return 0
 }
 
+// graphjinEngineChild tells whether cmd is a GraphJin engine that the
+// network part of serve starts. The engine runs confined, where the config
+// folder is out of reach, and takes its settings from its flags and stdin.
+func graphjinEngineChild(cmd *cobra.Command) bool {
+	child, err := cmd.Flags().GetBool("child")
+	return err == nil && child && cmd.Parent() != nil && cmd.Parent().Name() == "graphjin"
+}
+
 func NewRoot() *cobra.Command {
 	var selectedInstance string
 	cmd := &cobra.Command{
@@ -142,6 +150,9 @@ Developer ops: eval.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if graphjinEngineChild(cmd) {
+				return nil
+			}
 			if err := useServerInstall(cmd, selectedInstance); err != nil {
 				return err
 			}
