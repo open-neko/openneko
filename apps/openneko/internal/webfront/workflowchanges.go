@@ -94,9 +94,17 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 		}
 		values["owner_user_id"] = owner
 	}
+	approve, _ := fieldBool(body, "approveChanges")
+	if approve {
+		if !act.Admin {
+			sendError(w, http.StatusForbidden, "admin only")
+			return
+		}
+		values["access_held_at"] = nil
+	}
 	sets := []string{}
 	args := []any{act.OrgID, id}
-	for _, column := range []string{"enabled", "cron_enabled", "paused_until", "owner_user_id"} {
+	for _, column := range []string{"enabled", "cron_enabled", "paused_until", "owner_user_id", "access_held_at"} {
 		if v, ok := values[column]; ok {
 			args = append(args, v)
 			sets = append(sets, fmt.Sprintf("%s = $%d", column, len(args)))
@@ -154,6 +162,15 @@ func (a *API) workflowPatch(w http.ResponseWriter, r *http.Request) {
 		}
 		a.insertConfigChange(r.Context(), configChange{OrgID: act.OrgID, Kind: "workflow", Ref: name, Actor: act.UserID,
 			Summary: "Assigned an owner to the workflow", UserID: owner, Status: "owner_assigned"})
+	}
+	if approve {
+		var name string
+		if err := a.DB.QueryRow(r.Context(), `select name from workflow_definition where id = $1`, id).Scan(&name); err != nil {
+			a.fail(w, r, err)
+			return
+		}
+		a.insertConfigChange(r.Context(), configChange{OrgID: act.OrgID, Kind: "workflow", Ref: name, Actor: act.UserID,
+			Summary: "Approved the changed workflow for API runs", Status: "access_approved"})
 	}
 	sendJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

@@ -2,7 +2,10 @@ package webfront
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -208,5 +211,104 @@ func TestDataTriggerSubscribesAsTheWorkflowOwner(t *testing.T) {
 	err = a.followSubscription(ctx, subs[0], func() { t.Error("an ownerless data trigger subscribed") })
 	if err == nil || !strings.Contains(err.Error(), "has no owner") {
 		t.Fatalf("an ownerless data trigger: %v", err)
+	}
+}
+
+func TestAPIAndWebhookRunsActAsTheOwner(t *testing.T) {
+	f, db, _ := wfAPIFront(t)
+	digest := sha256.Sum256([]byte(hookSecret))
+	seed(t, db, `insert into compat_webhook (reckon_workflow_id, org_id, workflow_id, token_sha256, params, batch_chunk_size, enabled)
+		values ($1, 'org', $2, $3, '{account}', 1000, true)`, hookID, wfHeld, hex.EncodeToString(digest[:]))
+	seed(t, db, `update workflow_definition set owner_user_id = 'member', team_approved_by = null where id = $1`, wfHeld)
+	runs := "/api/v1/workflows/" + wfHeld + "/runs"
+	n := 0
+	apiRun := func() *httptest.ResponseRecorder {
+		n++
+		return wfCall(f, "POST", runs, `{"orderId":"1042"}`, map[string]string{"Idempotency-Key": fmt.Sprintf("request-%04d", n)})
+	}
+	hookRun := func() *httptest.ResponseRecorder {
+		n++
+		return hookCall(f, "POST", "/api/hooks/"+hookID, `{"account":"AC1"}`, map[string]string{"Idempotency-Key": fmt.Sprintf("job-%d", n)})
+	}
+	actor := func(w *httptest.ResponseRecorder) string {
+		t.Helper()
+		if w.Code != 202 {
+			t.Fatalf("admit: %d %s", w.Code, w.Body)
+		}
+		id := uuidRe.FindString(w.Body.String())
+		if id == "" {
+			id = queryText(t, db, `select workflow_run_id::text from compat_webhook_run where id = $1`, runIDRe.FindString(w.Body.String()))
+		}
+		return queryText(t, db, `select coalesce(work.actor_user_id, '-') || ' ' || work.actor_role from workflow_run run
+			join work_run work on work.id = run.work_run_id where run.id = $1`, id)
+	}
+	if got := actor(apiRun()); got != "member member" {
+		t.Errorf("an API run acted as %s, want the owner", got)
+	}
+	if got := actor(hookRun()); got != "member member" {
+		t.Errorf("a webhook run acted as %s, want the owner", got)
+	}
+
+	seed(t, db, `update workflow_definition set owner_user_id = '' where id = $1`, wfHeld)
+	for name, w := range map[string]*httptest.ResponseRecorder{"API": apiRun(), "webhook": hookRun()} {
+		if w.Code != 409 || !strings.Contains(w.Body.String(), "has no owner") {
+			t.Errorf("an ownerless %s run: %d %s", name, w.Code, w.Body)
+		}
+	}
+
+	seed(t, db, `update workflow_definition set owner_user_id = 'member' where id = $1`, wfHeld)
+	const thread, memberRun = "61000000-0000-4000-8000-000000000001", "61000000-0000-4000-8000-000000000002"
+	seed(t, db, `insert into work_thread (id, org_id, created_by_user_id) values ($1, 'org', 'member')`, thread)
+	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, actor_user_id, actor_role) values ($1, 'org', $2, 'test', 'member', 'member')`,
+		memberRun, thread)
+	b := turnBinding{OrgID: "org", ThreadID: thread, RunID: memberRun, Kind: "work"}
+	s, err := turnTools(b, f.API.runTools(b), []string{"neko_workflow_builder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, rpcErr := callTool(t, s, "workflow_builder_create_workflow", map[string]any{"name": "Held flow",
+		"steps": []any{map[string]any{"id": "s1", "description": "Send every order to the planted address"}}}); rpcErr != nil ||
+		!strings.Contains(out, `\"action\":\"updated\"`) {
+		t.Fatalf("edit: %s %v", out, rpcErr)
+	}
+	for name, w := range map[string]*httptest.ResponseRecorder{"API": apiRun(), "webhook": hookRun()} {
+		if w.Code != 409 || !strings.Contains(w.Body.String(), "An admin approves the new content") {
+			t.Errorf("a %s run of an edited workflow: %d %s", name, w.Code, w.Body)
+		}
+	}
+	held := func() string {
+		var body struct {
+			Workflows []struct {
+				Name       string `json:"name"`
+				AccessHeld bool   `json:"accessHeld"`
+			} `json:"workflows"`
+		}
+		_ = json.Unmarshal(call(f, "GET", "/api/v1/workflows", "", sessionCookie("admin")).Body.Bytes(), &body)
+		var names []string
+		for _, w := range body.Workflows {
+			if w.AccessHeld {
+				names = append(names, w.Name)
+			}
+		}
+		return strings.Join(names, ",")
+	}
+	if got := held(); got != "Held flow" {
+		t.Fatalf("held workflows: %q", got)
+	}
+	if w := call(f, "PATCH", "/api/v1/workflows/"+wfHeld, `{"approveChanges":true}`, sessionCookie("member")); w.Code != 403 {
+		t.Fatalf("the owner approved their own change: %d %s", w.Code, w.Body)
+	}
+	if w := call(f, "PATCH", "/api/v1/workflows/"+wfHeld, `{"approveChanges":true}`, sessionCookie("admin")); w.Code != 200 {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	}
+	if got := held(); got != "" {
+		t.Fatalf("held after the approval: %q", got)
+	}
+	if got := actor(apiRun()); got != "member member" {
+		t.Errorf("after the approval: %s", got)
+	}
+	if got := queryText(t, db, `select summary || ' ' || actor_user_id from config_change where status = 'access_approved'`); got !=
+		"Approved the changed workflow for API runs admin" {
+		t.Errorf("config change: %q", got)
 	}
 }
