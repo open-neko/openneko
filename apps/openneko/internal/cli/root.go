@@ -188,7 +188,6 @@ Developer ops: eval.`,
 		newJobsCmd(),
 		newContainerInitCmd(),
 		newReleaseCheckCmd(),
-		newConfinementCmd(),
 	)
 	return cmd
 }

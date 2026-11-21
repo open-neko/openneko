@@ -24,7 +24,7 @@ import (
 )
 
 func newReleaseCheckCmd() *cobra.Command {
-	var scheduler, serveSocket, packsCheck, sandboxCheck, skillsCheck, bundledPacks, allowUnconfined bool
+	var scheduler, serveSocket, packsCheck, sandboxCheck, skillsCheck, bundledPacks bool
 	var datasourceOrg, mcpURL, query string
 	cmd := &cobra.Command{
 		Use:    "release-check",
@@ -73,17 +73,10 @@ func newReleaseCheckCmd() *cobra.Command {
 			}
 			if serveSocket {
 				state, network, runner, err := checkServeSocket(ctx, os.Getenv("OPENNEKO_SERVE_SOCKET"))
-				unconfined := ""
-				if errors.Is(err, errTurnsOff) {
-					unconfined, err = acceptUnconfinedTurns(ctx, err, allowUnconfined)
-				}
 				if err != nil {
 					return err
 				}
 				fmt.Fprintln(out, "serve_socket=ok")
-				if unconfined != "" {
-					fmt.Fprintf(out, "unconfined_turns=on (%s)\n", unconfined)
-				}
 				fmt.Fprintf(out, "serve_confinement=%s\n", state)
 				fmt.Fprintf(out, "serve_network_confinement=%s\n", network)
 				fmt.Fprintf(out, "runner_confinement=%s\n", runner)
@@ -113,7 +106,6 @@ func newReleaseCheckCmd() *cobra.Command {
 	f.StringVar(&mcpURL, "mcp-url", "http://graphjin:8080/api/v1/mcp", "GraphJin MCP endpoint for --datasource")
 	f.StringVar(&query, "query", "query { soh(limit: 1, order_by: { id: desc }) { id } }", "GraphQL query for --datasource")
 	f.BoolVar(&serveSocket, "serve-socket", false, "Connect to the agent socket of openneko serve (OPENNEKO_SERVE_SOCKET); fail when serve holds a model key or accepts one")
-	f.BoolVar(&allowUnconfined, "allow-unconfined", false, "With --serve-socket, pass a system that cannot confine agent turns when the host operator allowed turns without OS confinement")
 	f.BoolVar(&sandboxCheck, "sandbox", false, "The sandbox is off, or its socket answers in a folder that holds none of serve's sockets; prints whether its network has a route out")
 	f.BoolVar(&packsCheck, "packs", false, "The pack catalog on the web admin socket lists one or more built-in packs")
 	f.BoolVar(&bundledPacks, "bundled-packs", false, "This executable finds one or more built-in packs, with no running web")
@@ -227,49 +219,6 @@ func checkServeSocket(ctx context.Context, socket string) (host, network, runner
 }
 
 var errTurnsOff = errors.New("openneko serve refuses agent turns")
-
-// acceptUnconfinedTurns passes a serve that cannot confine agent turns only
-// when the host operator allowed turns without OS confinement and the caller passed
-// --allow-unconfined.
-func acceptUnconfinedTurns(ctx context.Context, turnsOff error, allow bool) (string, error) {
-	on, line, err := unconfinedTurnsState(ctx, webAdminSocket())
-	switch {
-	case err != nil:
-		return "", fmt.Errorf("%w; the override for turns without confinement cannot be read: %v", turnsOff, err)
-	case !on:
-		return "", turnsOff
-	case !allow:
-		return "", fmt.Errorf("%s; pass --allow-unconfined to accept it", line)
-	}
-	return line, nil
-}
-
-// unconfinedTurnsState reads whether the host override for agent turns
-// without OS confinement applies, from web's admin socket. When it does not,
-// the line tells why an override that was given does not apply.
-func unconfinedTurnsState(ctx context.Context, socket string) (bool, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://web/health/agent-unconfined", nil)
-	if err != nil {
-		return false, "", err
-	}
-	res, err := webAdminClient(socket).Do(req)
-	if err != nil {
-		return false, "", webAdminUnreachable(socket, err)
-	}
-	defer res.Body.Close()
-	var state struct {
-		On         bool   `json:"on"`
-		Line       string `json:"line"`
-		NotApplied string `json:"notApplied"`
-	}
-	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&state); err != nil || res.StatusCode != http.StatusOK {
-		return false, "", fmt.Errorf("web did not report the setting (HTTP %d)", res.StatusCode)
-	}
-	if !state.On {
-		return false, state.NotApplied, nil
-	}
-	return true, state.Line, nil
-}
 
 func checkSandboxSocket(ctx context.Context, url string, stackSockets ...string) (string, error) {
 	box := sandbox.Config{URL: url}

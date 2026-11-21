@@ -23,7 +23,15 @@ import (
 
 const spec = `{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Find reference"}`
 
+// startServer runs turns with no confinement, as a test stands in for the
+// runner; startConfinedServer keeps the rule of the product.
 func startServer(t *testing.T, server *Server) string {
+	t.Helper()
+	server.testOnly = true
+	return startConfinedServer(t, server)
+}
+
+func startConfinedServer(t *testing.T, server *Server) string {
 	t.Helper()
 	socket := filepath.Join(testsock.Dir(t), "serve.sock")
 	listener, err := Listen(socket)

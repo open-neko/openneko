@@ -458,6 +458,9 @@ func RunRunner(ctx context.Context, confine func(folders []string) error) error 
 			return confine(RunnerFolders(environ))
 		}
 	}
+	if !setup.Confine && testing.Testing() {
+		srv.testOnly = true
+	}
 	if !runnerLimitsOff {
 		srv.limit = func(spec json.RawMessage) error { return limitRunner(runnerLimitsFor(spec)) }
 	}

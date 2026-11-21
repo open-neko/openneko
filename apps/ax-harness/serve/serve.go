@@ -39,6 +39,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"testing"
 
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
@@ -72,10 +73,6 @@ type Frame struct {
 	Code        *int              `json:"code,omitempty"`
 	Error       string            `json:"error,omitempty"`
 	Runner      *RunnerSetup      `json:"runner,omitempty"`
-	// Unconfined asks serve to run a start frame's turn without OS
-	// confinement. Serve takes it only while TurnsOff is set, so it never
-	// weakens a system that can confine.
-	Unconfined bool `json:"unconfined,omitempty"`
 }
 
 // Server runs turns for connections on a listener.
@@ -124,7 +121,7 @@ type Server struct {
 	runnerStarted func(*os.Process)
 	runnerLog     io.Writer
 	runnerSeq     atomic.Int64
-	unconfined    sync.Once
+	testOnly      bool
 	confine       func(environ []string) error
 	limit         func(spec json.RawMessage) error
 
@@ -181,6 +178,31 @@ func (s *Server) defaults() {
 	if s.MaxTurns <= 0 {
 		s.MaxTurns = defaultTurns
 	}
+}
+
+// NotConfined refuses a turn that would run outside a confined runner.
+const NotConfined = "agent turns run only in a confined agent runner, and this serve has none"
+
+// confinesTurns tells whether a turn runs in a runner that confines itself:
+// serve starts runners that confine, or this is such a runner.
+func (s *Server) confinesTurns() bool {
+	if s.testOnly {
+		return true
+	}
+	if len(s.Runner) > 0 {
+		return s.ConfineRunner
+	}
+	return s.confine != nil
+}
+
+// RunUnconfinedForTest lets a test run turns with no confinement. It panics
+// outside a test binary.
+func (s *Server) RunUnconfinedForTest() *Server {
+	if !testing.Testing() {
+		panic("serve.Server.RunUnconfinedForTest works only in a test binary")
+	}
+	s.testOnly = true
+	return s
 }
 
 func (s *Server) logOut() io.Writer {
@@ -262,13 +284,12 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 		return
 	}
 	if s.TurnsOff != "" {
-		if !start.Unconfined {
-			exit(2, errors.New(s.TurnsOff))
-			return
-		}
-		s.unconfined.Do(func() {
-			fmt.Fprintln(s.logOut(), "warning: agent turns run without OS confinement: the host operator allowed it with openneko confinement allow-unconfined")
-		})
+		exit(2, errors.New(s.TurnsOff))
+		return
+	}
+	if !s.confinesTurns() {
+		exit(2, errors.New(NotConfined))
+		return
 	}
 	if !s.acquire() {
 		exit(2, errors.New("serve is at its turn limit"))

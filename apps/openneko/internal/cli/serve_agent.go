@@ -53,7 +53,7 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	fmt.Fprintf(out, "openneko serve reaches the model providers through the key door at %s\n", door)
 	state, _ := json.Marshal(confinement)
 	networkState, _ := json.Marshal(network)
-	runnerState, confineRunner, turnsOff := runnerConfinement(out, webfront.Development())
+	runnerState, turnsOff := runnerConfinement(out)
 	runnerJSON, _ := json.Marshal(runnerState)
 	runner, runnerEnv, err := agentRunner()
 	if err != nil {
@@ -65,7 +65,7 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	}
 	hostName, _ := os.Hostname()
 	srv := &serve.Server{Getenv: os.Getenv, Host: hostName, HostID: start.hostID, Kernel: confine.Kernel(), Log: out, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
-		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: confineRunner, TurnsOff: turnsOff,
+		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: turnsOff == "", TurnsOff: turnsOff,
 		RefusePeer: agentPeerRefused}
 	done := make(chan error, 1)
 	go func() {

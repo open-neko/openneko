@@ -36,7 +36,7 @@ func strictServe(t *testing.T) string {
 	}
 	serveDoor(t, socket)
 	ctx, stop := context.WithCancel(context.Background())
-	srv := &serve.Server{MaxTurns: 2, RequireDoor: true}
+	srv := (&serve.Server{MaxTurns: 2, RequireDoor: true}).RunUnconfinedForTest()
 	done := make(chan struct{})
 	go func() { _ = srv.Serve(ctx, ln); close(done) }()
 	t.Cleanup(func() { stop(); <-done; os.RemoveAll(dir) })

@@ -11,7 +11,6 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
-	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
@@ -44,11 +43,8 @@ func confinementDoctorLines(ctx context.Context, out io.Writer) bool {
 		}
 		return false
 	}
-	if webfront.Development() {
-		fmt.Fprintf(out, "%s (%s); agent turns run unconfined in development mode\n", confine.NotAvailable, st.Reason)
-		return false
-	}
-	return turnsOffDoctorLines(ctx, out, turnsOffLine(st), st.Reason)
+	fmt.Fprintln(out, turnsOffLine(st))
+	return true
 }
 
 // doctorServeSocket is OPENNEKO_SERVE_SOCKET, or the serve socket of this
@@ -82,12 +78,12 @@ func serveConfinementLines(ctx context.Context, out io.Writer, socket string, st
 	part("agent turns", runner)
 	part("network part of serve", network)
 	part("turn part of serve", host)
-	if !status.RequireDoor {
-		fmt.Fprintln(out, "agent confinement: development mode; serve does not hold agent turns to production rules")
-		return false
-	}
 	if status.TurnsOff != "" {
-		return turnsOffDoctorLines(ctx, out, status.TurnsOff, runner.Reason)
+		fmt.Fprintln(out, status.TurnsOff)
+		return true
+	}
+	if !status.RequireDoor {
+		fmt.Fprintln(out, "agent confinement: development mode; serve takes a model key in a frame")
 	}
 	failed := false
 	if !runner.Confined {
@@ -102,21 +98,4 @@ func serveConfinementLines(ctx context.Context, out io.Writer, socket string, st
 		fmt.Fprintf(out, "agent confinement: %s\n", runner)
 	}
 	return failed
-}
-
-// turnsOffDoctorLines prints why agent turns are off and the host command
-// that allows them without confinement.
-func turnsOffDoctorLines(ctx context.Context, out io.Writer, line, reason string) bool {
-	on, admin, err := unconfinedTurnsState(ctx, webAdminSocket())
-	switch {
-	case err != nil:
-		fmt.Fprintf(out, "%s\n  the override for turns without confinement cannot be read: %v\n", line, err)
-	case on:
-		fmt.Fprintf(out, "agent confinement: FAIL, %s (%s)\n", admin, reason)
-	case admin != "":
-		fmt.Fprintf(out, "%s\n  the override for turns without confinement does not apply: %s\n  %s\n", line, admin, unconfinedHint)
-	default:
-		fmt.Fprintf(out, "%s\n  %s\n", line, unconfinedHint)
-	}
-	return true
 }

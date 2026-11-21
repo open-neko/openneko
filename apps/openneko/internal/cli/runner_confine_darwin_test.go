@@ -243,20 +243,20 @@ func TestRunnerRefusesATurnWhenItCannotConfine(t *testing.T) {
 }
 
 func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
-	t.Setenv(serveConfineEnv, "")
 	confine.SetForTest(true, "")
 	t.Cleanup(func() { confine.SetForTest(false, "") })
 	st := confine.RunnerAvailable()
-	want := "agent confinement: off. " + confine.Kernel() + " has no sandbox_init, the call that confines an agent runner, so agent turns are off"
-	if _, confineIt, off := runnerConfinement(&strings.Builder{}, false); off != want || confineIt || st.Confined {
-		t.Fatalf("production: off=%q confine=%v state=%+v", off, confineIt, st)
+	want := "agent confinement: off. " + confine.Kernel() + " has no sandbox_init, the call that confines an agent runner, so agent turns are off (INSTALL.md, \"Agent confinement\")."
+	if _, off := runnerConfinement(&strings.Builder{}); off != want || st.Confined {
+		t.Fatalf("off=%q state=%+v", off, st)
 	}
 	var out strings.Builder
 	if !confinementDoctorLines(context.Background(), &out) || !strings.Contains(out.String(), want) {
 		t.Fatalf("doctor:\n%s", out.String())
 	}
-	if _, _, off := runnerConfinement(&strings.Builder{}, true); off != "" {
-		t.Fatalf("development mode turned turns off: %q", off)
+	t.Setenv("OPENNEKO_ENV", "development")
+	if _, off := runnerConfinement(&strings.Builder{}); off != want {
+		t.Fatalf("development mode: off=%q", off)
 	}
 
 	sock := filepath.Join(testsock.Dir(t), "serve.sock")

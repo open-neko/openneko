@@ -605,7 +605,7 @@ func TestAgentCoreThroughServe(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 	serveDoor(t, socket)
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 2}
+	srv := (&serve.Server{Getenv: os.Getenv, MaxTurns: 2}).RunUnconfinedForTest()
 	done := make(chan struct{})
 	go func() { _ = srv.Serve(ctx, ln); close(done) }()
 	defer func() { stop(); <-done }()

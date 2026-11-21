@@ -85,7 +85,7 @@ func startServe(t *testing.T) string {
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	serveDoor(t, socket)
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 2}
+	srv := (&serve.Server{Getenv: os.Getenv, MaxTurns: 2}).RunUnconfinedForTest()
 	done := make(chan struct{})
 	go func() { _ = srv.Serve(ctx, ln); close(done) }()
 	t.Cleanup(func() { stop(); <-done; os.RemoveAll(dir) })

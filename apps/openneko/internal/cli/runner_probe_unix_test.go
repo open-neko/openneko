@@ -99,6 +99,9 @@ func runRunnerProbe(t *testing.T, tg runnerTargets, mode string) (probeResult, s
 	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 1, ConfineRunner: mode != "control" && !strings.HasPrefix(mode, "flood"),
 		Runner:    []string{os.Args[0], "-test.run=^TestRunnerProbeChild$", "-test.count=1"},
 		RunnerEnv: []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + tg.tmp, runnerProbeEnv + "=" + string(raw)}}
+	if !srv.ConfineRunner {
+		srv.RunUnconfinedForTest()
+	}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ctx, ln) }()
