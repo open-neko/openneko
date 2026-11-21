@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -393,7 +392,7 @@ func (a *API) captureSkillEdits(ctx context.Context, orgID, runID string, act ru
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		data, err := fs.ReadFile(root.FS(), p)
+		data, err := readStagedFile(root, p, info)
 		if err != nil {
 			continue
 		}
