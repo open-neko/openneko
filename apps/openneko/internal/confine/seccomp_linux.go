@@ -3,6 +3,7 @@ package confine
 import (
 	"fmt"
 	"runtime"
+	"slices"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -22,24 +23,58 @@ const (
 		unix.CLONE_NEWUSER | unix.CLONE_NEWPID | unix.CLONE_NEWNET | unix.CLONE_NEWTIME
 )
 
-// refusedCalls open a socket, reach another process, signal it, truncate a
-// file by path, or widen the kernel surface. Landlock below ABI 9 cannot
-// refuse a connect to a named socket, so the runner opens no socket at all.
+// refusedCalls open a socket, reach another process, signal it, change
+// the metadata of a file by path, watch a path, or widen the kernel surface.
+// Landlock below ABI 9 cannot refuse a connect to a named socket, so the
+// runner opens no socket at all; no Landlock ABI covers metadata.
 var refusedCalls = []uintptr{
-	unix.SYS_SOCKET, unix.SYS_CONNECT, unix.SYS_BIND, unix.SYS_LISTEN,
+	unix.SYS_SOCKET, unix.SYS_SOCKETPAIR, unix.SYS_CONNECT, unix.SYS_BIND, unix.SYS_LISTEN,
+	unix.SYS_SENDMSG, unix.SYS_SENDMMSG,
 	unix.SYS_IO_URING_SETUP, unix.SYS_IO_URING_ENTER, unix.SYS_IO_URING_REGISTER,
 	unix.SYS_PTRACE, unix.SYS_PROCESS_VM_READV, unix.SYS_PROCESS_VM_WRITEV, unix.SYS_KCMP,
-	unix.SYS_PIDFD_GETFD, unix.SYS_PROCESS_MADVISE,
+	unix.SYS_PIDFD_GETFD, unix.SYS_PROCESS_MADVISE, unix.SYS_GET_ROBUST_LIST,
+	unix.SYS_MIGRATE_PAGES, unix.SYS_MOVE_PAGES,
 	unix.SYS_KILL, unix.SYS_TKILL, unix.SYS_PIDFD_SEND_SIGNAL,
+	unix.SYS_RT_SIGQUEUEINFO, unix.SYS_RT_TGSIGQUEUEINFO,
+	unix.SYS_SCHED_SETSCHEDULER, unix.SYS_SCHED_SETPARAM, unix.SYS_SCHED_SETATTR, unix.SYS_IOPRIO_SET,
 	unix.SYS_TRUNCATE,
+	unix.SYS_FCHMODAT, unix.SYS_FCHMODAT2, unix.SYS_FCHOWN, unix.SYS_FCHOWNAT,
+	unix.SYS_SETXATTR, unix.SYS_LSETXATTR, unix.SYS_FSETXATTR, unix.SYS_SETXATTRAT,
+	unix.SYS_REMOVEXATTR, unix.SYS_LREMOVEXATTR, unix.SYS_FREMOVEXATTR, unix.SYS_REMOVEXATTRAT,
+	unix.SYS_FILE_SETATTR,
+	unix.SYS_INOTIFY_INIT1, unix.SYS_INOTIFY_ADD_WATCH, unix.SYS_FANOTIFY_INIT, unix.SYS_FANOTIFY_MARK,
 	unix.SYS_UNSHARE, unix.SYS_SETNS,
 	unix.SYS_BPF, unix.SYS_PERF_EVENT_OPEN, unix.SYS_USERFAULTFD,
 	unix.SYS_KEYCTL, unix.SYS_ADD_KEY, unix.SYS_REQUEST_KEY,
 }
 
-// ownProcessCalls are allowed only with the runner's own process id as the
-// first argument: the Go runtime signals its own threads with tgkill.
-var ownProcessCalls = []uintptr{unix.SYS_TGKILL, unix.SYS_PIDFD_OPEN}
+// newestKnownCall is the highest call number this build knows. A newer
+// call gets ENOSYS, as on a kernel that lacks it.
+const newestKnownCall = unix.SYS_RSEQ_SLICE_YIELD
+
+// cond holds when argument arg is one of values, both halves compared. With
+// except, it holds when the low half is none of values.
+type cond struct {
+	arg    int
+	values []uint32
+	except bool
+}
+
+// argRules allow a call only when every cond holds; else EPERM.
+func argRules(pid uint32) map[uintptr][]cond {
+	return map[uintptr][]cond{
+		unix.SYS_TGKILL:            {{arg: 0, values: []uint32{pid}}},
+		unix.SYS_PIDFD_OPEN:        {{arg: 0, values: []uint32{pid}}},
+		unix.SYS_PRLIMIT64:         {{arg: 0, values: []uint32{0, pid}}},
+		unix.SYS_SCHED_SETAFFINITY: {{arg: 0, values: []uint32{0, pid}}},
+		unix.SYS_SETPRIORITY:       {{arg: 0, values: []uint32{unix.PRIO_PROCESS}}, {arg: 1, values: []uint32{0, pid}}},
+		unix.SYS_UTIMENSAT:         {{arg: 1, values: []uint32{0}}},
+		unix.SYS_SENDTO:            {{arg: 4, values: []uint32{0}}},
+		unix.SYS_FCNTL: {{arg: 1, except: true, values: []uint32{
+			unix.F_SETOWN, unix.F_SETOWN_EX, unix.F_SETSIG, unix.F_SETLEASE, unix.F_NOTIFY}}},
+		unix.SYS_IOCTL: {{arg: 1, except: true, values: []uint32{unix.TIOCSTI, unix.TIOCLINUX}}},
+	}
+}
 
 func auditArch() (uint32, error) {
 	switch runtime.GOARCH {
@@ -65,6 +100,52 @@ const (
 	ret   = unix.BPF_RET | unix.BPF_K
 )
 
+// ruleBlock checks call nr against conds; another call falls through.
+func ruleBlock(nr uintptr, conds []cond) []unix.SockFilter {
+	type fixup struct {
+		at     int
+		onTrue bool
+	}
+	b := []unix.SockFilter{jump(jeq, uint32(nr), 0, 0)}
+	add := func(ins unix.SockFilter) int { b = append(b, ins); return len(b) - 1 }
+	setJump := func(at int, onTrue bool, target int) {
+		off := uint8(target - at - 1)
+		if onTrue {
+			b[at].Jt = off
+		} else {
+			b[at].Jf = off
+		}
+	}
+	var final []fixup
+	for _, c := range conds {
+		if c.except {
+			add(stmt(ldAbs, uint32(argLow+8*c.arg)))
+			for _, v := range c.values {
+				final = append(final, fixup{add(jump(jeq, v, 0, 0)), true})
+			}
+			continue
+		}
+		add(stmt(ldAbs, uint32(argHigh+8*c.arg)))
+		final = append(final, fixup{add(jump(jeq, 0, 0, 0)), false})
+		add(stmt(ldAbs, uint32(argLow+8*c.arg)))
+		var hits []int
+		for _, v := range c.values {
+			hits = append(hits, add(jump(jeq, v, 0, 0)))
+		}
+		final = append(final, fixup{hits[len(hits)-1], false})
+		for _, at := range hits {
+			setJump(at, true, len(b))
+		}
+	}
+	add(stmt(ret, retAllow))
+	deny := add(stmt(ret, retEPERM))
+	for _, f := range final {
+		setJump(f.at, f.onTrue, deny)
+	}
+	b[0].Jf = uint8(len(b) - 1)
+	return b
+}
+
 // runnerFilter builds the seccomp program of the agent runner. A call from
 // another architecture ends the process.
 func runnerFilter(pid int) ([]unix.SockFilter, error) {
@@ -81,13 +162,11 @@ func runnerFilter(pid int) ([]unix.SockFilter, error) {
 	if runtime.GOARCH == "amd64" {
 		p = append(p, jump(jgt, 0x3fffffff, 0, 1), stmt(ret, retEPERM))
 	}
-	for _, nr := range refusedCalls {
+	p = append(p, jump(jgt, newestKnownCall, 0, 1), stmt(ret, retENOSYS))
+	for _, nr := range append(append(append([]uintptr{}, refusedCalls...), legacyRefusedCalls...), forkCalls...) {
 		p = append(p, jump(jeq, uint32(nr), 0, 1), stmt(ret, retEPERM))
 	}
 	p = append(p, jump(jeq, unix.SYS_CLONE3, 0, 1), stmt(ret, retENOSYS))
-	for _, nr := range forkCalls {
-		p = append(p, jump(jeq, uint32(nr), 0, 1), stmt(ret, retEPERM))
-	}
 	// A runner starts threads only: CLONE_THREAD needs CLONE_VM and
 	// CLONE_SIGHAND, so the new task stays in the runner's process.
 	p = append(p,
@@ -98,27 +177,16 @@ func runnerFilter(pid int) ([]unix.SockFilter, error) {
 		stmt(ret, retAllow),
 		stmt(ret, retEPERM),
 	)
-	for _, nr := range ownProcessCalls {
-		p = append(p,
-			jump(jeq, uint32(nr), 0, 6),
-			stmt(ldAbs, argHigh),
-			jump(jeq, 0, 0, 3),
-			stmt(ldAbs, argLow),
-			jump(jeq, uint32(pid), 0, 1),
-			stmt(ret, retAllow),
-			stmt(ret, retEPERM),
-		)
+	rules := argRules(uint32(pid))
+	nrs := make([]uintptr, 0, len(rules))
+	for nr := range rules {
+		nrs = append(nrs, nr)
 	}
-	p = append(p,
-		jump(jeq, unix.SYS_IOCTL, 0, 5),
-		stmt(ldAbs, argLow+8),
-		jump(jeq, unix.TIOCSTI, 2, 0),
-		jump(jeq, unix.TIOCLINUX, 1, 0),
-		stmt(ret, retAllow),
-		stmt(ret, retEPERM),
-		stmt(ret, retAllow),
-	)
-	return p, nil
+	slices.Sort(nrs)
+	for _, nr := range nrs {
+		p = append(p, ruleBlock(nr, rules[nr])...)
+	}
+	return append(p, stmt(ret, retAllow)), nil
 }
 
 // seccompAvailable tells whether the kernel takes a filter that returns an

@@ -23,8 +23,15 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
+// probeGram is an unbound datagram socket that the runner holds from before
+// it confines itself, as a descriptor it got from outside could be.
+var probeGram = -1
+
+const fOwnerPID = 1
+
 func setProbeMode(in runnerProbeIn) {
 	confine.SetForTest(in.ABI, in.Mode == "seccomp", in.Mode == "landlock")
+	probeGram, _ = unix.Socket(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 }
 
 // runnerControlFree lists checks that may fail with no confinement too: they
@@ -105,6 +112,66 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 	}
 	refused("open a pidfd of web", err)
 	refused("truncate a file outside its folders", unix.Truncate(in.Victim, 0))
+	refused("queue a signal to web (rt_sigqueueinfo)", queueSignal(in.Parent, 0))
+	refused("queue a signal to a thread of web (rt_tgsigqueueinfo)", queueSignal(in.Parent, in.Parent))
+	refused("make web the owner of a descriptor (F_SETOWN)", onWorkspaceFile(workspace, func(fd int) error {
+		_, err := unix.FcntlInt(uintptr(fd), unix.F_SETOWN, in.Parent)
+		return err
+	}))
+	refused("make web the owner of a descriptor (F_SETOWN_EX)", onWorkspaceFile(workspace, func(fd int) error {
+		owner := struct{ kind, pid int32 }{fOwnerPID, int32(in.Parent)}
+		_, _, e := unix.Syscall(unix.SYS_FCNTL, uintptr(fd), unix.F_SETOWN_EX, uintptr(unsafe.Pointer(&owner)))
+		return errnoErr(e)
+	}))
+	refused("choose the signal of a descriptor (F_SETSIG)", onWorkspaceFile(workspace, func(fd int) error {
+		_, err := unix.FcntlInt(uintptr(fd), unix.F_SETSIG, int(unix.SIGUSR1))
+		return err
+	}))
+	var limit unix.Rlimit
+	refused("read web's limits (prlimit64)", unix.Prlimit(in.Parent, unix.RLIMIT_NOFILE, nil, &limit))
+	var cpus unix.CPUSet
+	err = unix.SchedGetaffinity(in.Parent, &cpus)
+	if err == nil {
+		err = unix.SchedSetaffinity(in.Parent, &cpus)
+	}
+	refused("set web's CPU affinity", err)
+	prio, err := unix.Getpriority(unix.PRIO_PROCESS, in.Parent)
+	if err == nil {
+		err = unix.Setpriority(unix.PRIO_PROCESS, in.Parent, 20-prio)
+	}
+	refused("set web's priority", err)
+	refused("chmod a file outside its folders (fchmodat)", unix.Fchmodat(unix.AT_FDCWD, in.Victim, 0o600, 0))
+	refused("chmod a file outside its folders (fchmodat2)", pathCall(unix.SYS_FCHMODAT2, in.Victim, 0o600))
+	refused("chown a file outside its folders (fchownat)", unix.Fchownat(unix.AT_FDCWD, in.Victim, os.Getuid(), os.Getgid(), 0))
+	var st unix.Stat_t
+	err = unix.Stat(in.Victim, &st)
+	if err == nil {
+		err = unix.UtimesNanoAt(unix.AT_FDCWD, in.Victim, []unix.Timespec{st.Atim, st.Mtim}, 0)
+	}
+	refused("set the times of a file outside its folders (utimensat)", err)
+	refused("set an attribute of a file outside its folders (setxattr)", unix.Setxattr(in.Victim, "user.openneko-probe", []byte("x"), 0))
+	refused("set an attribute of a file outside its folders (lsetxattr)", unix.Lsetxattr(in.Victim, "user.openneko-probe", []byte("y"), 0))
+	refused("remove an attribute of a file outside its folders (removexattr)", unix.Removexattr(in.Victim, "user.openneko-probe"))
+	refused("watch the config folder (inotify)", watchInotify(filepath.Dir(in.Secret)))
+	refused("watch the config folder (fanotify)", watchFanotify(filepath.Dir(in.Secret)))
+	for what, err := range legacyMetadataCalls(in.Victim) {
+		refused(what, err)
+	}
+	if probeGram < 0 {
+		refused("send to a datagram socket outside its folders (sendto)", nil)
+		refused("send to a datagram socket outside its folders (sendmsg)", nil)
+	} else {
+		dest := &unix.SockaddrUnix{Name: in.Datagram}
+		refused("send to a datagram socket outside its folders (sendto)", unix.Sendto(probeGram, []byte("x"), 0, dest))
+		_, err = unix.SendmsgN(probeGram, []byte("x"), nil, dest, 0)
+		refused("send to a datagram socket outside its folders (sendmsg)", err)
+	}
+	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err == nil {
+		unix.Close(pair[0])
+		unix.Close(pair[1])
+	}
+	refused("make a socket pair", err)
 	refused("write outside its folders", os.WriteFile(in.Outside, []byte("x"), 0o600))
 	refused("connect to a Unix socket outside its folders", dial("unix", in.Stream))
 	refused("send to a datagram socket outside its folders", sendUnixgram(in.Datagram))
@@ -138,6 +205,63 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 	out.Allowed["truncate a workspace file through its descriptor"] = err == nil
 	out.Allowed["reach the key door through the broker"] = keyDoorAnswers(&out)
 	return out
+}
+
+func errnoErr(e syscall.Errno) error {
+	if e != 0 {
+		return e
+	}
+	return nil
+}
+
+func queueSignal(pid, tid int) error {
+	var info [128]byte
+	*(*int32)(unsafe.Pointer(&info[8])) = -1
+	var e syscall.Errno
+	if tid == 0 {
+		_, _, e = unix.Syscall(unix.SYS_RT_SIGQUEUEINFO, uintptr(pid), 0, uintptr(unsafe.Pointer(&info[0])))
+	} else {
+		_, _, e = unix.Syscall6(unix.SYS_RT_TGSIGQUEUEINFO, uintptr(pid), uintptr(tid), 0, uintptr(unsafe.Pointer(&info[0])), 0, 0)
+	}
+	return errnoErr(e)
+}
+
+func onWorkspaceFile(workspace string, do func(fd int) error) error {
+	fd, err := unix.Open(filepath.Join(workspace, "owned.txt"), unix.O_RDWR|unix.O_CREAT|unix.O_CLOEXEC, 0o600)
+	if err != nil {
+		return fmt.Errorf("the check cannot open its own file: %w", err)
+	}
+	defer unix.Close(fd)
+	return do(fd)
+}
+
+func pathCall(nr uintptr, path string, mode uint32) error {
+	p, err := unix.BytePtrFromString(path)
+	if err != nil {
+		return err
+	}
+	cwd := unix.AT_FDCWD
+	_, _, e := unix.Syscall6(nr, uintptr(cwd), uintptr(unsafe.Pointer(p)), uintptr(mode), 0, 0, 0)
+	return errnoErr(e)
+}
+
+func watchInotify(dir string) error {
+	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(fd)
+	_, err = unix.InotifyAddWatch(fd, dir, unix.IN_ALL_EVENTS)
+	return err
+}
+
+func watchFanotify(dir string) error {
+	fd, err := unix.FanotifyInit(unix.FAN_CLASS_NOTIF|unix.FAN_REPORT_FID|unix.FAN_CLOEXEC, unix.O_RDONLY)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(fd)
+	return unix.FanotifyMark(fd, unix.FAN_MARK_ADD, unix.FAN_MODIFY|unix.FAN_EVENT_ON_CHILD, unix.AT_FDCWD, dir)
 }
 
 func rawSocket() error {
@@ -224,6 +348,7 @@ func TestConfinedRunner(t *testing.T) {
 			t.Errorf("control: with no confinement the runner could not %s, so the check proves nothing", what)
 		}
 	}
+	legacy := legacyMetadataCalls(filepath.Join(t.TempDir(), "none"))
 	abis := []int{0}
 	if st.ABI > 1 {
 		abis = append(abis, 1)
@@ -243,7 +368,7 @@ func TestConfinedRunner(t *testing.T) {
 			}
 			t.Fatalf("%s: the confined runner gave no result: %s", name, msg)
 		}
-		if len(got.Refused) != len(control.Refused) || len(got.Refused) < 26 {
+		if len(got.Refused) != len(control.Refused) || len(got.Refused) < 46+len(legacy) {
 			t.Fatalf("%s: the runner ran %d checks confined and %d unconfined", name, len(got.Refused), len(control.Refused))
 		}
 		for what, refused := range got.Refused {
@@ -262,7 +387,18 @@ func TestConfinedRunner(t *testing.T) {
 	}
 
 	noSeccomp, _ := runRunnerProbe(t, tg, "landlock")
-	for _, what := range []string{"connect to a Unix socket outside its folders", "send to a datagram socket outside its folders", "UDP to loopback", "start a child process"} {
+	seccompOnly := []string{"connect to a Unix socket outside its folders", "send to a datagram socket outside its folders", "UDP to loopback", "start a child process",
+		"make web the owner of a descriptor (F_SETOWN)", "make web the owner of a descriptor (F_SETOWN_EX)", "choose the signal of a descriptor (F_SETSIG)",
+		"read web's limits (prlimit64)", "set web's CPU affinity", "set web's priority",
+		"chmod a file outside its folders (fchmodat)", "chmod a file outside its folders (fchmodat2)", "chown a file outside its folders (fchownat)",
+		"set the times of a file outside its folders (utimensat)", "set an attribute of a file outside its folders (setxattr)",
+		"set an attribute of a file outside its folders (lsetxattr)", "remove an attribute of a file outside its folders (removexattr)",
+		"watch the config folder (inotify)", "watch the config folder (fanotify)",
+		"send to a datagram socket outside its folders (sendto)", "send to a datagram socket outside its folders (sendmsg)", "make a socket pair"}
+	for what := range legacy {
+		seccompOnly = append(seccompOnly, what)
+	}
+	for _, what := range seccompOnly {
 		if noSeccomp.Refused[what] {
 			t.Errorf("with Landlock only, the runner still could not %s: the check does not prove the seccomp filter", what)
 		}
