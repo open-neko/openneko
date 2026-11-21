@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createConnection, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -639,6 +639,13 @@ export class EvalEpisode {
     await this.events?.end();
     await this.deactivate();
     await this.host.dropDatabase(this.database);
+    const keep = process.env.OPENNEKO_EVAL_LOG_DIR;
+    if (keep) {
+      await mkdir(keep, { recursive: true });
+      for (const name of ["web.log", "serve.log"]) {
+        await copyFile(join(this.root, name), join(keep, `${this.database}-${name}`)).catch(() => {});
+      }
+    }
     await rm(this.root, { recursive: true, force: true });
     this.host.release(this);
   }
