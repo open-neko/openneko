@@ -73,7 +73,7 @@ func mineCandidates(data any) []mineCandidate {
 			p := append(append([]any{}, path...), k)
 			switch v := row[k].(type) {
 			case float64, string:
-				if !strings.HasSuffix(strings.ToLower(k), "id") {
+				if !isIDField(k) {
 					out = append(out, mineCandidate{Path: p, Value: v})
 				}
 			case map[string]any:
@@ -96,6 +96,18 @@ func mineCandidates(data any) []mineCandidate {
 		}
 	}
 	return out
+}
+
+// isIDField is true for a key column. An aggregate of one, such as
+// count_businessentityid, is a figure.
+func isIDField(name string) bool {
+	name = strings.ToLower(name)
+	for _, agg := range []string{"count_", "sum_", "avg_", "min_", "max_"} {
+		if strings.HasPrefix(name, agg) {
+			return false
+		}
+	}
+	return strings.HasSuffix(name, "id")
 }
 
 func answerNumbers(answer string) []float64 {

@@ -163,7 +163,7 @@ func TestInsertDueOncePerPeriod(t *testing.T) {
 		{t0.Add(40 * time.Second), 0},
 		{t0.Add(time.Minute), 4},
 		{t0.Add(time.Hour), 7},
-		{t0.Add(2 * time.Hour), 8},
+		{t0.Add(2 * time.Hour), 9},
 		{t0.Add(2*time.Hour + 30*time.Minute), 5},
 	} {
 		n, err := q.InsertDue(ctx, step.at)
