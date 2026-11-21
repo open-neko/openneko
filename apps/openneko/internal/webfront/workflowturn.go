@@ -170,6 +170,19 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 		now = o.now
 	}
 	seed := workflowSeedMessage(wf.Name, o.TriggerKind, o.UserMessage, o.TriggerPayload, now())
+	if workflowCompilable(o) {
+		call, err := a.workflowDataCall(o, st.wrapped)
+		if err != nil {
+			return workflowTurnResult{}, err
+		}
+		block, err := a.compiledWorkflowContext(ctx, o, now(), call)
+		if err != nil {
+			log.Printf("[workflow-compile] org=%s workflow=%s: %v", wf.OrgID, wf.ID, err)
+		}
+		if block != "" {
+			prompt += "\n\n" + block
+		}
+	}
 	heldSkills, err := a.heldItems(ctx, ent, "skill")
 	if err != nil {
 		return workflowTurnResult{}, err
@@ -420,6 +433,15 @@ func (a *API) finishWorkflowTurn(ctx context.Context, o workflowTurnOptions, st 
 	if text != "" {
 		if err := a.saveAssistantMessage(ctx, o.Workflow.OrgID, o.ThreadID, o.RunID, text); err != nil {
 			return workflowTurnResult{}, err
+		}
+	}
+	if res.Status == "completed" && workflowCompilable(o) {
+		call, err := a.workflowDataCall(o, func(context.Context, any) error { return nil })
+		if err == nil {
+			err = a.compileWorkflowRun(ctx, o, text, a.compileProposer(ctx, o.Workflow.OrgID), call)
+		}
+		if err != nil {
+			log.Printf("[workflow-compile] org=%s workflow=%s: %v", o.Workflow.OrgID, o.Workflow.ID, err)
 		}
 	}
 	if minutes == nil {

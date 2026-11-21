@@ -311,6 +311,11 @@
       "task": "research_mission",
       "label": "Research mission",
       "description": "Writes the company mission during setup."
+    },
+    {
+      "task": "workflow_compile",
+      "label": "Workflow compiler",
+      "description": "Turns a finished workflow run into a stored query for its next runs."
     }
   ]
 }
