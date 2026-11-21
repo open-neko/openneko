@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
 import EgressHostsField, { egressHostLines } from "./EgressHostsField";
 import { terminalHint } from "./terminal-hint";
+import UnconfinedTurnsField, { type UnconfinedTurnsState } from "./UnconfinedTurnsField";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -62,7 +63,7 @@ const responderEffortOptions: readonly { value: ResponderEffort; label: string; 
 export default function AgentForm({
   initial,
 }: {
-  initial: { agent: AgentSettingsPayload; providers: SettingsPayload };
+  initial: { agent: AgentSettingsPayload; providers: SettingsPayload; unconfined?: UnconfinedTurnsState };
 }) {
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
   const [terminal, setTerminal] = useState(initial.agent.agent.terminal);
@@ -227,6 +228,8 @@ export default function AgentForm({
             suggestions={initial.agent.egressSuggestions ?? []}
             available={terminalAvailable}
           />
+
+          {initial.unconfined && <UnconfinedTurnsField initial={initial.unconfined} />}
 
           {fields.map((field) => {
             const masked = primary.secretStatus[field.key];

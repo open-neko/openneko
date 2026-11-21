@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
+	"github.com/open-neko/openneko/apps/ax-harness/harness"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
 )
 
@@ -112,5 +114,32 @@ func TestServeRunsHostCallsWhenAgentTurnsAreOff(t *testing.T) {
 	got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`)}))
 	if last := got[len(got)-1]; last.Type != "exit" || *last.Code != 2 || last.Error != off {
 		t.Fatalf("a turn with turns off: %+v", got)
+	}
+}
+
+func TestServeRunsAnUnconfinedTurnOnlyWhenItCannotConfine(t *testing.T) {
+	off := "agent confinement: off. Linux 4.18.0 has no Landlock, so agent turns are off"
+	ran := 0
+	run := func(context.Context, harness.Turn) (int, error) { ran++; return 0, nil }
+	var log strings.Builder
+	socket := startServer(t, &Server{TurnsOff: off, Run: run, Log: &log})
+	if got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`)})); *got[len(got)-1].Code != 2 || ran != 0 {
+		t.Fatalf("a turn without the admin's flag ran: %+v", got)
+	}
+	for range 2 {
+		if got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`), Unconfined: true})); *got[len(got)-1].Code != 0 {
+			t.Fatalf("a turn with the admin's flag: %+v", got)
+		}
+	}
+	if ran != 2 || strings.Count(log.String(), "without OS confinement") != 1 {
+		t.Fatalf("ran = %d, log = %q", ran, log.String())
+	}
+
+	confined := 0
+	srv := &Server{Run: run}
+	srv.confine = func([]string) error { confined++; return nil }
+	socket = startServer(t, srv)
+	if got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`), Unconfined: true})); *got[len(got)-1].Code != 0 || confined != 1 {
+		t.Fatalf("the flag skipped the confinement of a system that can confine: confined = %d, %+v", confined, got)
 	}
 }

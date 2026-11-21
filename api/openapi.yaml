@@ -53,6 +53,45 @@ components:
       in: header
       name: X-Webhook-Token
   schemas:
+    UnconfinedTurns:
+      type: object
+      required:
+      - setting
+      - system
+      additionalProperties: false
+      properties:
+        setting:
+          type: object
+          required:
+          - "on"
+          properties:
+            "on":
+              type: boolean
+            host:
+              type: string
+            kernel:
+              type: string
+            reason:
+              type: string
+            by:
+              type: string
+            at:
+              type: string
+        system:
+          type: object
+          required:
+          - available
+          properties:
+            available:
+              type: boolean
+            blocked:
+              type: string
+            host:
+              type: string
+            kernel:
+              type: string
+            reason:
+              type: string
     ChannelReplyPlaces:
       type: object
       additionalProperties: false
@@ -8492,6 +8531,91 @@ paths:
                 properties:
                   error:
                     type: string
+  /settings/agent/unconfined:
+    get:
+      operationId: getSettingsAgentUnconfined
+      tags:
+      - settings
+      summary: Read the install setting that runs agent turns without OS confinement
+      description: Off by default. It covers the whole install. It can be turned on only where openneko serve reports that this system cannot confine agent turns.
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: The setting and whether this system may turn it on
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnconfinedTurns'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      operationId: putSettingsAgentUnconfined
+      tags:
+      - settings
+      summary: Turn agent turns without OS confinement on or off
+      description: Turning it on needs a signed-in admin, a system that cannot confine agent turns, and the host name that serve reports in confirm. Each change writes an audit event in every organization.
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - "on"
+              properties:
+                "on":
+                  type: boolean
+                confirm:
+                  type: string
+                  description: The host name of the system, typed by the admin
+      responses:
+        '200':
+          description: The saved setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnconfinedTurns'
+        '400':
+          description: on is not a boolean, or confirm is not the host name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not a signed-in admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: This system confines agent turns, or openneko serve did not answer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /settings/channel-identities:
     get:
       operationId: getSettingsChannelIdentities

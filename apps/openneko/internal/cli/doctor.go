@@ -54,7 +54,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
-			confineFailed := confinementDoctorLines(out)
+			confineFailed := confinementDoctorLines(cmd.Context(), out)
 			if !h.Supported || operationalFailed || confineFailed {
 				return WithExit(1, nil)
 			}
