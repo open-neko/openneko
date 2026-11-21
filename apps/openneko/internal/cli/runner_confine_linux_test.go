@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,23 +17,12 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/open-neko/neko/apps/openneko/internal/confine"
-	"github.com/open-neko/openneko/apps/ax-harness/harness"
-	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
-const runnerProbeEnv = "OPENNEKO_TEST_RUNNER_PROBE"
-
-type runnerProbeIn struct {
-	Mode                          string
-	ABI                           int
-	Secret, Home, Outside, Victim string
-	TCP, TCP6, UDP                string
-	Stream, Datagram, Abstract    string
-	Docker, DBus                  string
-	Parent                        int
-	ParentAddr                    uintptr
+func setProbeMode(in runnerProbeIn) {
+	confine.SetForTest(in.ABI, in.Mode == "seccomp", in.Mode == "landlock")
 }
 
 // runnerControlFree lists checks that may fail with no confinement too: they
@@ -43,34 +31,6 @@ var runnerControlFree = map[string]bool{
 	"TCP to 1.1.1.1:443": true, "TCP to example.com:443": true, "UDP to 1.1.1.1:53": true, "resolve a name": true,
 	"open a raw, packet or ICMP socket": true, "TCP over IPv6 loopback": true,
 	"connect to the Docker socket": true, "connect to the D-Bus session bus": true, "send to /dev/log": true,
-}
-
-// TestRunnerProbeChild is the agent runner of TestConfinedRunner: the real
-// runner code with the harness replaced by the checks.
-func TestRunnerProbeChild(t *testing.T) {
-	raw := os.Getenv(runnerProbeEnv)
-	if raw == "" {
-		t.Skip("helper process")
-	}
-	var in runnerProbeIn
-	if err := json.Unmarshal([]byte(raw), &in); err != nil {
-		t.Fatal(err)
-	}
-	confine.SetForTest(in.ABI, in.Mode == "seccomp", in.Mode == "landlock")
-	serve.SetRunnerTurn(func(ctx context.Context, turn harness.Turn) (int, error) {
-		workspace := ""
-		for _, e := range turn.Environ {
-			if v, ok := strings.CutPrefix(e, "OPENNEKO_HARNESS_WORKSPACE_DIR="); ok {
-				workspace = v
-			}
-		}
-		b, _ := json.Marshal(runnerChecks(ctx, in, workspace))
-		_, err := turn.Out.Write(append(b, '\n'))
-		return 0, err
-	})
-	if err := serve.RunRunner(context.Background(), confineRunner); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probeResult {
@@ -169,50 +129,8 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 		f.Close()
 	}
 	out.Allowed["truncate a workspace file through its descriptor"] = err == nil
-	client, err := keydoor.Client()
-	if err == nil {
-		var res *http.Response
-		if res, err = client.Get("http://door/ping"); err == nil {
-			body, _ := io.ReadAll(res.Body)
-			res.Body.Close()
-			if string(body) != "pong" {
-				err = fmt.Errorf("the door answered %q", body)
-			}
-		}
-	}
-	out.Allowed["reach the key door through the broker"] = err == nil
-	if err != nil {
-		out.Notes = append(out.Notes, "key door: "+err.Error())
-	}
+	out.Allowed["reach the key door through the broker"] = keyDoorAnswers(&out)
 	return out
-}
-
-func dial(network, addr string) error {
-	c, err := net.DialTimeout(network, addr, 3*time.Second)
-	if err == nil {
-		c.Close()
-	}
-	return err
-}
-
-func sendUDP(addr string) error {
-	c, err := net.DialTimeout("udp", addr, 2*time.Second)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	_, err = c.Write([]byte("x"))
-	return err
-}
-
-func sendUnixgram(path string) error {
-	c, err := net.Dial("unixgram", path)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	_, err = c.Write([]byte("x"))
-	return err
 }
 
 func rawSocket() error {
@@ -223,22 +141,6 @@ func rawSocket() error {
 		}
 	}
 	return fmt.Errorf("refused")
-}
-
-func copyFile(from, to string) error {
-	b, err := os.ReadFile(from)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(to, b, 0o755)
-}
-
-// runnerTargets are the things outside the runner that the checks try to
-// reach. The test makes its own, so the control proves each check on any host.
-type runnerTargets struct {
-	in        runnerProbeIn
-	workspace string
-	tmp       string
 }
 
 func newRunnerTargets(t *testing.T) runnerTargets {
@@ -261,25 +163,8 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 			t.Fatal(err)
 		}
 	}
-	listen := func(network, addr string) net.Listener {
-		ln, err := net.Listen(network, addr)
-		if err != nil {
-			return nil
-		}
-		t.Cleanup(func() { ln.Close() })
-		go func() {
-			for {
-				c, err := ln.Accept()
-				if err != nil {
-					return
-				}
-				c.Close()
-			}
-		}()
-		return ln
-	}
-	in.TCP = listen("tcp", "127.0.0.1:0").Addr().String()
-	if ln := listen("tcp", "[::1]:0"); ln != nil {
+	in.TCP = acceptAll(t, "tcp", "127.0.0.1:0").Addr().String()
+	if ln := acceptAll(t, "tcp", "[::1]:0"); ln != nil {
 		in.TCP6 = ln.Addr().String()
 	}
 	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -289,7 +174,7 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 	t.Cleanup(func() { udp.Close() })
 	in.UDP = udp.LocalAddr().String()
 	in.Stream = filepath.Join(other, "docker.sock")
-	if listen("unix", in.Stream) == nil {
+	if acceptAll(t, "unix", in.Stream) == nil {
 		t.Fatal("cannot listen on", in.Stream)
 	}
 	in.Datagram = filepath.Join(other, "log.sock")
@@ -299,7 +184,7 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 	}
 	t.Cleanup(func() { gram.Close() })
 	in.Abstract = fmt.Sprintf("openneko-runner-probe-%d", os.Getpid())
-	if listen("unix", "@"+in.Abstract) == nil {
+	if acceptAll(t, "unix", "@"+in.Abstract) == nil {
 		t.Fatal("cannot listen on an abstract socket")
 	}
 	if host, ok := strings.CutPrefix(os.Getenv("DOCKER_HOST"), "unix://"); ok {
@@ -313,92 +198,6 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 	return runnerTargets{in: in, workspace: workspace, tmp: tmp}
 }
 
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
-}
-
-// runRunnerProbe starts a serve with the test binary as its agent runner and
-// sends one turn; it returns what the runner's checks found, or the turn's
-// error.
-func runRunnerProbe(t *testing.T, tg runnerTargets, mode string, abi int) (probeResult, string) {
-	t.Helper()
-	in := tg.in
-	in.Mode, in.ABI = mode, abi
-	raw, _ := json.Marshal(in)
-	sock := filepath.Join(t.TempDir(), "serve.sock")
-	ln, err := serve.Listen(sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 1, ConfineRunner: mode != "control",
-		Runner:    []string{os.Args[0], "-test.run=^TestRunnerProbeChild$", "-test.count=1"},
-		RunnerEnv: []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + tg.tmp, runnerProbeEnv + "=" + string(raw)}}
-	ctx, stop := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ctx, ln) }()
-	defer func() { stop(); <-done }()
-
-	conn, err := net.Dial("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(90 * time.Second))
-	start := serve.Frame{Type: "start", Spec: json.RawMessage(`{}`), Environ: []string{"OPENNEKO_HARNESS_WORKSPACE_DIR=" + tg.workspace,
-		"OPENNEKO_MCP_ORG_ID=org-1", "OPENNEKO_MCP_THREAD_ID=thread-1"}}
-	if err := json.NewEncoder(conn).Encode(start); err != nil {
-		t.Fatal(err)
-	}
-	var res probeResult
-	dec := json.NewDecoder(conn)
-	for {
-		var f serve.Frame
-		if err := dec.Decode(&f); err != nil {
-			t.Fatalf("%s: the turn ended with no exit frame: %v", mode, err)
-		}
-		switch f.Type {
-		case "event":
-			_ = json.Unmarshal(f.Event, &res)
-		case "exit":
-			_ = os.Remove(in.Outside)
-			_ = os.Remove(filepath.Join(tg.workspace, "tool"))
-			_ = os.WriteFile(in.Victim, []byte("keep me"), 0o600)
-			return res, f.Error
-		}
-	}
-}
-
-// serveFakeDoor answers "pong" over HTTP on the key door socket, so the runner proves
-// that the broker still passes it the door.
-func serveFakeDoor(t *testing.T) {
-	t.Helper()
-	door := filepath.Join(t.TempDir(), "keydoor.sock")
-	ln, err := net.Listen("unix", door)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ln.Close() })
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "pong") }),
-		ReadHeaderTimeout: 5 * time.Second}
-	go func() { _ = srv.Serve(ln) }()
-	t.Cleanup(func() { _ = srv.Close() })
-	keydoor.SetSocket(door)
-}
-
-func requireRunnerConfinement(t *testing.T) confine.State {
-	t.Helper()
-	st := confine.RunnerAvailable()
-	t.Logf("kernel %s, %s, Landlock ABI %d, gaps %v", confine.Kernel(), st.Mechanism, st.ABI, st.Gaps)
-	if !st.Confined {
-		if os.Getenv("CI") != "" || os.Getenv("OPENNEKO_TEST_REQUIRE_CONFINE") != "" {
-			t.Fatalf("this host cannot prove the agent runner's confinement: %s", st.Reason)
-		}
-		t.Skip(st.Reason)
-	}
-	return st
-}
-
 // TestConfinedRunner runs the checks of the CONF0 probe, plus truncate,
 // signal and pidfd checks, inside a real agent runner in a one-account
 // layout: the test process stands for serve and web, with the same uid.
@@ -409,7 +208,7 @@ func TestConfinedRunner(t *testing.T) {
 	_ = unix.Prctl(unix.PR_SET_PTRACER, unix.PR_SET_PTRACER_ANY, 0, 0, 0)
 	t.Cleanup(func() { _ = unix.Prctl(unix.PR_SET_PTRACER, 0, 0, 0, 0) })
 
-	control, msg := runRunnerProbe(t, tg, "control", 0)
+	control, msg := runRunnerProbe(t, tg, "control")
 	if control.Refused == nil {
 		t.Fatalf("control: the runner gave no result: %s", msg)
 	}
@@ -423,7 +222,9 @@ func TestConfinedRunner(t *testing.T) {
 		abis = append(abis, 1)
 	}
 	for _, abi := range abis {
-		got, msg := runRunnerProbe(t, tg, "full", abi)
+		capped := tg
+		capped.in.ABI = abi
+		got, msg := runRunnerProbe(t, capped, "full")
 		name := fmt.Sprintf("ABI %d", st.ABI)
 		if abi > 0 {
 			name = fmt.Sprintf("ABI capped at %d", abi)
@@ -453,13 +254,13 @@ func TestConfinedRunner(t *testing.T) {
 		}
 	}
 
-	noSeccomp, _ := runRunnerProbe(t, tg, "landlock", 0)
+	noSeccomp, _ := runRunnerProbe(t, tg, "landlock")
 	for _, what := range []string{"connect to a Unix socket outside its folders", "send to a datagram socket outside its folders", "UDP to loopback"} {
 		if noSeccomp.Refused[what] {
 			t.Errorf("with Landlock only, the runner still could not %s: the check does not prove the seccomp filter", what)
 		}
 	}
-	noLandlock, _ := runRunnerProbe(t, tg, "seccomp", 0)
+	noLandlock, _ := runRunnerProbe(t, tg, "seccomp")
 	for _, what := range []string{"read the planted secret key", "write outside its folders", "read web's /proc/<pid>/mem"} {
 		if noLandlock.Refused[what] {
 			t.Errorf("with seccomp only, the runner still could not %s: the check does not prove Landlock", what)
@@ -470,7 +271,7 @@ func TestConfinedRunner(t *testing.T) {
 func TestRunnerRefusesATurnWhenItCannotConfine(t *testing.T) {
 	tg := newRunnerTargets(t)
 	tg.workspace = ""
-	_, msg := runRunnerProbe(t, tg, "full", 0)
+	_, msg := runRunnerProbe(t, tg, "full")
 	if !strings.Contains(msg, "could not confine itself, so the turn did not run") {
 		t.Fatalf("a runner with no folder to keep ran the turn: %q", msg)
 	}
