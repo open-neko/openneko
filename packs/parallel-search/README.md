@@ -16,7 +16,7 @@ server from plugin code. No plugin code runs inside OpenNeko.
 4. Review and apply the configuration.
 5. Enable **Parallel web search**. It installs disabled.
 
-The search objective holds at most 500 characters.
+The search objective holds at most 500 characters, and `search_queries` holds at most 5 queries of at most 200 characters each.
 
 ## Coverage
 

@@ -53,6 +53,9 @@ func guardPackBody(kind string, body any) (any, error) {
 		if objective, ok := obj.vals["objective"].(string); ok && utf8.RuneCountInString(objective) > searchObjectiveMax {
 			return nil, refuse(fmt.Sprintf("the search objective has %d characters; a search needs at most %d", utf8.RuneCountInString(objective), searchObjectiveMax))
 		}
+		if why := searchQueriesProblem(obj.vals["search_queries"]); why != "" {
+			return nil, refuse(why)
+		}
 	case kind == "resend.email":
 		if _, has := obj.vals["attachments"]; has {
 			return nil, refuse("the email holds attachments. Resend fetches an attachment from its path; OpenNeko sends no attachment")
@@ -74,7 +77,34 @@ func guardPackBody(kind string, body any) (any, error) {
 	return obj, nil
 }
 
-const searchObjectiveMax = 500
+const (
+	searchObjectiveMax = 500
+	searchQueriesMax   = 5
+	searchQueryMax     = 200
+)
+
+func searchQueriesProblem(v any) string {
+	if v == nil {
+		return ""
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return "search_queries must be a list of search texts"
+	}
+	if len(list) > searchQueriesMax {
+		return fmt.Sprintf("the search has %d queries; a search takes at most %d", len(list), searchQueriesMax)
+	}
+	for _, q := range list {
+		s, ok := q.(string)
+		if !ok {
+			return "each search query must be text"
+		}
+		if n := utf8.RuneCountInString(s); n > searchQueryMax {
+			return fmt.Sprintf("a search query has %d characters; a query needs at most %d", n, searchQueryMax)
+		}
+	}
+	return ""
+}
 
 var slackFetchKeys = map[string]bool{"image_url": true, "thumb_url": true, "thumbnail_url": true, "video_url": true, "author_icon": true,
 	"footer_icon": true, "icon_url": true, "provider_icon_url": true}
