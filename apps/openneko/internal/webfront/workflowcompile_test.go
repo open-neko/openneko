@@ -156,3 +156,48 @@ func TestCompileAnchorFindsTheFirstDate(t *testing.T) {
 		t.Fatal("no date, no anchor")
 	}
 }
+
+func TestCompiledWorkflowContextRunsTheStoredQueryAndDropsItOnFailure(t *testing.T) {
+	f, db, _ := hostFront(t)
+	ctx := t.Context()
+	const wfID, runID = "c6000000-0000-4000-8000-000000000001", "c6000000-0000-4000-8000-000000000002"
+	seed(t, db, `insert into workflow_definition (id, org_id, name, goal) values ($1, 'org', 'Daily revenue', 'sum yesterday')`, wfID)
+	o := workflowTurnOptions{TriggerKind: "cron", Workflow: workflowRecord{ID: wfID, OrgID: "org", Goal: "sum yesterday", CronTimezone: "UTC"}}
+	vars, _ := json.Marshal([]compiledVar{{Name: "day", Base: "anchor", Align: "day", Offset: -1, Unit: "day", Format: "date"}})
+	seed(t, db, `insert into workflow_compiled_query (workflow_id, org_id, anchor_query, query, variables, source_run_id, goal_hash)
+		values ($1, 'org', '{ a { max_d } }', '{ a(where: { d: { eq: $day } }) { n } }', $2::jsonb, $3, $4)`, wfID, string(vars), runID, workflowGoalHash(o.Workflow))
+	call := func(_ context.Context, q sandbox.DataQuery) (*jsObj, error) {
+		text := `{"data":{"a":{"max_d":"2025-06-29"}}}`
+		if strings.Contains(q.Query, "$day") {
+			if string(q.Variables) != `{"day":"2025-06-28"}` {
+				t.Fatalf("variables %s", q.Variables)
+			}
+			text = `{"data":{"a":{"n":42}}}`
+		}
+		r, _ := jsParse([]byte(`{"content":[{"type":"text","text":` + jsStringify(text, false) + `}]}`))
+		return r.(*jsObj), nil
+	}
+	block, err := f.API.compiledWorkflowContext(ctx, o, time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC), call)
+	if err != nil || !strings.Contains(block, `{"data":{"a":{"n":42}}}`) || !strings.Contains(block, `{"day":"2025-06-28"}`) {
+		t.Fatalf("block %q, %v", block, err)
+	}
+	var uses int
+	if err := db.QueryRow(ctx, `select uses from workflow_compiled_query where workflow_id = $1`, wfID).Scan(&uses); err != nil || uses != 1 {
+		t.Fatalf("uses %d %v", uses, err)
+	}
+	failing := func(context.Context, sandbox.DataQuery) (*jsObj, error) {
+		r, _ := jsParse([]byte(`{"isError":true,"content":[{"type":"text","text":"{\"errors\":[{\"message\":\"gone\"}]}"}]}`))
+		return r.(*jsObj), nil
+	}
+	if block, err := f.API.compiledWorkflowContext(ctx, o, time.Now(), failing); err != nil || block != "" {
+		t.Fatalf("a failing query must give no block: %q %v", block, err)
+	}
+	var left int
+	if err := db.QueryRow(ctx, `select count(*) from workflow_compiled_query where workflow_id = $1`, wfID).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("a failing compiled query must be dropped: %d %v", left, err)
+	}
+	seed(t, db, `insert into workflow_compiled_query (workflow_id, org_id, query, source_run_id, goal_hash) values ($1, 'org', '{ a { n } }', $2, 'old goal')`, wfID, runID)
+	if c, err := f.API.loadCompiledQuery(ctx, o.Workflow); err != nil || c != nil {
+		t.Fatalf("a query for another goal must be dropped: %v %v", c, err)
+	}
+}

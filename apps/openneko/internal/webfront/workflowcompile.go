@@ -2,6 +2,8 @@ package webfront
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -424,16 +426,28 @@ func runCompiled(ctx context.Context, call compileDataCall, query string, vars m
 	return text, nil
 }
 
-func (a *API) loadCompiledQuery(ctx context.Context, orgID, workflowID string) (*compiledQuery, error) {
+func workflowGoalHash(wf workflowRecord) string {
+	sum := sha256.Sum256([]byte(wf.Goal + "\x00" + string(wf.Steps)))
+	return hex.EncodeToString(sum[:])
+}
+
+// loadCompiledQuery gives the workflow's compiled query. A query compiled
+// for another goal is dropped.
+func (a *API) loadCompiledQuery(ctx context.Context, wf workflowRecord) (*compiledQuery, error) {
 	var c compiledQuery
 	var anchor *string
 	var vars []byte
-	err := a.DB.QueryRow(ctx, `select anchor_query, query, variables from workflow_compiled_query where org_id = $1 and workflow_id = $2::uuid`,
-		orgID, workflowID).Scan(&anchor, &c.Query, &vars)
+	var goal string
+	err := a.DB.QueryRow(ctx, `select anchor_query, query, variables, goal_hash from workflow_compiled_query where org_id = $1 and workflow_id = $2::uuid`,
+		wf.OrgID, wf.ID).Scan(&anchor, &c.Query, &vars, &goal)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	if goal != workflowGoalHash(wf) {
+		_, err := a.DB.Exec(ctx, `delete from workflow_compiled_query where org_id = $1 and workflow_id = $2::uuid`, wf.OrgID, wf.ID)
 		return nil, err
 	}
 	c.AnchorQuery = deref(anchor)
@@ -447,7 +461,7 @@ func (a *API) loadCompiledQuery(ctx context.Context, orgID, workflowID string) (
 // and gives the prompt block with its result. A compiled query that fails
 // is dropped, and the run goes on as if there were none.
 func (a *API) compiledWorkflowContext(ctx context.Context, o workflowTurnOptions, now time.Time, call compileDataCall) (string, error) {
-	c, err := a.loadCompiledQuery(ctx, o.Workflow.OrgID, o.Workflow.ID)
+	c, err := a.loadCompiledQuery(ctx, o.Workflow)
 	if err != nil || c == nil {
 		return "", err
 	}
@@ -488,7 +502,7 @@ func (a *API) compiledWorkflowContext(ctx context.Context, o workflowTurnOptions
 // when the workflow has none.
 func (a *API) compileWorkflowRun(ctx context.Context, o workflowTurnOptions, answer string,
 	propose func(input string) (string, error), call compileDataCall) error {
-	existing, err := a.loadCompiledQuery(ctx, o.Workflow.OrgID, o.Workflow.ID)
+	existing, err := a.loadCompiledQuery(ctx, o.Workflow)
 	if err != nil || existing != nil {
 		return err
 	}
@@ -515,9 +529,9 @@ func (a *API) compileWorkflowRun(ctx context.Context, o workflowTurnOptions, ans
 		return nil
 	}
 	vars, _ := json.Marshal(c.Vars)
-	_, err = a.DB.Exec(ctx, `insert into workflow_compiled_query (workflow_id, org_id, anchor_query, query, variables, source_run_id)
-		values ($1::uuid, $2, nullif($3, ''), $4, $5::jsonb, $6::uuid)
-		on conflict (workflow_id) do nothing`, o.Workflow.ID, o.Workflow.OrgID, c.AnchorQuery, c.Query, string(vars), o.RunID)
+	_, err = a.DB.Exec(ctx, `insert into workflow_compiled_query (workflow_id, org_id, anchor_query, query, variables, source_run_id, goal_hash)
+		values ($1::uuid, $2, nullif($3, ''), $4, $5::jsonb, $6::uuid, $7)
+		on conflict (workflow_id) do nothing`, o.Workflow.ID, o.Workflow.OrgID, c.AnchorQuery, c.Query, string(vars), o.RunID, workflowGoalHash(o.Workflow))
 	return err
 }
 

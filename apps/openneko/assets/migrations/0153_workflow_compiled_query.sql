@@ -9,6 +9,8 @@ create table if not exists workflow_compiled_query (
   query text not null,
   variables jsonb not null default '[]'::jsonb,
   source_run_id uuid not null,
+  -- The goal the query answers. A changed goal drops the query.
+  goal_hash text not null default '',
   uses integer not null default 0,
   created_at timestamptz not null default now(),
   last_used_at timestamptz
