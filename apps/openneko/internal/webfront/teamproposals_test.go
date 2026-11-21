@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestTeamMemoryWritesWaitForAnAdmin(t *testing.T) {
@@ -101,6 +103,16 @@ func TestTeamMemoryWritesWaitForAnAdmin(t *testing.T) {
 	if _, err := hold.Exec(t.Context(), `select 1 from team_item_proposal where id = $1 for update`, create.ID); err != nil {
 		t.Fatal(err)
 	}
+	cfg := db.Config()
+	cfg.MaxConns = 12
+	wide, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wide.Close()
+	narrow := f.API.DB
+	f.API.DB = wide
+	defer func() { f.API.DB = narrow }()
 	codes := make(chan int, 8)
 	var wg sync.WaitGroup
 	for range 8 {
