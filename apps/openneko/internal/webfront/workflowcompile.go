@@ -485,7 +485,8 @@ func (a *API) compiledWorkflowContext(ctx context.Context, o workflowTurnOptions
 		if err != nil {
 			return "", err
 		}
-		return section("workflow_compiled", "query", c.Query, "variables", jsStringify(vars, false),
+		shown, _ := json.Marshal(vars)
+		return section("workflow_compiled", "query", c.Query, "variables", string(shown),
 			"result", jsSlice(result, 20_000)), nil
 	}()
 	if err != nil {
