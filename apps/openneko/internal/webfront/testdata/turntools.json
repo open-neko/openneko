@@ -15776,6 +15776,12 @@
           "port": {
            "path": "/form/port"
           },
+          "dbname": {
+           "path": "/form/dbname"
+          },
+          "user": {
+           "path": "/form/user"
+          },
           "value": {
            "path": "/form/secretRef"
           },
@@ -16493,6 +16499,12 @@
           "port": {
            "path": "/form/port"
           },
+          "dbname": {
+           "path": "/form/dbname"
+          },
+          "user": {
+           "path": "/form/user"
+          },
           "value": {
            "path": "/form/secretRef"
           },
@@ -17207,6 +17219,12 @@
           },
           "port": {
            "path": "/form/port"
+          },
+          "dbname": {
+           "path": "/form/dbname"
+          },
+          "user": {
+           "path": "/form/user"
           },
           "value": {
            "path": "/form/secretRef"
@@ -18906,6 +18924,12 @@
           },
           "port": {
            "path": "/form/port"
+          },
+          "dbname": {
+           "path": "/form/dbname"
+          },
+          "user": {
+           "path": "/form/user"
           },
           "value": {
            "path": "/form/secretRef"
