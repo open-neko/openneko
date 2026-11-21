@@ -24,16 +24,22 @@ echo "bundled skills listed: $(echo $bundled)"
 workflow=a2200000-0000-4000-8000-0000000000fe
 org=$(pq -c "select id from organization order by created_at limit 1")
 [ -n "$org" ] || { echo "no organization" >&2; exit 1; }
+owner=$(pq -v org="$org" <<'SQL'
+select m.user_id from user_group_membership m join user_group g on g.id = m.group_id and g.org_id = m.org_id
+where m.org_id = :'org' and g.slug = 'administrators' order by m.created_at limit 1;
+SQL
+)
+[ -n "$owner" ] || { echo "the organization has no admin to own the workflow" >&2; exit 1; }
 
 step='printf %s '\''{"sheets":[{"name":"Probe","rows":[["a","b","sum"],[2,3,"=A2+B2"]]}]}'\'' > spec.json && node "$SKILL_DIR/scripts/xlsx.cjs" create spec.json probe.xlsx && node "$SKILL_DIR/scripts/xlsx.cjs" read probe.xlsx --format csv | grep -qx 2,3,5'
 steps=$(STEP="$step" python3 -c 'import json, os; print(json.dumps([{"id": "probe", "description": "Spreadsheet probe", "script": {"skill": "xlsx", "command": ["sh", "-c", os.environ["STEP"]]}}]))')
 
 cleanup() { pq -c "delete from workflow_definition where id = '$workflow'" >/dev/null || true; }
 trap cleanup EXIT
-pq -v org="$org" -v steps="$steps" -v id="$workflow" <<'SQL'
+pq -v org="$org" -v owner="$owner" -v steps="$steps" -v id="$workflow" <<'SQL'
 delete from workflow_definition where id = :'id';
-insert into workflow_definition (id, org_id, name, description, goal, cron, cron_timezone, cron_enabled, steps)
-values (:'id', :'org', 'Script step smoke', 'post-release smoke', 'Report the probe output.', '* * * * *', 'UTC', true, :'steps'::jsonb);
+insert into workflow_definition (id, org_id, owner_user_id, name, description, goal, cron, cron_timezone, cron_enabled, steps)
+values (:'id', :'org', :'owner', 'Script step smoke', 'post-release smoke', 'Report the probe output.', '* * * * *', 'UTC', true, :'steps'::jsonb);
 SQL
 
 run=""

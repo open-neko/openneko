@@ -169,6 +169,8 @@ services:
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
       OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
       OPENNEKO_SUBSCRIPTIONS_ADDR: 0.0.0.0:8089
+      OPENNEKO_SUBSCRIPTIONS_DIR: /data/subscriptions
+      OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     volumes:
       - openneko-agent-runs:/var/lib/openneko/agent-runs
       - openneko-run:/run/openneko
