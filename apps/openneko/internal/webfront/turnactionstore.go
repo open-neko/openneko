@@ -266,7 +266,24 @@ func decisionFromMode(p *jsObj, name string, riskLevel *string) *jsObj {
 
 // actionRiskLevel is the risk level that an action kind's definition gives;
 // nil when it gives none. The model's own estimate never decides a rule.
+// builtinRiskLevels are the risk levels of the built-in adapters. A kind
+// with no adapter and no pack definition has none, so a rule's
+// auto-approve threshold never covers it.
+var builtinRiskLevels = map[string]string{
+	"code_draft_patch":    "low",
+	"code_create_issue":   "medium",
+	"send_webhook":        "high",
+	"channel_admin":       "high",
+	"data_source_admin":   "high",
+	"group_admin":         "high",
+	"source_config_admin": "high",
+	"user_admin":          "high",
+}
+
 func (a *API) actionRiskLevel(ctx context.Context, orgID, kind string) (*string, error) {
+	if level, ok := builtinRiskLevels[kind]; ok {
+		return &level, nil
+	}
 	var risk *string
 	err := a.DB.QueryRow(ctx, `select definition->>'riskLevel' from pack_action_definition where org_id = $1 and kind = $2 limit 1`,
 		orgID, kind).Scan(&risk)

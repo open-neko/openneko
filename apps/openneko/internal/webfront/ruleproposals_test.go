@@ -167,3 +167,25 @@ func TestNoPolicyDecisions(t *testing.T) {
 		t.Errorf("an admin's decision: %d", code)
 	}
 }
+
+func TestBuiltinActionsHaveARiskLevel(t *testing.T) {
+	f, db := memoryFront(t)
+	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority, risk_threshold_auto_approve) values
+		('org', 'Small changes at once', '{}', '{}', 'auto_approve', 1, 'medium')`)
+	b := turnBinding{OrgID: "org", ThreadID: threadMine, RunID: runMine, Kind: "work"}
+	for kind, want := range map[string]string{
+		"code_draft_patch":  "allow",
+		"code_create_issue": "allow",
+		"send_webhook":      "needs_approval",
+		"user_admin":        "needs_approval",
+		"made_up_kind":      "needs_approval",
+	} {
+		d, err := f.API.runTools(b).evaluatePolicy(t.Context(), policyIn{OrgID: "org", Scope: "internal", Kind: kind, Payload: &jsObj{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := jsField(d, "decision"); got != want {
+			t.Errorf("%s: %v, want %s (%s)", kind, got, want, jsStringify(d, false))
+		}
+	}
+}
