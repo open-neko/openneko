@@ -64,7 +64,8 @@ func SelfCommand(configFile string) func(socket string) *exec.Cmd {
 			exe = os.Args[0]
 		}
 		cmd := exec.Command(exe, "graphjin", "serve", "--child", "--config", configFile, "--addr", "unix:"+socket)
-		cmd.Env = ChildEnv(os.Environ())
+		cmd.Dir = filepath.Dir(configFile)
+		cmd.Env = append(ChildEnv(os.Environ()), "PWD="+cmd.Dir)
 		return cmd
 	}
 }
