@@ -318,13 +318,17 @@ func (a *API) createActionRequestInGo(ctx context.Context, in *jsObj) (*jsObj, e
 			if err != nil {
 				return nil, err
 			}
+			definedRisk, err := a.actionRiskLevel(ctx, orgID, kind)
+			if err != nil {
+				return nil, err
+			}
 			decision := evaluateActionPolicy(policySubject{
 				scope:      scope,
 				kind:       kind,
 				target:     target,
 				targets:    targets,
 				hasTargets: true,
-				riskLevel:  riskLevel,
+				riskLevel:  definedRisk,
 			}, policies)
 			dec, _ := decision.vals["decision"].(string)
 			if dec == "deny" || dec == "no_policy" {

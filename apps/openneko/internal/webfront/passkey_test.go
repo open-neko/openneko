@@ -291,8 +291,8 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 	runActionID := "30000000-0000-4000-8000-000000000092"
 	seed(t, db, `
 		insert into work_thread (id, org_id, created_by_user_id, title) values ('`+threadID+`', 'org', 'member', 'Chat');
-		insert into work_run (id, org_id, thread_id, backend, status) values ('`+workRunID+`', 'org', '`+threadID+`', 'hermes', 'running');
-		insert into action_request (id, org_id, work_run_id, scope, kind, status) values ('`+runActionID+`', 'org', '`+workRunID+`', 'org', 'send_slack_message', 'pending_approval');
+		insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role) values ('`+workRunID+`', 'org', '`+threadID+`', 'hermes', 'running', 'member', 'member');
+		insert into action_request (id, org_id, work_run_id, scope, kind, status, actor_user_id) values ('`+runActionID+`', 'org', '`+workRunID+`', 'org', 'send_slack_message', 'pending_approval', 'member');
 	`)
 	acw3 := call(f, "POST", "/api/v1/my/passkeys/challenge", `{"purpose":"approve","actionRequestId":"`+runActionID+`"}`, member)
 	var appCh3 struct {
@@ -328,8 +328,8 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 		return ch.Challenge
 	}
 	strictID := "30000000-0000-4000-8000-000000000093"
-	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status)
-		values ('`+strictID+`', 'org', '`+runHeld+`', 'org', 'note', 'pending_approval')`)
+	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status, actor_user_id)
+		values ('`+strictID+`', 'org', '`+runHeld+`', 'org', 'note', 'pending_approval', 'member')`)
 	forwarded := map[string]string{"Cookie": member["Cookie"], "X-Forwarded-Host": "evil.example"}
 	for _, origin := range []string{"https://evil.example", "https://sub.neko.example", "http://neko.example", "https://neko.example:8443"} {
 		ch := approveChallenge(strictID, forwarded)
@@ -347,7 +347,7 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 	}
 
 	chatID := "30000000-0000-4000-8000-000000000094"
-	seed(t, db, `insert into action_request (id, org_id, work_run_id, scope, kind, status) values ('`+chatID+`', 'org', '`+workRunID+`', 'org', 'note', 'pending_approval')`)
+	seed(t, db, `insert into action_request (id, org_id, work_run_id, scope, kind, status, actor_user_id) values ('`+chatID+`', 'org', '`+workRunID+`', 'org', 'note', 'pending_approval', 'member')`)
 	chatCh := approveChallenge(chatID, member)
 	chatBad := buildTestAssertion(t, priv, "neko.example", credID, chatCh, 4, true)
 	chatBad["signature"] = base64.RawURLEncoding.EncodeToString([]byte("not-a-valid-der-sig"))
@@ -388,8 +388,8 @@ func TestPasskeyRegisterAndApproveAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacyID := "30000000-0000-4000-8000-000000000095"
-	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status)
-		values ('`+legacyID+`', 'org', '`+runHeld+`', 'org', 'note', 'pending_approval')`)
+	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status, actor_user_id)
+		values ('`+legacyID+`', 'org', '`+runHeld+`', 'org', 'note', 'pending_approval', 'member')`)
 	legacyBody, _ := json.Marshal(map[string]any{"decision": "approve", "passkey": buildTestAssertion(t, priv, "neko.example", credID, approveChallenge(legacyID, member), 5, true)})
 	if w := call(f, "PATCH", "/api/v1/action-requests/"+legacyID, string(legacyBody), member); w.Code != 200 {
 		t.Fatalf("approval with a converted key: %d %s", w.Code, w.Body.String())

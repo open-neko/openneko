@@ -72,8 +72,8 @@ func TestPasskeyRequiredForSessionApproval(t *testing.T) {
 
 	const sessionID, rejectID, tokenID = "30000000-0000-4000-8000-0000000000a1", "30000000-0000-4000-8000-0000000000a2", "30000000-0000-4000-8000-0000000000a3"
 	for _, id := range []string{sessionID, rejectID, tokenID} {
-		seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status)
-			values ($1, 'org', $2, 'org', 'note', 'pending_approval')`, id, runHeld)
+		seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status, actor_user_id)
+			values ($1, 'org', $2, 'org', 'note', 'pending_approval', 'member')`, id, runHeld)
 	}
 	if w := call(f, "PATCH", "/api/v1/action-requests/"+sessionID, `{"decision":"approve"}`, member); w.Code != 403 || w.Body.String() != required {
 		t.Fatalf("session approval without a passkey: %d %s", w.Code, w.Body.String())
@@ -108,10 +108,10 @@ func TestPasskeyRequiredForSessionApproval(t *testing.T) {
 	const chatID, chatRejectID = "30000000-0000-4000-8000-0000000000a5", "30000000-0000-4000-8000-0000000000a6"
 	seed(t, db, `
 		insert into work_thread (id, org_id, created_by_user_id, title) values ('`+threadID+`', 'org', 'member', 'Chat');
-		insert into work_run (id, org_id, thread_id, backend, status) values ('`+workRunID+`', 'org', '`+threadID+`', 'hermes', 'running');
-		insert into action_request (id, org_id, work_run_id, scope, kind, status) values
-		  ('`+chatID+`', 'org', '`+workRunID+`', 'org', 'note', 'pending_approval'),
-		  ('`+chatRejectID+`', 'org', '`+workRunID+`', 'org', 'note', 'pending_approval');
+		insert into work_run (id, org_id, thread_id, backend, status, actor_user_id, actor_role) values ('`+workRunID+`', 'org', '`+threadID+`', 'hermes', 'running', 'member', 'member');
+		insert into action_request (id, org_id, work_run_id, scope, kind, status, actor_user_id) values
+		  ('`+chatID+`', 'org', '`+workRunID+`', 'org', 'note', 'pending_approval', 'member'),
+		  ('`+chatRejectID+`', 'org', '`+workRunID+`', 'org', 'note', 'pending_approval', 'member');
 	`)
 	approveAction := "/api/v1/work/threads/" + threadID + "/runs/" + workRunID + "/approve-action"
 	if w := call(f, "POST", approveAction, `{"actionRequestId":"`+chatID+`","decision":"approve"}`, member); w.Code != 403 || w.Body.String() != required {
@@ -127,8 +127,8 @@ func TestPasskeyRequiredForSessionApproval(t *testing.T) {
 	}
 
 	const afterID = "30000000-0000-4000-8000-0000000000a7"
-	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status)
-		values ($1, 'org', $2, 'org', 'note', 'pending_approval')`, afterID, runHeld)
+	seed(t, db, `insert into action_request (id, org_id, workflow_run_id, scope, kind, status, actor_user_id)
+		values ($1, 'org', $2, 'org', 'note', 'pending_approval', 'member')`, afterID, runHeld)
 	secondRaw := []byte("required-passkey-002")
 	secondID := registerTestPasskey(t, f, member, priv, secondRaw)
 	if w := call(f, "DELETE", "/api/v1/my/passkeys/"+secondID, "", member); w.Code != 200 {

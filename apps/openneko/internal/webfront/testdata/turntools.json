@@ -1817,7 +1817,7 @@
     },
     {
      "name": "rule_builder_save_rule",
-     "description": "Create or update an approval rule. Upserts by name within the org — if a rule with the same name already exists, it is updated in place. Use this when the operator asks to gate, allow, or deny specific action kinds (e.g. 'auto-approve low-risk slack posts', 'always ask before sending email externally'). To send without approval only to approved recipients, use allowed_targets with on_miss 'next' so any other recipient falls to the rule that asks. After saving, the tool emits a confirmation card the operator can click to open the rule.",
+     "description": "Propose an approval rule. The rule has no effect until an admin confirms it in Settings, Approval rules; a confirmed rule with the name of an existing rule replaces that rule. Use this when the operator asks to gate, allow, or deny specific action kinds (e.g. 'auto-approve low-risk slack posts', 'always ask before sending email externally'). To send without approval only to approved recipients, use allowed_targets with on_miss 'next' so any other recipient falls to the rule that asks. The tool emits a card that shows the proposed rule and where an admin confirms it.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -6684,7 +6684,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     },
     {
@@ -6807,7 +6807,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     },
     {
@@ -7002,7 +7002,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     }
    ],
@@ -7067,7 +7067,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     }
    ],
@@ -7130,7 +7130,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     }
    ],
@@ -7205,7 +7205,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     },
     {
@@ -7314,7 +7314,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     },
     {
@@ -7439,7 +7439,7 @@
         ]
        }
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     },
     {
@@ -8060,7 +8060,7 @@
       "payload": {
        "text": "hi"
       },
-      "riskLevel": "low"
+      "riskLevel": null
      }
     },
     {
@@ -8538,7 +8538,7 @@
       "payload": {
        "index": "catalog"
       },
-      "riskLevel": "medium"
+      "riskLevel": null
      }
     },
     {
@@ -11807,10 +11807,8 @@
    "replies": {
     "upsertActionPolicyByName": {
      "value": {
-      "action": "created",
-      "policy": {
-       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-       "orgId": "11111111-1111-4111-8111-111111111111",
+      "action": "proposed",
+      "proposal": {
        "name": "slack_auto",
        "description": "",
        "appliesToKinds": [
@@ -11831,13 +11829,9 @@
        "limits": {
         "perDay": 20
        },
-       "approverGroupId": null,
        "priority": 100,
        "enabled": true,
-       "createdByThreadId": null,
-       "createdByRunId": null,
-       "createdAt": "2026-11-01T00:00:00.000Z",
-       "updatedAt": "2026-11-02T00:00:00.000Z"
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
       }
      }
     }
@@ -11846,7 +11840,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"ok\":true,\"action\":\"created\",\"ruleId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\"}"
+      "text": "{\"ok\":true,\"action\":\"proposed\",\"proposalId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\",\"message\":\"The rule is a proposal. It takes effect when an admin confirms it in Settings, Approval rules.\"}"
      }
     ]
    },
@@ -11883,19 +11877,19 @@
       {
        "version": "v1.0",
        "createSurface": {
-        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "surfaceId": "policy-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "catalogId": "urn:app:catalog:briefing:v1"
        }
       },
       {
        "version": "v1.0",
        "updateComponents": {
-        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "surfaceId": "policy-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "components": [
          {
           "id": "root",
           "component": "Confirmation",
-          "label": "Created rule",
+          "label": "Proposed rule",
           "title": "slack_auto",
           "children": [
            "body"
@@ -11904,7 +11898,7 @@
          {
           "id": "body",
           "component": "Markdown",
-          "text": "**Mode:** `auto_approve` • **Scopes:** external • **Priority:** 100\n\n**Kinds:** `slack_post`\n\n_No description._\n\n[Open detail](/admin/rules/dddddddd-dddd-4ddd-8ddd-dddddddddddd)"
+          "text": "**Mode:** `auto_approve` • **Scopes:** external • **Priority:** 100\n\n**Kinds:** `slack_post`\n\n_No description._\n\nAn admin confirms or rejects this rule in [Settings, Approval rules](/admin/rules). It has no effect until then."
          }
         ]
        }
@@ -11951,10 +11945,8 @@
    "replies": {
     "upsertActionPolicyByName": {
      "value": {
-      "action": "updated",
-      "policy": {
-       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-       "orgId": "11111111-1111-4111-8111-111111111111",
+      "action": "proposed",
+      "proposal": {
        "name": "slack_auto",
        "description": "Auto-post to Slack",
        "appliesToKinds": [],
@@ -11971,13 +11963,9 @@
        "limits": {
         "perDay": 20
        },
-       "approverGroupId": null,
        "priority": 50,
        "enabled": true,
-       "createdByThreadId": null,
-       "createdByRunId": null,
-       "createdAt": "2026-11-01T00:00:00.000Z",
-       "updatedAt": "2026-11-02T00:00:00.000Z"
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
       }
      }
     }
@@ -11986,7 +11974,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"ok\":true,\"action\":\"updated\",\"ruleId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\"}"
+      "text": "{\"ok\":true,\"action\":\"proposed\",\"proposalId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\",\"message\":\"The rule is a proposal. It takes effect when an admin confirms it in Settings, Approval rules.\"}"
      }
     ]
    },
@@ -12033,19 +12021,19 @@
       {
        "version": "v1.0",
        "createSurface": {
-        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "surfaceId": "policy-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "catalogId": "urn:app:catalog:briefing:v1"
        }
       },
       {
        "version": "v1.0",
        "updateComponents": {
-        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "surfaceId": "policy-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "components": [
          {
           "id": "root",
           "component": "Confirmation",
-          "label": "Updated rule",
+          "label": "Proposed rule",
           "title": "slack_auto",
           "children": [
            "body"
@@ -12054,7 +12042,7 @@
          {
           "id": "body",
           "component": "Markdown",
-          "text": "**Mode:** `auto_approve` • **Scopes:** — • **Priority:** 50\n\n**Kinds:** _(all kinds)_\n\nAuto-post to Slack\n\n[Open detail](/admin/rules/dddddddd-dddd-4ddd-8ddd-dddddddddddd)"
+          "text": "**Mode:** `auto_approve` • **Scopes:** — • **Priority:** 50\n\n**Kinds:** _(all kinds)_\n\nAuto-post to Slack\n\nAn admin confirms or rejects this rule in [Settings, Approval rules](/admin/rules). It has no effect until then."
          }
         ]
        }
@@ -12081,10 +12069,8 @@
    "replies": {
     "upsertActionPolicyByName": {
      "value": {
-      "action": "created",
-      "policy": {
-       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-       "orgId": "11111111-1111-4111-8111-111111111111",
+      "action": "proposed",
+      "proposal": {
        "name": "slack_auto",
        "description": "Auto-post to Slack",
        "appliesToKinds": [
@@ -12107,13 +12093,9 @@
        "limits": {
         "perDay": 20
        },
-       "approverGroupId": null,
        "priority": 50,
        "enabled": true,
-       "createdByThreadId": null,
-       "createdByRunId": null,
-       "createdAt": "2026-11-01T00:00:00.000Z",
-       "updatedAt": "2026-11-02T00:00:00.000Z"
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
       }
      }
     }
@@ -12122,7 +12104,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"ok\":true,\"action\":\"created\",\"ruleId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\"}"
+      "text": "{\"ok\":true,\"action\":\"proposed\",\"proposalId\":\"dddddddd-dddd-4ddd-8ddd-dddddddddddd\",\"name\":\"slack_auto\",\"message\":\"The rule is a proposal. It takes effect when an admin confirms it in Settings, Approval rules.\"}"
      }
     ]
    },
@@ -12159,19 +12141,19 @@
       {
        "version": "v1.0",
        "createSurface": {
-        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "surfaceId": "policy-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "catalogId": "urn:app:catalog:briefing:v1"
        }
       },
       {
        "version": "v1.0",
        "updateComponents": {
-        "surfaceId": "policy-save-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "surfaceId": "policy-proposal-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "components": [
          {
           "id": "root",
           "component": "Confirmation",
-          "label": "Created rule",
+          "label": "Proposed rule",
           "title": "slack_auto",
           "children": [
            "body"
@@ -12180,7 +12162,7 @@
          {
           "id": "body",
           "component": "Markdown",
-          "text": "**Mode:** `auto_approve` • **Scopes:** internal, external • **Priority:** 50\n\n**Kinds:** `slack_post`, `slack_dm`\n\nAuto-post to Slack\n\n[Open detail](/admin/rules/dddddddd-dddd-4ddd-8ddd-dddddddddddd)"
+          "text": "**Mode:** `auto_approve` • **Scopes:** internal, external • **Priority:** 50\n\n**Kinds:** `slack_post`, `slack_dm`\n\nAuto-post to Slack\n\nAn admin confirms or rejects this rule in [Settings, Approval rules](/admin/rules). It has no effect until then."
          }
         ]
        }
@@ -12257,10 +12239,8 @@
    "replies": {
     "upsertActionPolicyByName": {
      "value": {
-      "action": "created",
-      "policy": {
-       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-       "orgId": "11111111-1111-4111-8111-111111111111",
+      "action": "proposed",
+      "proposal": {
        "name": "slack_auto",
        "description": "Auto-post to Slack",
        "appliesToKinds": [
@@ -12283,13 +12263,9 @@
        "limits": {
         "perDay": 20
        },
-       "approverGroupId": null,
        "priority": 50,
        "enabled": true,
-       "createdByThreadId": null,
-       "createdByRunId": null,
-       "createdAt": "2026-11-01T00:00:00.000Z",
-       "updatedAt": "2026-11-02T00:00:00.000Z"
+       "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
       }
      }
     }
