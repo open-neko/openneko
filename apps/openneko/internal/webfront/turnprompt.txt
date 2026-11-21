@@ -950,6 +950,13 @@ missing or incomplete.
 Last actions of the earlier turn:
 ${trail}
 </continuation>
+@@ answer_check
+<answer_check>
+An earlier attempt at this question answered that no data exists, but none
+of its query results showed an empty list or a zero. Answer the question
+again. Before you say that something does not exist, run the query that
+would show it and read its result.
+</answer_check>
 @@ workflow_compiled
 <compiled_result>
 An earlier run of this workflow answered its goal with the query below.
