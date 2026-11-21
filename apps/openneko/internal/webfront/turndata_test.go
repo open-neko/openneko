@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +44,10 @@ func (g *fakeGraphjinMCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args, _ := params["arguments"].(map[string]any)
+	if params["name"] == "get_saved_query" {
+		reply(`{"content":[{"type":"text","text":"{\"name\":\"top\",\"operation\":\"query\",\"query\":\"query top { orders { id } }\"}"}]}`)
+		return
+	}
 	switch args["query"] {
 	case "{ boom }":
 		w.WriteHeader(500)
@@ -193,23 +195,13 @@ func TestTurnDataDatabase(t *testing.T) {
 	}
 
 	before := gj.count()
-	_, rpcErr = execute(map[string]any{"query": "mutation { delete_orders { id } }"})
-	if rpcErr == nil || !strings.Contains(rpcErr.Message, "GraphJin mutation blocked: OPENNEKO_GRAPHJIN_CONFIG is not set") {
-		t.Fatalf("mutation with no config: %v", rpcErr)
-	}
-	config := filepath.Join(t.TempDir(), "graphjin.yml")
-	t.Setenv("OPENNEKO_GRAPHJIN_CONFIG", config)
-	_ = os.WriteFile(config, []byte("sources:\n  - name: shop\n    type: postgres\n  - name: crm\n    kind: api\n"), 0o600)
-	_, rpcErr = execute(map[string]any{"query": "mutation { delete_orders { id } }"})
-	if rpcErr == nil || !strings.Contains(rpcErr.Message, `GraphJin mutation blocked: GraphJin database source "shop" is not read_only`) {
-		t.Fatalf("mutation on a writable source: %v", rpcErr)
+	for _, query := range []string{"mutation { delete_orders { id } }", "mutation { crm_create_note(text: \"x\") { id } }"} {
+		if _, rpcErr = execute(map[string]any{"query": query}); rpcErr == nil || !strings.Contains(rpcErr.Message, "GraphJin mutation blocked: A run does not change data through GraphJin.") {
+			t.Fatalf("a run's mutation: %v", rpcErr)
+		}
 	}
 	if gj.count() != before {
 		t.Fatal("a blocked mutation reached GraphJin")
-	}
-	_ = os.WriteFile(config, []byte("sources:\n  - name: shop\n    read_only: true\n  - name: crm\n    kind: api\n"), 0o600)
-	if _, rpcErr = execute(map[string]any{"query": "mutation { crm_create_note(text: \"x\") { id } }"}); rpcErr != nil || gj.count() != before+1 {
-		t.Fatalf("mutation with read-only databases: %v", rpcErr)
 	}
 
 	before = gj.count()
@@ -226,7 +218,7 @@ func TestTurnDataDatabase(t *testing.T) {
 		select 'org', id, 'saved_query', 'top' from user_group where org_id = 'org' and slug = 'everyone'`)
 	before = gj.count()
 	if _, err := a.runTools(member).callGraphjinTool(ctx, graphjinToolCall{OrgID: "org", RunID: &member.RunID, Name: "execute_saved_query",
-		Arguments: jsObjOf("name", "top")}); err != nil || gj.count() != before+1 {
+		Arguments: jsObjOf("name", "top")}); err != nil || gj.count() != before+2 {
 		t.Fatalf("a held saved query: %v", err)
 	}
 
@@ -268,7 +260,7 @@ func TestTurnDataDatabase(t *testing.T) {
 		_ = rows.Scan(&path)
 		audits = append(audits, strings.TrimPrefix(path, "/v1/graphjin/tools/"))
 	}
-	if strings.Join(audits, ",") != "list,list,list,call,call,call,call,list,call,call,call,call,call,call" {
+	if strings.Join(audits, ",") != "list,list,list,call,call,call,list,call,call,call,call,call,call" {
 		t.Fatalf("audit rows: %v", audits)
 	}
 
