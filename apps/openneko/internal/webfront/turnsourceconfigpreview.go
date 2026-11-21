@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 )
 
@@ -217,20 +216,13 @@ func (p *configPreview) check(ctx context.Context, action string, opts configUpd
 		currentSources: p.currentSources, sourceTables: tables}); len(problems) > 0 {
 		return p.problems(problems, ""), nil
 	}
-	update, err := buildGraphjinConfigUpdate(p.payload, func(name string) (string, error) {
-		var enc string
-		err := p.api.DB.QueryRow(ctx, `select value_enc from data_source_secret where org_id = $1 and name = $2 limit 1`, p.orgID, name).Scan(&enc)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("no stored source secret named \"%s\"; add it in GraphJin Config first", name)
-		}
-		if err != nil {
-			return "", err
-		}
-		if p.secret, err = config.MaybeDecryptValue(p.api.SecretsDir, enc); err != nil {
-			return "", err
-		}
-		return p.secret, nil
-	}, opts)
+	update, err := buildGraphjinConfigUpdate(p.payload, p.api.sourcePasswordResolver(ctx, p.orgID, p.payload, func(_, password string) {
+		p.secret = password
+	}), opts)
+	if refusal := sourcePasswordRefusal(""); errors.As(err, &refusal) {
+		field := "host"
+		return p.problems([]configProblem{{Field: &field, Message: refusal.Error()}}, ""), nil
+	}
 	if err != nil {
 		return nil, err
 	}
