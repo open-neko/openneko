@@ -57,6 +57,13 @@ Integrations come from **solution packs**, installed after setup from **Admin �
 
 `openneko web` decides for each request whether the sign-in cookies are `Secure`. The public URL saved under **Admin → Settings** comes first, then `OPENNEKO_PUBLIC_URL`. When that URL is `https`, the cookies are `Secure`. In production mode, a request that came over https is `Secure` too: TLS on the port, or a TLS proxy that sends `X-Forwarded-Proto: https`. Only a plain-http request with no `https` public URL gets cookies that are not `Secure`, so SSO sign-in and pack OAuth work on `http://<LAN host>:3000`. When the public URL is `http` on a host other than loopback, `openneko web` logs one warning line at start. Put a TLS proxy in front and use an `https` public URL for any install that people reach over a network.
 
+Until a sign-in provider is set up, every request acts as the first admin. For this reason, OpenNeko keeps the web port on the loopback address until then:
+
+- A native install listens on `127.0.0.1` and prints one line that says so. `openneko web --addr 0.0.0.0:3000` refuses to start.
+- `openneko start` on Docker asks the web image whether sign-in is set up (`openneko sign-in-state`), and publishes the web port on `127.0.0.1` when it is not.
+
+Open `http://localhost:3000` on the host, or through an SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`), and set up sign-in under **Admin → Settings**. Then run `openneko start` again (`openneko stop` first on a native install). OpenNeko then listens on the address in `installation.json`.
+
 The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
 ## Multiple customer instances on one host

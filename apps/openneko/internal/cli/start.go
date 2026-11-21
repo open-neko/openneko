@@ -136,6 +136,11 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	if err := runStartSteps(ctx, sup, project, files, m, runFlags); err != nil {
 		return err
 	}
+	restoreBind, err := publishWebForSignIn(ctx, cmd.OutOrStdout(), sup, project, files, runFlags)
+	if err != nil {
+		return err
+	}
+	defer restoreBind()
 
 	// --remove-orphans retires services a newer release dropped.
 	upArgs := []string{"up", "--remove-orphans"}

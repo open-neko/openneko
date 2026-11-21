@@ -163,6 +163,9 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 	if err := installation.Save(config.Dir(""), settings); err != nil {
 		return err
 	}
+	if !loopbackHost(settings.WebBindAddress) && !signInLiveHere(cmd.Context()) {
+		fmt.Fprintf(out, "Sign-in is not set up, so OpenNeko listens on 127.0.0.1:%d only. Set up sign-in at http://localhost:%d, then run `openneko stop` and `openneko start --native` to listen on %s.\n", settings.WebPort, settings.WebPort, settings.WebBindAddress)
+	}
 	if !detach {
 		ctx, stop := native.NotifyStop(cmd.Context())
 		defer stop()

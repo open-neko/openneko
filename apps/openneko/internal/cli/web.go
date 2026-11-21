@@ -21,6 +21,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/db"
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
+	"github.com/open-neko/neko/apps/openneko/internal/llm"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/neko/apps/openneko/internal/version"
@@ -108,7 +109,14 @@ with exit code 0, so its supervisor starts it again.`,
 			if trace != nil {
 				fmt.Fprintf(cmd.OutOrStdout(), "openneko web: the eval trace is on; every run's queries and rows go to %s\n", tracePath)
 			}
-			ln, err := net.Listen("tcp", addr)
+			listen, note, err := webListenAddr(addr, cmd.Flags().Changed("addr"), signInLive(ctx, pool), llm.InContainer())
+			if err != nil {
+				return err
+			}
+			if note != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), note)
+			}
+			ln, err := net.Listen("tcp", listen)
 			if err != nil {
 				return err
 			}

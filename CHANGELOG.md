@@ -68,6 +68,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 
 * `openneko web` sends a Content-Security-Policy on every response. The app loads its parts only from the install, and the answer map also loads tiles from `https://tiles.openfreemap.org`.
 * An image from another host shows as a link that names the host. A link to another host opens in a new tab with no referrer.
+* **Breaking:** while no sign-in provider is set up, every request acts as the first admin, so `openneko web` listens on 127.0.0.1 only and a Docker install publishes the web port on 127.0.0.1. Set up sign-in on `http://localhost:3000`, then start OpenNeko again to use the configured address.
 
 ### Installs
 
