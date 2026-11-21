@@ -341,3 +341,52 @@ func TestAPIAndWebhookRunsActAsTheOwner(t *testing.T) {
 		t.Errorf("config change: %q", got)
 	}
 }
+
+func TestOwnerlessWorkflowWithAPIAccessKeepsItsKey(t *testing.T) {
+	f, db, _ := wfAPIFront(t)
+	digest := sha256.Sum256([]byte(hookSecret))
+	seed(t, db, `insert into compat_webhook (reckon_workflow_id, org_id, workflow_id, token_sha256, params, batch_chunk_size, enabled)
+		values ($1, 'org', $2, $3, '{account}', 1000, true)`, hookID, wfHeld, hex.EncodeToString(digest[:]))
+	seed(t, db, `update workflow_definition set owner_user_id = '', team_approved_by = null, access_approved_hash = null where id = $1`, wfHeld)
+	n := 0
+	apiRun := func() *httptest.ResponseRecorder {
+		n++
+		return wfCall(f, "POST", "/api/v1/workflows/"+wfHeld+"/runs", `{"orderId":"1042"}`, map[string]string{"Idempotency-Key": fmt.Sprintf("upgrade-%04d", n)})
+	}
+	hookRun := func() *httptest.ResponseRecorder {
+		n++
+		return hookCall(f, "POST", "/api/hooks/"+hookID, `{"account":"AC1"}`, map[string]string{"Idempotency-Key": fmt.Sprintf("upgrade-%d", n)})
+	}
+	for name, w := range map[string]*httptest.ResponseRecorder{"API": apiRun(), "webhook": hookRun()} {
+		if w.Code != 409 || !strings.Contains(w.Body.String(), "An admin assigns an owner at Admin, Settings, Workflow API") ||
+			!strings.Contains(w.Body.String(), "its API key and webhook keep working") {
+			t.Errorf("an ownerless %s run: %d %s", name, w.Code, w.Body)
+		}
+	}
+	var body struct {
+		Workflows []struct {
+			ID         string `json:"id"`
+			NeedsOwner bool   `json:"needsOwner"`
+			APIAccess  bool   `json:"apiAccess"`
+			Webhook    bool   `json:"webhook"`
+		} `json:"workflows"`
+	}
+	_ = json.Unmarshal(call(f, "GET", "/api/v1/workflows", "", sessionCookie("admin")).Body.Bytes(), &body)
+	found := false
+	for _, w := range body.Workflows {
+		if w.ID == wfHeld {
+			found = w.NeedsOwner && w.APIAccess && w.Webhook
+		}
+	}
+	if !found {
+		t.Fatalf("the list does not flag the ownerless workflow's API access and webhook: %+v", body.Workflows)
+	}
+	if w := call(f, "PATCH", "/api/v1/workflows/"+wfHeld, `{"ownerUserId":"member"}`, sessionCookie("admin")); w.Code != 200 {
+		t.Fatalf("assign: %d %s", w.Code, w.Body)
+	}
+	for name, w := range map[string]*httptest.ResponseRecorder{"API": apiRun(), "webhook": hookRun()} {
+		if w.Code != 202 {
+			t.Errorf("the %s key after an owner was assigned: %d %s", name, w.Code, w.Body)
+		}
+	}
+}

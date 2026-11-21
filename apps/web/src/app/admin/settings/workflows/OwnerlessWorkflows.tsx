@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Workflow = { id: string; name: string };
+type Workflow = { id: string; name: string; apiAccess?: boolean; webhook?: boolean };
 type User = { id: string; email: string; name: string | null };
 
+const called = (workflow: Workflow) => Boolean(workflow.apiAccess || workflow.webhook);
+
 export default function OwnerlessWorkflows({ workflows, users }: { workflows: Workflow[]; users: User[] }) {
-  const [waiting, setWaiting] = useState(workflows);
+  const [waiting, setWaiting] = useState(() => [...workflows].sort((a, b) => Number(called(b)) - Number(called(a))));
   if (waiting.length === 0) return null;
   return (
     <section className="settings-card mb-6 grid gap-4" aria-labelledby="ownerless-title">
@@ -19,6 +21,11 @@ export default function OwnerlessWorkflows({ workflows, users }: { workflows: Wo
         <p className="settings-card-copy">
           These workflows do not run until you assign an owner. Each one then runs with its owner&apos;s access.
         </p>
+        {waiting.some(called) ? (
+          <p className="settings-card-copy">
+            Before 6.0.0, a workflow with API access or a webhook ran as the service account. Its callers now get a 409 answer. Assign an owner and the API key and the webhook keep working.
+          </p>
+        ) : null}
       </div>
       <ul className="grid gap-3">
         {waiting.map((workflow) => (
@@ -64,7 +71,8 @@ function OwnerRow({ workflow, users, onAssigned }: { workflow: Workflow; users: 
   return (
     <li>
       <form onSubmit={assign} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <Field label={workflow.name} htmlFor={selectId} error={error ?? undefined}>
+        <Field label={workflow.name} htmlFor={selectId} error={error ?? undefined}
+          hint={called(workflow) ? [workflow.apiAccess ? "API access" : null, workflow.webhook ? "webhook" : null].filter(Boolean).join(" · ") + ": callers wait for an owner" : undefined}>
           <NativeSelect id={selectId} value={owner} onChange={(event) => setOwner(event.target.value)}>
             <option value="">Choose an owner</option>
             {users.map((user) => (
