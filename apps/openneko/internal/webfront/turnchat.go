@@ -69,9 +69,25 @@ type chatTurnState struct {
 	sawAnswer     bool
 	denials       map[string]bool
 	toolCalls     []skillToolCall
+	// executes holds the ids of the execute_graphql calls; sawNothing is
+	// true once one of them returned an empty list or a zero.
+	executes   map[string]bool
+	sawNothing bool
 }
 
 var afterQuestion = map[string]bool{"message": true, "answer_reset": true, "card_pending": true, "surface": true, "vitals": true, "followups": true, "needs_input": true, "notice": true}
+
+// unsupportedNothing is true when the answer says nothing exists, the run
+// queried GraphJin, and no result showed an empty list or a zero.
+func (s *chatTurnState) unsupportedNothing(res axRunResult) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	answer := res.FinalText
+	if jsTrim(answer) == "" {
+		answer = s.assistantText.String()
+	}
+	return s.needsInput == nil && len(s.executes) > 0 && !s.sawNothing && claimsNothing(answer)
+}
 
 func (s *chatTurnState) wrapped(ctx context.Context, event any) error {
 	typ, _ := jsGet(event, "type").(string)
@@ -108,6 +124,16 @@ func (s *chatTurnState) wrapped(ctx context.Context, event any) error {
 		}
 		name, _ := jsGet(event, "name").(string)
 		s.toolCalls = append(s.toolCalls, skillToolCall{Name: name, Input: jsGet(event, "input")})
+		if id, _ := jsGet(event, "id").(string); id != "" && isGraphjinExecute(name) {
+			if s.executes == nil {
+				s.executes = map[string]bool{}
+			}
+			s.executes[id] = true
+		}
+	case "tool_end":
+		if id, _ := jsGet(event, "id").(string); s.executes[id] && resultShowsNothing(jsGet(event, "result")) {
+			s.sawNothing = true
+		}
 	case "needs_input":
 		s.needsInput = event
 	}
@@ -207,11 +233,20 @@ func (a *API) runChatTurn(ctx context.Context, o chatTurnOptions) (chatTurnResul
 	if runCore == nil {
 		runCore = a.runAgentCore
 	}
-	res, err := runCore(ctx, agentCoreInput{Backend: backend, Prompt: strings.ReplaceAll(tc.Prompt, tc.Workspace.OrgRoot, stage.Workspace.OrgRoot),
+	in := agentCoreInput{Backend: backend, Prompt: strings.ReplaceAll(tc.Prompt, tc.Workspace.OrgRoot, stage.Workspace.OrgRoot),
 		UserMessage: o.Message, OrgID: o.OrgID, ThreadID: o.ThreadID, RunID: o.RunID, Workspace: stage.Workspace,
 		BackendState: tc.BackendState, PackActions: held, SourceConfigEnabled: tc.SourceConfig, GraphjinToolPolicy: o.GraphjinToolPolicy,
 		NativeDelegationOff: o.NativeDelegationOff, CoreCards: !tc.RichCards, CardsOff: !tc.WantsCards, Shell: tc.Terminal,
-		Keys: keys, Socket: a.serveSocket(), Emit: st.wrapped})
+		Keys: keys, Socket: a.serveSocket(), Emit: st.wrapped}
+	res, err := runCore(ctx, in)
+	if err == nil && res.Status == "completed" && st.unsupportedNothing(res) {
+		if err = st.wrapped(ctx, jsObjOf("type", "answer_reset")); err == nil {
+			if err = st.wrapped(ctx, statusEvent("Checking the answer against the data…")); err == nil {
+				in.Prompt += "\n\n" + section("answer_check")
+				res, err = runCore(ctx, in)
+			}
+		}
+	}
 	bg := context.WithoutCancel(ctx)
 	var evidence *skillEvidence
 	if err == nil && res.Status == "completed" {
