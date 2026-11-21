@@ -291,39 +291,17 @@ func TestTurnDataDatabase(t *testing.T) {
 func rawJSON(v any) string { return string(mustJSON(v)) }
 
 func TestGraphjinMutationCheck(t *testing.T) {
-	dir := t.TempDir()
-	for _, c := range []struct{ name, query, config, want string }{
-		{"query", "{ orders { id } }", "-", ""},
-		{"mutation word in a name", "{ mutations_log { id } }", "-", ""},
-		{"no config", "Mutation { x }", "-", "GraphJin mutation blocked: OPENNEKO_GRAPHJIN_CONFIG is not set, so the host cannot confirm database sources are read-only"},
-		{"no sources", "mutation { x }", "database: {}\n", ""},
-		{"null sources", "mutation { x }", "sources:\n", ""},
-		{"all read-only", "mutation { x }", "sources:\n  - name: a\n    read_only: true\n  - name: b\n    kind: file\n  - name: c\n    kind: graphjin\n", ""},
-		{"quoted true", "mutation { x }", "sources:\n  - name: a\n    read_only: \"true\"\n", `GraphJin mutation blocked: GraphJin database source "a" is not read_only`},
-		{"yes is text", "mutation { x }", "sources:\n  - name: a\n    read_only: yes\n", `GraphJin mutation blocked: GraphJin database source "a" is not read_only`},
-		{"unnamed", "mutation { x }", "sources:\n  - kind: postgres\n", `GraphJin mutation blocked: GraphJin database source "<unnamed>" is not read_only`},
-		{"kind not text", "mutation { x }", "sources:\n  - name: a\n    kind: [api]\n", `GraphJin mutation blocked: GraphJin database source "a" is not read_only`},
-		{"sources a map", "mutation { x }", "sources:\n  a: 1\n", "GraphJin mutation blocked: GraphJin config sources must be a YAML list"},
-		{"entry not a map", "mutation { x }", "sources:\n  - a\n", "GraphJin mutation blocked: GraphJin config source entries must be YAML objects"},
-		{"not YAML", "mutation { x }", "sources: [\n", "GraphJin mutation blocked: GraphJin config is not valid YAML"},
-		{"empty file", "mutation { x }", "", "GraphJin mutation blocked: GraphJin config is not valid YAML"},
+	for query, blocked := range map[string]bool{
+		"{ orders { id } }":              false,
+		"{ mutations_log { id } }":       false,
+		"mutation { x }":                 true,
+		"Mutation { x }":                 true,
+		"# note\nmutation m { x }":       true,
+		"query q { a } mutation m { b }": true,
 	} {
-		path := ""
-		if c.config != "-" {
-			path = filepath.Join(dir, strings.ReplaceAll(c.name, " ", "_")+".yml")
-			_ = os.WriteFile(path, []byte(c.config), 0o600)
+		if err := assertGraphjinMutationAllowed(query); (err != nil) != blocked {
+			t.Errorf("%q: %v", query, err)
 		}
-		got := ""
-		if err := assertGraphjinMutationAllowed(c.query, path); err != nil {
-			got = err.Error()
-		}
-		if got != c.want {
-			t.Errorf("%s: %q, want %q", c.name, got, c.want)
-		}
-	}
-	err := assertGraphjinMutationAllowed("mutation { x }", filepath.Join(dir, "missing.yml"))
-	if err == nil || !strings.HasPrefix(err.Error(), "GraphJin mutation blocked: cannot read ") {
-		t.Fatal(err)
 	}
 }
 
