@@ -38,7 +38,7 @@ type runnerProbeIn struct {
 	Shm                           int
 	NProc                         uint64
 	ParentAddr                    uintptr
-	Loosen                        string
+	Loosen, Source                string
 }
 
 // TestRunnerProbeChild is the agent runner of TestConfinedRunner: the real

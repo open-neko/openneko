@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/open-neko/neko/apps/openneko/internal/confine"
 )
 
 const (
@@ -56,6 +59,37 @@ func readWebProcess(pid int, refused func(string, error)) {
 	refused("read web's arguments", holds(args, err, webArgSecret))
 	_, err = unix.SysctlKinfoProc("kern.proc.pid", pid)
 	refused("read web's process record", err)
+}
+
+var procargsChecks = []string{"read web's arguments and environment", "read web's arguments", "read web's process record"}
+
+// checkProcargsGap: Seatbelt on macOS 15.8 does not check a sysctl read by
+// number, so a confined part reads these. The state must name the gap, and a
+// macOS that refuses all of them must drop it. The checks leave both results.
+func checkProcargsGap(t *testing.T, who string, st confine.State, control, got probeResult) {
+	t.Helper()
+	listed := slices.ContainsFunc(st.Gaps, func(g string) bool { return strings.Contains(g, "arguments, environment and process record") })
+	refusedAll := true
+	for _, what := range procargsChecks {
+		if control.Refused[what] {
+			t.Errorf("control: with no confinement the probe could not %s: %s", what, control.Errors[what])
+		}
+		refused, ran := got.Refused[what]
+		switch {
+		case !ran:
+			t.Errorf("%s did not try to %s", who, what)
+		case !refused && !listed:
+			t.Errorf("%s could %s, and its gaps %v do not say so", who, what, st.Gaps)
+		case !refused:
+			t.Logf("%s could %s: a listed gap", who, what)
+		}
+		refusedAll = refusedAll && refused
+		delete(got.Refused, what)
+		delete(control.Refused, what)
+	}
+	if refusedAll && listed {
+		t.Errorf("%s could not read web's arguments, environment or process record on %s: remove the gap", who, confine.Kernel())
+	}
 }
 
 func holds(b []byte, err error, want ...string) error {

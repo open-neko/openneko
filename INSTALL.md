@@ -555,6 +555,13 @@ serve credentials. The part that starts the agent runners is not confined,
 because macOS does not let a confined process start a runner that confines
 itself ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
 
+On macOS, a confined runner or network part can still read the arguments
+and environment of every process of the same account: Seatbelt does not
+check that read. Keep secrets out of the environment of the shell that runs
+`openneko start`. Give the database URL with `--database-url` and the
+provider keys in Admin, Settings, so that OpenNeko keeps them in its config
+folder.
+
 ### Agent confinement (Windows)
 
 Windows has no agent confinement yet. In production mode, `openneko serve`
