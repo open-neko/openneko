@@ -85,7 +85,7 @@ func runDatabaseMove(ctx context.Context, cmd *cobra.Command, target string) err
 		return fmt.Errorf("neko-db is not running in %s; start the stack (`openneko start -d`) before the move", project)
 	}
 
-	urlFile, err := os.CreateTemp("", "openneko-move-url-*")
+	urlFile, err := secretTemp("openneko-move-url-*")
 	if err != nil {
 		return err
 	}

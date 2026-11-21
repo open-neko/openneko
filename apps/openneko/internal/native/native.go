@@ -180,6 +180,9 @@ func ServeEnv(l Layout) map[string]string {
 	serve["OPENNEKO_SUBSCRIPTIONS_ADDR"] = SubscriptionsAddr
 	serve["OPENNEKO_SUBSCRIPTIONS_DIR"] = l.Subscriptions()
 	serve["TMPDIR"] = l.Tmp()
+	if runtime.GOOS == "windows" {
+		serve["TMP"], serve["TEMP"] = l.Tmp(), l.Tmp()
+	}
 	return serve
 }
 

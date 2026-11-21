@@ -13,10 +13,14 @@ import (
 const systemSID = "S-1-5-18"
 
 // Set gives path a protected access list that allows only the current user
-// and SYSTEM. A folder passes the list to its files and subfolders.
+// and SYSTEM, and reads it back. A folder passes the list to its files and
+// subfolders. A volume that keeps no access list is refused.
 func Set(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
+		return err
+	}
+	if err := keepsLists(path); err != nil {
 		return err
 	}
 	want, err := sddl(info.IsDir())
@@ -34,10 +38,43 @@ func Set(path string) error {
 	if err != nil {
 		return err
 	}
-	err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
-	if err != nil {
+	if err := setList(path, dacl); err != nil {
 		return fmt.Errorf("limit %s to its owner: %w", path, err)
+	}
+	if err := Verify(path); err != nil {
+		return fmt.Errorf("limit %s to its owner: the list did not hold: %w", path, err)
+	}
+	return nil
+}
+
+var setList = func(path string, dacl *windows.ACL) error {
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
+}
+
+var volumeFlags = func(path string) (uint32, error) {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, err
+	}
+	root := make([]uint16, max(len(path), windows.MAX_PATH)+1)
+	if err := windows.GetVolumePathName(p, &root[0], uint32(len(root))); err != nil {
+		return 0, err
+	}
+	var flags uint32
+	if err := windows.GetVolumeInformation(&root[0], nil, 0, nil, nil, &flags, nil, 0); err != nil {
+		return 0, err
+	}
+	return flags, nil
+}
+
+func keepsLists(path string) error {
+	flags, err := volumeFlags(path)
+	if err != nil {
+		return fmt.Errorf("read the volume of %s: %w", path, err)
+	}
+	if flags&windows.FILE_PERSISTENT_ACLS == 0 {
+		return fmt.Errorf("the volume of %s keeps no access list (FAT or exFAT), so OpenNeko cannot limit it to its owner; use a folder on an NTFS or ReFS volume", path)
 	}
 	return nil
 }

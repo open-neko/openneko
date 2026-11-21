@@ -31,13 +31,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
-	info, err := os.Stat(filepath.Join(dir, Filename))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !testmode.Is(t, info, 0o600) {
-		t.Fatalf("settings mode = %v", info.Mode().Perm())
-	}
+	testmode.Private(t, filepath.Join(dir, Filename), 0o600)
 }
 
 func TestSettingsValidation(t *testing.T) {

@@ -72,10 +72,7 @@ func TestSeedContainerConfigKeepsExistingValues(t *testing.T) {
 		t.Fatalf("force secret-key = %q", key)
 	}
 	for _, name := range []string{"config.json", "secret-key"} {
-		info, err := os.Stat(filepath.Join(dir, name))
-		if err != nil || !testmode.Is(t, info, 0o600) {
-			t.Fatalf("%s mode = %v, %v", name, info.Mode(), err)
-		}
+		testmode.Private(t, filepath.Join(dir, name), 0o600)
 	}
 }
 

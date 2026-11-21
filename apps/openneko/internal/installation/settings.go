@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 const (
@@ -81,6 +82,10 @@ func Save(configDir string, settings Settings) error {
 	tmpPath := tmp.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
 	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := ownonly.Set(tmpPath); err != nil {
 		_ = tmp.Close()
 		return err
 	}
