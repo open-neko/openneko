@@ -219,7 +219,9 @@ func (a *API) runChatTurn(ctx context.Context, o chatTurnOptions) (chatTurnResul
 		evidence = &skillEvidence{ToolCalls: slices.Clone(st.toolCalls)}
 		st.mu.Unlock()
 	}
-	stage.finish(bg, a, o.OrgID, o.RunID, ctx.Err() != nil, evidence)
+	for _, notice := range stage.finish(bg, a, o.OrgID, o.RunID, ctx.Err() != nil, evidence).notices() {
+		_ = st.wrapped(bg, notice)
+	}
 	if err != nil {
 		return t.fail(ctx, err)
 	}

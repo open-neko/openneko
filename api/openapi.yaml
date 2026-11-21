@@ -3929,6 +3929,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '422':
+          description: The change holds a file that the card cannot show; nothing is applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/team-proposals/{proposalId}/reject:
     post:
       operationId: postAdminTeamProposalsByProposalIdReject

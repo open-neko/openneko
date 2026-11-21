@@ -135,6 +135,17 @@ func (f proposedFile) bytes() ([]byte, error) {
 	return []byte(f.Content), nil
 }
 
+func (f proposedFile) shown() (shownFile, error) {
+	if f.Path == "" {
+		return shownFile{}, nil
+	}
+	data, err := f.bytes()
+	if err != nil {
+		return shownFile{}, unshownFile{f.Path}
+	}
+	return showProposedFile(f.Path, data)
+}
+
 type skillProposal struct {
 	Files   []proposedFile    `json:"files"`
 	Removed []string          `json:"removed"`
@@ -165,6 +176,9 @@ func (a *API) proposeSkillEdit(ctx context.Context, orgID, teamRoot, name string
 	}
 	for _, f := range changed {
 		if skillOf(f.Path) == name {
+			if _, err := showProposedFile(f.Path, f.Content); err != nil {
+				return "", err
+			}
 			after.Files = append(after.Files, fileForProposal(f.Path, f.Content))
 			add(f.Path)
 		}
@@ -242,10 +256,13 @@ func lineDiff(before, after string) []diffLine {
 }
 
 type proposalFileDiff struct {
-	Path   string     `json:"path"`
-	Change string     `json:"change"`
-	Binary bool       `json:"binary"`
-	Lines  []diffLine `json:"lines"`
+	Path       string     `json:"path"`
+	Change     string     `json:"change"`
+	Binary     bool       `json:"binary"`
+	BinaryKind string     `json:"binaryKind,omitempty"`
+	Charset    string     `json:"charset,omitempty"`
+	Unshown    bool       `json:"unshown,omitempty"`
+	Lines      []diffLine `json:"lines"`
 }
 
 type teamProposalOut struct {
@@ -297,21 +314,27 @@ func describeTeamProposal(p *teamProposalOut, before, after []byte) {
 		}
 		for _, f := range next.Files {
 			o, existed := old[f.Path]
-			if f.Encoding == "base64" || o.Encoding == "base64" {
-				d := proposalFileDiff{Path: f.Path, Change: "changed", Binary: true, Lines: []diffLine{}}
-				if !existed {
-					d.Change = "added"
-				}
-				p.Files = append(p.Files, d)
-				continue
+			shown, err := f.shown()
+			prev, prevErr := o.shown()
+			d := textDiff(f.Path, prev.Text, shown.Text, existed)
+			d.Charset = shown.Charset
+			switch {
+			case err != nil:
+				d.Binary, d.Unshown, d.Lines = true, true, []diffLine{}
+			case shown.Binary != "":
+				d.Binary, d.BinaryKind, d.Lines = true, shown.Binary, []diffLine{}
+			case prevErr != nil || prev.Binary != "":
+				d.Lines = lineDiff("", shown.Text)
 			}
-			p.Files = append(p.Files, textDiff(f.Path, o.Content, f.Content, existed))
+			p.Files = append(p.Files, d)
 		}
 		for _, path := range next.Removed {
 			o := old[path]
-			d := proposalFileDiff{Path: path, Change: "removed", Binary: o.Encoding == "base64", Lines: []diffLine{}}
-			if !d.Binary {
-				d.Lines = lineDiff(o.Content, "")
+			d := proposalFileDiff{Path: path, Change: "removed", Lines: []diffLine{}}
+			if prev, err := o.shown(); err == nil && prev.Binary == "" {
+				d.Lines, d.Charset = lineDiff(prev.Text, ""), prev.Charset
+			} else {
+				d.Binary, d.BinaryKind = true, prev.Binary
 			}
 			p.Files = append(p.Files, d)
 		}
@@ -418,6 +441,11 @@ func (a *API) teamProposalConfirm(w http.ResponseWriter, r *http.Request) {
 	default:
 		err = errors.New("unknown team change kind " + p.kind)
 	}
+	var unshown unshownFile
+	if errors.As(err, &unshown) {
+		sendError(w, http.StatusUnprocessableEntity, unshown.Error()+" Reject this change.")
+		return
+	}
 	var stale staleProposal
 	if errors.As(err, &stale) {
 		if _, err := a.DB.Exec(ctx, `update team_item_proposal set status = 'stale', decided_by_user_id = $2, decided_at = now() where id = $1`,
@@ -511,6 +539,11 @@ func (a *API) applySkillProposal(ctx context.Context, orgID string, p *pendingTe
 		}
 		if current[path] != next.Base[path] {
 			return staleProposal("The skill " + p.target + " changed after this change was proposed (" + path + "). Nothing was applied.")
+		}
+	}
+	for _, f := range next.Files {
+		if _, err := f.shown(); err != nil {
+			return err
 		}
 	}
 	for _, f := range next.Files {
