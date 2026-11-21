@@ -81,6 +81,20 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 	if err := ensureServerAccount(out, s); err != nil {
 		return err
 	}
+	wasRunning := false
+	if o.systemctl {
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if unitState(ctx, native.WebUnit) == "active" || unitState(ctx, native.ServeUnit) == "active" {
+			fmt.Fprintln(out, "Stopping OpenNeko to set the owners of its folders...")
+			if err := systemctl(ctx, out, "stop", native.WebUnit, native.ServeUnit); err != nil {
+				return err
+			}
+			wasRunning = true
+		}
+	}
 	if err := ownServerData(s); err != nil {
 		return err
 	}
@@ -108,11 +122,11 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 	}
 	if o.systemctl {
 		steps := [][]string{{"daemon-reload"}, {"enable", native.WebUnit, native.ServeUnit}}
-		if o.start {
+		if o.start || wasRunning {
 			steps = append(steps, []string{"start", native.WebUnit, native.ServeUnit})
 		}
 		for _, args := range steps {
-			if err := runTool(out, "systemctl", args...); err != nil {
+			if err := systemctl(context.Background(), out, args...); err != nil {
 				return err
 			}
 		}
@@ -121,15 +135,17 @@ func runServerInstall(cmd *cobra.Command, o serverInstallOptions) error {
 	if url, _ := databaseURL(local); url == "" {
 		fmt.Fprintf(out, "Give OpenNeko its database: sudo openneko server-install --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full'\n")
 	}
-	if !o.start {
-		fmt.Fprintf(out, "Start OpenNeko: sudo systemctl start %s %s\n", native.WebUnit, native.ServeUnit)
+	if !o.start && !wasRunning {
+		fmt.Fprintf(out, "Start OpenNeko, or restart it if it runs: sudo systemctl restart %s %s\n", native.WebUnit, native.ServeUnit)
 		return nil
 	}
 	if o.systemctl {
-		return waitServerWeb(cmd.Context(), out, s)
+		return serverWaitWeb(cmd.Context(), out, s)
 	}
 	return nil
 }
+
+var serverWaitWeb = waitServerWeb
 
 func serverFromOptions(o serverInstallOptions) (native.Server, error) {
 	s := o.server
@@ -233,10 +249,7 @@ func applyServerDirs(s native.Server) error {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
-		if err := os.Chown(dir, uid, gid); err != nil {
-			return err
-		}
-		if err := os.Chmod(dir, 0o700); err != nil {
+		if err := ownDir(s.BaseOf(dir), dir, uid, gid, 0o700); err != nil {
 			return err
 		}
 	}
