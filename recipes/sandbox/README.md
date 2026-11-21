@@ -395,7 +395,7 @@ lists one.
 3. Run `openneko release-check --sandbox`. It must print
    `sandbox_egress=closed`.
 4. At Admin, Settings, Agent, list the hosts that your commands need, for
-   example a package index. A list saved before 6.0.0 that holds a wildcard
+   example a customer API. A list saved before 6.0.0 that holds a wildcard
    on a public suffix, such as `*.github.io`, no longer passes the check,
    and the organization's list reads as empty. Save the list again with the
    hosts named one by one.
