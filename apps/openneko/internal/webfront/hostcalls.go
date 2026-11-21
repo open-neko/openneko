@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
@@ -326,7 +327,7 @@ func (a *API) externalServices() []externalService {
 			id: "sandbox", label: "Sandbox", timeout: 5 * time.Second,
 			whenOff: "The terminal and the script skills are off.",
 			settings: func(context.Context, string) (*serviceSettings, error) {
-				c := sandbox.ConfigFromEnv(os.Getenv)
+				c := sandbox.ConfigFromEnv(secretenv.Get)
 				if !c.Enabled() {
 					return nil, nil
 				}
@@ -423,7 +424,7 @@ func embeddingConfig() *embeddingSettings {
 	if u == "" || model == "" {
 		return nil
 	}
-	c := &embeddingSettings{URL: u, Model: model, key: strings.TrimSpace(os.Getenv("NEKO_EMBEDDING_API_KEY"))}
+	c := &embeddingSettings{URL: u, Model: model, key: strings.TrimSpace(secretenv.Get("NEKO_EMBEDDING_API_KEY"))}
 	if n, ok := leadingInt(strings.TrimSpace(os.Getenv("NEKO_EMBEDDING_DIMENSIONS"))); ok && n > 0 && n <= embedding.MaxDimensions {
 		c.Dimensions = n
 	}

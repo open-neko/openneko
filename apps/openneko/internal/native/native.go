@@ -3,6 +3,7 @@
 package native
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 )
 
 type Layout struct {
@@ -128,9 +130,10 @@ type Options struct {
 }
 
 type Proc struct {
-	Name string
-	Args []string
-	Env  []string
+	Name  string
+	Args  []string
+	Env   []string
+	Stdin []byte
 }
 
 func (o Options) env(extra map[string]string) []string {
@@ -204,22 +207,64 @@ func WebEnv(l Layout, o Options) map[string]string {
 
 func Procs(l Layout, o Options) []Proc {
 	return []Proc{
-		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: Options{Env: ServeEnviron(o.Env)}.env(ServeEnv(l))},
-		{Name: "web", Args: []string{o.Exe, "web"}, Env: o.env(WebEnv(l, o))},
+		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: Options{Env: ServeEnviron(o.Env)}.env(serveEnvWithStdin(l)), Stdin: ServeSecrets(o.Env)},
+		{Name: "web", Args: []string{o.Exe, "web"}, Env: Options{Env: WebEnviron(o.Env)}.env(WebEnv(l, o))},
 	}
 }
 
-var serveOwnSecrets = map[string]bool{"OPENNEKO_SANDBOX_KEY": true, "OPENNEKO_FILES_BUCKET_KEY_ID": true, "OPENNEKO_FILES_BUCKET_SECRET": true}
+func serveEnvWithStdin(l Layout) map[string]string {
+	env := ServeEnv(l)
+	env[secretenv.StdinEnv] = "1"
+	return env
+}
 
-// ServeEnviron drops the control zone's secrets from env: model and
-// provider keys, tokens, passwords, database URLs and the secret key. Serve
-// keeps its own sandbox key, its bucket login and GraphJin's GJ_ variables.
+// serveOwnSecrets go to serve on stdin, so they are in no environment that
+// a part of serve or its children can read.
+var serveOwnSecrets = []string{"OPENNEKO_SANDBOX_KEY", "OPENNEKO_FILES_BUCKET_KEY_ID", "OPENNEKO_FILES_BUCKET_SECRET"}
+
+// ServeSecrets is the JSON line that serve reads on stdin: its own secrets
+// from env, or from the files that their _FILE variables name.
+func ServeSecrets(env []string) []byte {
+	values := map[string]string{}
+	for _, name := range serveOwnSecrets {
+		if v := secretenv.Lookup(env, name); v != "" {
+			values[name] = v
+		}
+	}
+	raw, _ := json.Marshal(values)
+	return append(raw, '\n')
+}
+
+// ServeEnviron drops every secret-named variable from env: model and
+// provider keys, tokens, passwords, database URLs, the secret key, the
+// sandbox key and the bucket login. Serve keeps GraphJin's GJ_ variables.
 func ServeEnviron(env []string) []string {
+	return keepEnv(env, func(upper string) bool { return strings.HasPrefix(upper, "GJ_") })
+}
+
+// webReads lists the secret-named variables that web reads. Web gets no
+// other secret-named variable of the shell that ran `openneko start`.
+var webReads = map[string]bool{
+	"NEKO_PG_PASSWORD": true, "OPENNEKO_DATABASE_URL_FILE": true, "OPENNEKO_SESSION_SECRET": true,
+	"NEKO_EMBEDDING_API_KEY": true, "NEKO_EMBEDDING_API_KEY_FILE": true,
+	"OPENNEKO_SANDBOX_KEY": true, "OPENNEKO_SANDBOX_KEY_FILE": true,
+	"OPENNEKO_JOBS_WAKE_TOKEN": true, "OPENNEKO_GITHUB_TOKEN": true, "GITHUB_TOKEN": true,
+	"OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN": true, "OPENNEKO_AGENT_MODEL_KEY_ENV": true,
+	"OPENNEKO_WORKFLOW_API_ORG_ROLLING_TOKEN_BUDGET": true, "OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE": true,
+}
+
+// WebEnviron keeps the variables of env that are not secret-named, and the
+// secret-named ones that web reads.
+func WebEnviron(env []string) []string {
+	return keepEnv(env, func(upper string) bool { return webReads[upper] })
+}
+
+func keepEnv(env []string, keep func(upper string) bool) []string {
 	var out []string
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(name)
-		if serveOwnSecrets[upper] || strings.HasPrefix(upper, "GJ_") || !secretEnvName(upper) {
+		if !secretEnvName(upper) || keep(upper) {
 			out = append(out, kv)
 		}
 	}

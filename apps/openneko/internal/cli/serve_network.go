@@ -23,6 +23,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
@@ -47,7 +48,8 @@ type networkStart struct {
 	SubscriptionsURL    string `json:"subscriptions_url,omitempty"`
 	SubscriptionsSocket string `json:"subscriptions_socket,omitempty"`
 	// TempDir is the part's own temp folder; it takes no other.
-	TempDir string `json:"temp_dir,omitempty"`
+	TempDir   string           `json:"temp_dir,omitempty"`
+	FileStore filestore.Config `json:"file_store"`
 }
 
 func (in networkStart) folders() serveFolders {
@@ -82,7 +84,8 @@ func (p *networkPart) stop() {
 // networkEnv drops the sandbox key and every variable that can hold a model
 // key, a database URL or the secret key. The AWS pair stays for the bucket.
 func networkEnv(environ []string) []string {
-	drop := map[string]bool{"OPENNEKO_SANDBOX_KEY": true, serveCredentialsEnv: true, native.SupervisorFDEnv: true}
+	drop := map[string]bool{"OPENNEKO_SANDBOX_KEY": true, "OPENNEKO_SANDBOX_KEY_FILE": true, "OPENNEKO_FILES_BUCKET_KEY_ID": true, "OPENNEKO_FILES_BUCKET_KEY_ID_FILE": true,
+		"OPENNEKO_FILES_BUCKET_SECRET": true, "OPENNEKO_FILES_BUCKET_SECRET_FILE": true, serveCredentialsEnv: true, native.SupervisorFDEnv: true, secretenv.StdinEnv: true}
 	for _, name := range serve.KeyEnvNames(environ) {
 		if name != "AWS_SECRET_ACCESS_KEY" && name != "AWS_SESSION_TOKEN" {
 			drop[name] = true
@@ -219,7 +222,8 @@ func runNetworkPart(ctx context.Context, stdout, stderr io.Writer, in networkSta
 		return err
 	}
 	defer pool.Close()
-	store, err := filestore.Open(ctx, filestore.FromEnv(in.FilesDir))
+	in.FileStore.Dir = in.FilesDir
+	store, err := filestore.Open(ctx, in.FileStore)
 	if err != nil {
 		return err
 	}

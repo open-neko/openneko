@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -250,7 +251,7 @@ func (a *API) workflowStagedCore(ctx context.Context, o workflowTurnOptions, st 
 		var box *sandbox.Config
 		egress := sandbox.Egress{Org: in.OrgID, Label: in.RunID}
 		if terminal {
-			cfg := sandbox.ConfigFromEnv(os.Getenv)
+			cfg := sandbox.ConfigFromEnv(secretenv.Get)
 			box = &cfg
 			if a.DB != nil {
 				hosts, err := a.orgEgressHosts(ctx, in.OrgID)
