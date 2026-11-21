@@ -106,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           sw_vers
-          tests=(TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined TestConfinedRunnerTurn)
+          tests=(TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined TestConfinedRunnerTurn TestConfinedServeNetworkPart TestServeNetworkPartFailsClosed)
           go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli ./internal/webfront | tee "$RUNNER_TEMP/confine.log"
           ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
 
