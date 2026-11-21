@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -99,6 +101,39 @@ func SweepStagesEvery(ctx context.Context, every time.Duration) {
 	}()
 }
 
+// runnerGuard counts the serve turns on a stage whose runner serve has not
+// yet reported dead. Serve sends a turn's exit frame only after it killed
+// the runner's process group.
+type runnerGuard struct {
+	mu   sync.Mutex
+	open int
+}
+
+func (g *runnerGuard) start() {
+	if g != nil {
+		g.mu.Lock()
+		g.open++
+		g.mu.Unlock()
+	}
+}
+
+func (g *runnerGuard) ended() {
+	if g != nil {
+		g.mu.Lock()
+		g.open--
+		g.mu.Unlock()
+	}
+}
+
+func (g *runnerGuard) settled() bool {
+	if g == nil {
+		return true
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.open == 0
+}
+
 // turnStage is the least the run needs, copied under the shared runs
 // folder: the knowledge pack, the thread's uploads, the run folder and the
 // run's skills. Memory, other threads and other runs stay out.
@@ -155,7 +190,7 @@ func stageTurn(host agentWorkspace, o stageOptions) (st *turnStage, err error) {
 		}
 	}()
 	stageOrg := filepath.Join(dir, "workspace", filepath.Base(host.OrgRoot))
-	ws := agentWorkspace{}
+	ws := agentWorkspace{runners: &runnerGuard{}}
 	for _, f := range []struct {
 		dst *string
 		src string
@@ -387,38 +422,67 @@ func shareStageWithGroup(dir string) error {
 }
 
 // copyBack copies the run's artifacts to the host run folder, so the file
-// route finds them. Links stay behind: the artifact scan skips them.
+// route finds them. Links stay behind: the artifact scan skips them. The
+// runner and its children are dead when it runs, but the runner chose
+// every name in the tree.
 func (s *turnStage) copyBack() error {
 	src, dst := s.Workspace.ArtifactRoot, s.host.ArtifactRoot
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+	root, err := os.OpenRoot(src)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) && p == src {
-				return nil
-			}
 			return err
 		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
+		target := filepath.Join(dst, filepath.FromSlash(rel))
 		switch {
 		case d.IsDir():
 			return os.MkdirAll(target, 0o755)
 		case d.Type().IsRegular():
+			seen, err := d.Info()
+			if err != nil {
+				return err
+			}
+			data, err := readStagedFile(root, rel, seen)
+			if err != nil {
+				log.Printf("[agent-run] artifact %s skipped: %v", rel, err)
+				return nil
+			}
 			if info, err := os.Lstat(target); err == nil && !info.Mode().IsRegular() {
 				if err := os.RemoveAll(target); err != nil {
 					return err
 				}
 			}
-			data, err := os.ReadFile(p)
-			if err != nil {
-				return err
-			}
 			return os.WriteFile(target, data, 0o644)
 		}
 		return nil
 	})
+}
+
+// readStagedFile reads a file that the runner wrote, only when the opened
+// file is the regular file the walk saw and has no other name.
+func readStagedFile(root *os.Root, rel string, seen fs.FileInfo) ([]byte, error) {
+	f, err := root.OpenFile(filepath.FromSlash(rel), stagedOpenFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || !os.SameFile(info, seen) {
+		return nil, errors.New("the file changed after the scan")
+	}
+	if !singleLink(info) {
+		return nil, errors.New("the file has another name outside the run")
+	}
+	return io.ReadAll(f)
 }
 
 // finish is the finally block of the launcher after the agent core: the
@@ -427,6 +491,10 @@ func (s *turnStage) copyBack() error {
 // the stage goes.
 func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, aborted bool, evidence *skillEvidence) {
 	defer os.RemoveAll(s.Dir)
+	if !s.Workspace.runners.settled() {
+		log.Printf("[agent-run] run %s artifacts and skill edits skipped: serve did not report the runner's end", runID)
+		return
+	}
 	if !aborted {
 		if err := s.copyBack(); err != nil {
 			log.Printf("[agent-run] artifact copy-back skipped: %v", err)

@@ -442,8 +442,16 @@ In the runner:
   host list of the run, makes the fetch and logs each URL with the
   organization and the run.
 
-When web hangs up, serve closes the link and the runner ends the turn.
-When the runner stops without an exit frame, serve sends one with code 2.
+Serve starts each runner in its own process group. On Linux the runner
+also gets `SIGKILL` when serve dies. Serve kills the whole group when web
+hangs up, when the runner sends its exit frame, and at the turn's deadline:
+the spec's `timeout_ms` (at most 30 minutes) and one minute more. Serve
+sends the exit frame to web only after it killed the group, and sends one
+with code 2 when the runner stopped without one. Web copies the artifacts
+and the skill edits back only after that exit frame, and opens each file
+with no link followed, checks that the open file is the regular file it
+saw, and skips a file with a second name. The broker answers at most 1,024
+requests per turn, then closes.
 `openneko serve` says on start that it uses the runner, and its status
 frame reports `"runner":"process"`. On Windows, turns still run inside
 serve; the Windows runner waits for the Windows probe.
@@ -463,7 +471,8 @@ confines itself for good, before any agent code runs:
   `connect`, `bind`, `listen`, the `io_uring` calls, `ptrace`,
   `process_vm_readv`, `process_vm_writev`, `kcmp`, `pidfd_getfd`,
   `process_madvise`, `kill`, `tkill`, `pidfd_send_signal`, `truncate` by
-  path, `unshare`, `setns`, `clone` with a namespace flag, `bpf`,
+  path, `unshare`, `setns`, `fork`, `vfork`, `clone` without
+  `CLONE_THREAD` or with a namespace flag, `bpf`,
   `perf_event_open`, `userfaultfd` and the key calls. It allows `tgkill` and
   `pidfd_open` only for the runner's own process: the Go runtime signals its
   own threads. It refuses the `TIOCSTI` and `TIOCLINUX` ioctls. `clone3`
@@ -471,8 +480,8 @@ confines itself for good, before any agent code runs:
   architecture ends the process.
 
 So the runner holds the two sockets that serve passed and the connections
-that the broker passes, and can open no other. It reaches no file of
-another turn, the config folder or the home folder, and cannot read,
+that the broker passes, and can open no other. It starts threads only, no
+process. It reaches no file of another turn, the config folder or the home folder, and cannot read,
 trace or signal serve or web.
 
 The seccomp filter closes the gaps of the low Landlock ABIs: truncate (ABI
