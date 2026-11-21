@@ -29,6 +29,7 @@ func wakeQueue(t *testing.T, action func(context.Context) error) (*Queue, *wakeC
 	q.CronSweep = func(context.Context) error { c.cron.Add(1); return nil }
 	q.DirectorySync = func(context.Context) error { c.directory.Add(1); return nil }
 	q.BotNameSweep = func(context.Context) error { c.bots.Add(1); return nil }
+	q.PlaybookSweep = func(context.Context) error { return nil }
 	q.WorkflowAPISweep = func(context.Context) error { c.api.Add(1); return nil }
 	q.SSOSetupPoll = func(context.Context) error { c.sso.Add(1); return nil }
 	q.ActionExecute = func(ctx context.Context, _, _ string) error {
