@@ -77,6 +77,34 @@ func (w *botNameSweep) Work(ctx context.Context, _ *river.Job[BotNameSweepArgs])
 	return w.run(ctx)
 }
 
+const KindPlaybookSweep = "playbook_sweep"
+
+// PlaybookSweepArgs runs the playbook learning pass of every org.
+type PlaybookSweepArgs struct{}
+
+func (PlaybookSweepArgs) Kind() string { return KindPlaybookSweep }
+
+func (PlaybookSweepArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 1, UniqueOpts: river.UniqueOpts{ByState: []rivertype.JobState{
+		rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
+		rivertype.JobStateRunning, rivertype.JobStateScheduled,
+	}}}
+}
+
+type playbookSweep struct {
+	river.WorkerDefaults[PlaybookSweepArgs]
+	run func(context.Context) error
+}
+
+func (w *playbookSweep) Work(ctx context.Context, _ *river.Job[PlaybookSweepArgs]) error {
+	if w.run == nil {
+		return errors.New("the playbook sweep has no runner")
+	}
+	return w.run(ctx)
+}
+
+func (w *playbookSweep) Timeout(*river.Job[PlaybookSweepArgs]) time.Duration { return 3 * time.Hour }
+
 // QuarterHourly fires at 00, 15, 30 and 45 past each UTC hour, as the cron
 // "*/15 * * * *" did.
 type QuarterHourly struct{}

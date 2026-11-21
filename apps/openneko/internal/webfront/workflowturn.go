@@ -171,7 +171,8 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 	}
 	prompt := buildWorkflowPrompt(workflowPromptInput{Backend: "ax", Name: wf.Name, Description: wf.Description, Goal: wf.Goal,
 		SystemPromptOverlay: wf.SystemPromptOverlay, Steps: jsArray(steps), Mode: o.Mode, IncludeUxMetadata: o.IncludeUxMetadata,
-		MemoryContext: memory, Workspace: ws, Knowledge: knowledge, FilesEnabled: files, ScriptData: terminal})
+		MemoryContext: memory, Workspace: ws, Knowledge: knowledge, FilesEnabled: files, ScriptData: terminal,
+		Playbook: a.playbookContext(ctx, wf.OrgID)})
 	now := time.Now
 	if o.now != nil {
 		now = o.now

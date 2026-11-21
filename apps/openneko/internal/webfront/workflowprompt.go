@@ -24,6 +24,7 @@ type workflowPromptInput struct {
 	Knowledge           knowledgePack  `json:"knowledge"`
 	FilesEnabled        bool           `json:"filesEnabled"`
 	ScriptData          bool           `json:"scriptData"`
+	Playbook            string         `json:"playbook,omitempty"`
 }
 
 func jsProp(v any, key string) any {
@@ -86,7 +87,7 @@ func buildWorkflowPrompt(in workflowPromptInput) string {
 		"runRoot", in.Workspace.RunRoot,
 		"skillsRoot", in.Workspace.SkillsRoot,
 		"artifactRoot", in.Workspace.ArtifactRoot,
-		"memory", memorySection(true, in.FilesEnabled, in.MemoryContext))
+		"memory", memorySection(true, in.FilesEnabled, in.MemoryContext)+pick(in.Playbook != "", "\n\n"+in.Playbook, ""))
 }
 
 const triggerInputMaxChars = 16_000

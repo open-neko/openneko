@@ -128,6 +128,7 @@ type workPromptInput struct {
 	Bot                       *threadBot       `json:"bot"`
 	FilesEnabled              bool             `json:"filesEnabled"`
 	ScriptData                bool             `json:"scriptData"`
+	Playbook                  string           `json:"playbook,omitempty"`
 }
 
 const graphjinExecuteTool = "mcp_neko_graphjin_execute_graphql"
@@ -186,6 +187,7 @@ func buildWorkPrompt(in workPromptInput) string {
 			"knowledgeRoot", ws.KnowledgeRoot, "threadUploadsRoot", ws.ThreadUploadsRoot,
 			"runRoot", ws.RunRoot, "artifactRoot", ws.ArtifactRoot, "shellTool", shellTool),
 		memorySection(in.SupportsMemoryTool, in.FilesEnabled, in.MemoryContext),
+		in.Playbook,
 	}
 	kept := parts[:0]
 	for _, p := range parts {

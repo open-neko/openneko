@@ -151,7 +151,7 @@ with exit code 0, so its supervisor starts it again.`,
 			}
 			queue := &jobs.Queue{Pool: pool, MetricsOn: api.MetricsRefresh, MetricSweep: api.MetricSweep, MemorySweep: api.MemorySweep, CronSweep: api.CronSweep,
 				DirectorySync: api.DirectorySync, ActionExecute: api.ActionExecute,
-				SkillLearn: api.SkillLearn, BotNameSweep: api.BotNameSweep, Build: api.RunBuild, WorkflowRunFire: api.WorkflowRunFire,
+				SkillLearn: api.SkillLearn, BotNameSweep: api.BotNameSweep, PlaybookSweep: api.PlaybookSweep, Build: api.RunBuild, WorkflowRunFire: api.WorkflowRunFire,
 				WorkflowAPISweep: api.WorkflowAPISweep, SSOSetupPoll: api.SSOSetupPoll, WorkRun: api.WorkRun, ChannelDeliver: api.ChannelDeliver, WebPush: api.WebPushDeliver,
 				Embedding: jobs.Embedding{Model: api.EmbeddingModel, Embed: api.EmbedText},
 				Logf:      func(format string, args ...any) { fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...) }}

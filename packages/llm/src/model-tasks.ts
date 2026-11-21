@@ -7,6 +7,7 @@ export const MODEL_TASKS = [
   { task: "skill_lessons", label: "Skill lessons", description: "Proposes a skill change from a finished run." },
   { task: "research_mission", label: "Research mission", description: "Writes the company mission during setup." },
   { task: "workflow_compile", label: "Workflow compiler", description: "Turns a finished workflow run into a stored query for its next runs." },
+  { task: "playbook", label: "Playbook", description: "Proposes a rule for every run from a test that failed." },
 ] as const;
 
 export type ModelTask = (typeof MODEL_TASKS)[number]["task"];
