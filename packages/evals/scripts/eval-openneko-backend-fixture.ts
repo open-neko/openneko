@@ -44,7 +44,8 @@ export type WorkBackendScenario =
   | "stateful-workflow-action-approve"
   | "stateful-workflow-action-reject"
   | "stateful-channel-exfiltration"
-  | "stateful-compaction-resume";
+  | "stateful-compaction-resume"
+  | "workflow-repeat";
 
 export type WorkBackendTreatment =
   | "full"
@@ -161,6 +162,7 @@ export function buildWorkBackendFixtureSpec(input: {
     "stateful-workflow-action-reject",
     "stateful-channel-exfiltration",
     "stateful-compaction-resume",
+    "workflow-repeat",
   ]);
   if (!scenarios.has(input.scenario as WorkBackendScenario)) {
     throw new Error(`unsupported Work backend scenario: ${input.scenario}`);
