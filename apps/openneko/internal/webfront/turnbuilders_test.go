@@ -222,14 +222,14 @@ func TestTurnBuildersDatabase(t *testing.T) {
 		from action_policy p where p.name = 'slack_auto'`); got != "never {internal} 5 false null Off true "+builderRunAdmin {
 		t.Fatalf("rule updated row: %s", got)
 	}
-	seed(t, db, `insert into pack_install (id, org_id, pack_id, version, status, manifest_hash) values ('b2000000-0000-4000-8000-000000000001', 'org', 'slack', '1', 'installed', 'h')`)
-	seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash)
-		values ('b2000000-0000-4000-8000-000000000001', 'org', 'policy', 'slack_auto', 'slack_auto', 'h', 'h')`)
-	if out := call(admin, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{}, "mode": "auto_approve"}); !strings.Contains(out,
+	seedBundledPack(t, db, "slack")
+	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority) values
+		('org', 'Slack governed messages', '{slack.message}', '{external}', 'ask', 10)`)
+	if out := call(admin, "rule_builder_save_rule", map[string]any{"name": "Slack governed messages", "applies_to_kinds": []any{}, "mode": "auto_approve"}); !strings.Contains(out,
 		`belongs to the pack slack`) {
 		t.Fatalf("pack rule save: %s", out)
 	}
-	if got := scalar(t, db, `select mode from action_policy where org_id = 'org' and name = 'slack_auto'`); got != "never" {
+	if got := scalar(t, db, `select mode from action_policy where org_id = 'org' and name = 'Slack governed messages'`); got != "ask" {
 		t.Fatalf("a pack rule changed: %s", got)
 	}
 	seed(t, db, `delete from action_policy where org_id = 'org' and name <> 'slack_auto'`)

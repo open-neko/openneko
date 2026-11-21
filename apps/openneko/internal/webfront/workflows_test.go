@@ -96,9 +96,8 @@ func TestWorkflowWithNoOwner(t *testing.T) {
 	if w := call(f, "POST", "/api/v1/workflows/"+wfOrg+"/manual-runs", `{}`, admin); w.Code != 400 || !strings.Contains(w.Body.String(), "has no owner") {
 		t.Fatalf("an ownerless run started: %d %s", w.Code, w.Body)
 	}
-	seed(t, db, `insert into pack_install (id, org_id, pack_id, version, status, manifest_hash) values ('b2000000-0000-4000-8000-000000000002', 'org', 'stock', '1', 'installed', 'h')`)
-	seed(t, db, `insert into pack_artifact (pack_install_id, org_id, artifact_kind, artifact_key, target_ref, desired_hash, last_applied_hash)
-		values ('b2000000-0000-4000-8000-000000000002', 'org', 'workflow', 'held', 'Held flow', 'h', 'h')`)
+	seedBundledPack(t, db, "magento")
+	seed(t, db, `update workflow_definition set name = 'Magento daily commerce briefing' where id = $1`, wfHeld)
 	if got := needs(); got != "Org flow" {
 		t.Fatalf("a pack workflow needs an owner: %s", got)
 	}
