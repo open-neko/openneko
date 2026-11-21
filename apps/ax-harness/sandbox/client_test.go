@@ -275,15 +275,46 @@ func TestClientReachesAUnixSocket(t *testing.T) {
 	server := &http.Server{Handler: fake}
 	go server.Serve(listener)
 	defer server.Close()
-	client, err := NewClient(Config{URL: "unix://" + socket}, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+	urls := []string{"unix://" + socket}
+	if runtime.GOOS != "windows" {
+		urls = append(urls, "unix:"+socket, "unix://localhost"+socket)
 	}
-	if _, err := client.Exec(context.Background(), "true", "", nil, 5, 1000); err != nil {
-		t.Fatal(err)
+	for _, raw := range urls {
+		client, err := NewClient(Config{URL: raw}, t.TempDir())
+		if err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		if _, err := client.Exec(context.Background(), "true", "", nil, 5, 1000); err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		conn, err := (Config{URL: raw}).DialService(context.Background())
+		if err != nil {
+			t.Fatalf("%s: DialService: %v", raw, err)
+		}
+		conn.Close()
 	}
 	if fake.got[0].auth != "" {
 		t.Fatalf("a client without a key sent %q", fake.got[0].auth)
+	}
+}
+
+func TestSocketPathTakesEveryUnixForm(t *testing.T) {
+	for _, tc := range []struct {
+		url, path string
+		unix      bool
+	}{
+		{"unix:///run/s.sock", "/run/s.sock", true},
+		{"unix:/run/s.sock", "/run/s.sock", true},
+		{"unix://localhost/run/s.sock", "/run/s.sock", true},
+		{"unix://", "", true},
+		{"unix://sandbox.sock", "", true},
+		{"unix:sandbox.sock", "", true},
+		{"http://sandbox:8091", "", false},
+		{"", "", false},
+	} {
+		if path, unix := SocketPath(tc.url); path != tc.path || unix != tc.unix {
+			t.Errorf("%q: SocketPath = %q, %v, want %q, %v", tc.url, path, unix, tc.path, tc.unix)
+		}
 	}
 }
 
@@ -309,7 +340,7 @@ func TestClientRefusesBadURLs(t *testing.T) {
 	if (Config{}).Enabled() || (Config{}).Check() != nil {
 		t.Fatal("an empty URL must mean off")
 	}
-	for _, raw := range []string{"ftp://x", "unix://", "unix://sandbox.sock", "http://", "sandbox:8080"} {
+	for _, raw := range []string{"ftp://x", "unix://", "unix://sandbox.sock", "unix:sandbox.sock", "http://", "sandbox:8080"} {
 		if _, err := NewClient(Config{URL: raw}, "/w"); err == nil || (Config{URL: raw}).Check() == nil {
 			t.Fatalf("accepted %q", raw)
 		}
@@ -324,6 +355,8 @@ func TestConfigSharesFolder(t *testing.T) {
 		{"unix:///run/openneko/sandbox.sock", true},
 		{"unix:///run/openneko/../openneko/sandbox.sock", true},
 		{"unix:///run/openneko-sandbox/sandbox.sock", false},
+		{"unix:/run/openneko/sandbox.sock", true},
+		{"unix://localhost/run/openneko/sandbox.sock", true},
 		{"https://run/openneko/sandbox.sock", false},
 		{"", false},
 	} {

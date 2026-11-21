@@ -11,8 +11,8 @@ secret.
 Each release publishes this image as `ghcr.io/open-neko/neko-sandbox`, for
 amd64 and arm64, with the release's tag. Both compose files name it with
 `${OPENNEKO_VERSION}` and have no `build:` line. Set `OPENNEKO_VERSION` to
-the release tag, for example `v6.0.0`; without it, the image name is not
-valid and the pull stops with a line that asks for it.
+the release tag, for example `v6.0.0`. Without it, Compose stops before
+any change with a line that asks for it.
 `openneko start` and `openneko upgrade` set it.
 
 ```sh
@@ -24,11 +24,14 @@ docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml u
 
 To run a source build of the sandbox, build the image and name it in
 `OPENNEKO_SANDBOX_IMAGE`. The compose files then use that image in place of
-the published one, and `OPENNEKO_VERSION` is not needed:
+the published one. Docker Compose v5 then needs no `OPENNEKO_VERSION`.
+Docker Compose v2 reads the variable in the image line also when it does
+not use it, so set it to any value there:
 
 ```sh
 docker build -t openneko-sandbox:local recipes/sandbox
 export OPENNEKO_SANDBOX_IMAGE=openneko-sandbox:local
+export OPENNEKO_VERSION=source
 ```
 
 Build it again after each change to this folder.
@@ -84,10 +87,13 @@ only. It passes TCP to the sandbox and nothing else. It runs as user 65534
 with no capabilities. The runs' firewall drops their packets to it.
 
 ```sh
-OPENNEKO_SANDBOX_KEY=<a long random string> \
+OPENNEKO_SANDBOX_KEY=$(openssl rand -hex 32) \
 OPENNEKO_VERSION=v$(openneko version --short) \
 docker compose -f compose.desktop.yml up -d
 ```
+
+The key needs at least 32 characters: on TCP, the sandbox refuses to start
+with a shorter one.
 
 Then start OpenNeko with `OPENNEKO_SANDBOX_URL=http://127.0.0.1:8091` and
 the same key. `OPENNEKO_SANDBOX_PORT` changes the host port.
@@ -318,7 +324,7 @@ takes the egress list, org and label that the control side opened it
 with: an exec body with `egress` gets 403. When the sandbox no longer knows
 the token (it restarted), it answers 401. `--listen` takes
 `unix:///path` (default `unix:///run/openneko-sandbox/sandbox.sock`) or
-`host:port`. A TCP listener needs a key.
+`host:port`. A TCP listener needs a key of at least 32 characters.
 
 `OPENNEKO_SANDBOX_EGRESS_PROXY` (`host:port`) is the proxy that the relay
 passes commands to; without it, commands get no proxy variables. A sandbox

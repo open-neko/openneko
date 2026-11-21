@@ -107,11 +107,13 @@ func (s *Server) ListenAndServe(ctx context.Context, address string) error {
 	return s.Serve(ctx, listener)
 }
 
+const minTCPKeyLength = 32
+
 func (s *Server) listen(address string) (net.Listener, error) {
 	path, isUnix := strings.CutPrefix(address, "unix://")
 	if !isUnix {
-		if s.Key == "" {
-			return nil, errors.New("a TCP listener needs OPENNEKO_SANDBOX_KEY")
+		if len(s.Key) < minTCPKeyLength {
+			return nil, fmt.Errorf("a TCP listener needs an OPENNEKO_SANDBOX_KEY of at least %d characters; make one with: openssl rand -hex 32", minTCPKeyLength)
 		}
 		return net.Listen("tcp", strings.TrimPrefix(address, "tcp://"))
 	}

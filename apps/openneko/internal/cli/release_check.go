@@ -204,7 +204,7 @@ func checkSandboxSocket(ctx context.Context, url string, stackSockets ...string)
 	if box.SharesFolder(stackSockets...) {
 		return "", fmt.Errorf("the sandbox socket %s is in the folder of serve's sockets; give the sandbox a socket folder of its own (INSTALL.md, \"Sandbox\")", url)
 	}
-	path, ok := strings.CutPrefix(url, "unix://")
+	path, ok := sandbox.SocketPath(url)
 	if !ok {
 		return "remote", nil
 	}

@@ -15,7 +15,7 @@ repo="$(cd "$here/../.." && pwd)"
 work="$(mktemp -d)"
 project=openneko-egress-data-${suffix}
 compose() {
-  OPENNEKO_SANDBOX_IMAGE="$image" OPENNEKO_SANDBOX_DIR="$work/socket" OPENNEKO_SANDBOX_GID="$(id -g)" OPENNEKO_SANDBOX_KEY="$key" \
+  OPENNEKO_VERSION=source OPENNEKO_SANDBOX_IMAGE="$image" OPENNEKO_SANDBOX_DIR="$work/socket" OPENNEKO_SANDBOX_GID="$(id -g)" OPENNEKO_SANDBOX_KEY="$key" \
     docker compose -p "$project" -f "$here/compose.native.yml" -f "$work/proof.yml" "$@"
 }
 key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"

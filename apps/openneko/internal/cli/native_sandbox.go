@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
+	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 func nativeSandboxDir() string {
@@ -33,9 +33,12 @@ func prepareNativeSandbox(dir, url, key string) error {
 	if key == "" {
 		return fmt.Errorf("OPENNEKO_SANDBOX_URL is set and OPENNEKO_SANDBOX_KEY is not: a sandbox on a one-user install needs a key (INSTALL.md, \"Run without Docker\")")
 	}
-	path, ok := strings.CutPrefix(url, "unix://")
+	path, ok := sandbox.SocketPath(url)
 	if !ok || runtime.GOOS == "windows" {
 		return nil
+	}
+	if path == "" {
+		return fmt.Errorf("OPENNEKO_SANDBOX_URL %s names no socket path", url)
 	}
 	if err := native.CheckSocketPath(path); err != nil {
 		return err

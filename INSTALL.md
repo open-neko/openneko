@@ -639,7 +639,8 @@ Run the sandbox in the same file with the `openneko-sandbox` service of
 `image:` line, so `openneko start` and `openneko upgrade` pull the image of
 the CLI's release, and the upgrade removes the older tags. The recipe has no
 `build:` line. To run a source build, build the image from `recipes/sandbox`
-and set `OPENNEKO_SANDBOX_IMAGE` to its name. The service mounts `openneko-sandbox-socket` at
+and set `OPENNEKO_SANDBOX_IMAGE` to its name. Docker Compose v2 also needs
+`OPENNEKO_VERSION` then, with any value; Compose v5 does not. The service mounts `openneko-sandbox-socket` at
 `/run/openneko-sandbox` and gives its socket to group 1001. Keep its
 `openneko-sandbox` network with `internal: true`: that network has no route
 out and no DNS for external names. The sandbox also sets its own firewall
@@ -1060,9 +1061,10 @@ This release has fewer parts. The upgrade migrates your data in place:
 - **Old images**: the upgrade also removes the untagged images of the
   earlier release, such as the librarian image that 5.0.0 pulled by digest.
 - **The sandbox recipe** names the image of the release and has no `build:`
-  line. Without `OPENNEKO_VERSION`, the image name is not valid and the
-  pull stops with a line that asks for it. For a source build, build the
-  image and set `OPENNEKO_SANDBOX_IMAGE`; it needs no `OPENNEKO_VERSION`
+  line. Without `OPENNEKO_VERSION`, Compose stops before any change with a
+  line that asks for it. For a source build, build the image and set
+  `OPENNEKO_SANDBOX_IMAGE`; Docker Compose v2 also needs `OPENNEKO_VERSION`,
+  with any value
   ([recipes/sandbox/README.md](recipes/sandbox/README.md)).
 - **The serve roles** now have the database name in them. The first start
   creates `neko_files_<database>` and `neko_subscriptions_<database>` with the
@@ -1149,8 +1151,12 @@ On Linux or macOS (amd64 or arm64), this script installs the native release
 for your user:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.sh | sh
+curl --proto '=https' -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.sh | sh
 ```
+
+The URL names a release tag, so you run the script of that release and not
+the newest change on `main`. For another release, change the tag in each
+URL of this section.
 
 The script downloads `openneko-native_<version>_<os>_<arch>.tar.gz` and
 `checksums-native.txt` from the release and checks the archive with
@@ -1162,7 +1168,9 @@ arm64 archive, also when the shell runs under Rosetta. It puts
 `~/.local/bin/openneko`. `OPENNEKO_VERSION` picks a release (default: the
 latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
 `OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
-then `OPENNEKO_VERSION` is needed. At the end, the script runs `openneko
+then `OPENNEKO_VERSION` is needed. The script downloads over https only: it
+refuses a mirror URL that starts with `http://` (except `127.0.0.1`,
+`localhost` and `[::1]`) and a redirect to `http://`. At the end, the script runs `openneko
 release-check --skills --bundled-packs` and fails when the install lacks its
 bundled skills or packs. `--server` is for Linux only.
 
@@ -1170,20 +1178,21 @@ On Windows (amd64 or arm64), `scripts/install-native.ps1` does the same in
 PowerShell 5.1 or later, with no admin rights:
 
 ```powershell
-irm https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.ps1 | iex
+irm https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.ps1 | iex
 ```
 
 It downloads `openneko-native_<version>_windows_<arch>.zip`, checks it
 against `checksums-native.txt`, and puts `bin\openneko.exe` and
 `share\openneko` in `%LOCALAPPDATA%\Programs\OpenNeko`
 (`OPENNEKO_PREFIX` changes it). It adds the `bin` folder to your user
-`PATH` and runs `openneko release-check --skills --bundled-packs` at the
+`PATH`, and keeps the other entries as they are, for example
+`%USERPROFILE%\bin` unexpanded. It runs `openneko release-check --skills --bundled-packs` at the
 end. `OPENNEKO_VERSION` and `OPENNEKO_RELEASE_URL` work as in the Linux
-script. To upgrade with the new release's own executable, run it with
+script, with the same https rule. To upgrade with the new release's own executable, run it with
 `-Upgrade`; the arguments after it go to `openneko upgrade`:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.ps1))) -Upgrade --skip-backup
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.ps1))) -Upgrade --skip-backup
 ```
 
 Each release also holds `openneko-native_<version>_darwin_<arch>.tar.gz`
@@ -1191,7 +1200,10 @@ for macOS and `openneko-native_<version>_windows_<arch>.zip` for Windows
 (amd64 and arm64), with the same layout. In the Windows archive the
 executable is `bin\openneko.exe`. The Homebrew cask
 (`brew install open-neko/tap/openneko`) installs the macOS archive, so
-`openneko start --native` finds the web app beside the executable.
+`openneko start --native` finds the web app beside the executable. The
+release binary has no Apple signature. The cask removes the quarantine flag
+from it, so macOS Gatekeeper does not check it. The cask's checksum, from
+the same release, is the only check.
 
 Then start OpenNeko:
 
@@ -1244,7 +1256,8 @@ and `upgrade` act on the native install. `openneko logs` reads the
   `share/openneko/packs` and `share/openneko/skills` in place of the current
   ones, and starts OpenNeko again when it ran before.
   `--version` picks the release (default: the latest), and
-  `OPENNEKO_RELEASE_URL` points at a mirror. `--from <folder>` upgrades from
+  `OPENNEKO_RELEASE_URL` points at a mirror. The upgrade refuses a release
+  URL or a redirect that is not https. `--from <folder>` upgrades from
   a release folder instead of a download. `--skip-backup` upgrades with no
   backup. The upgrade stops before any change when the release has no web
   app, no built-in pack (`share/openneko/packs/<id>/pack.yaml`), no built-in
@@ -1357,7 +1370,9 @@ socket on a bind mount does not reach the host. Use
 `share/openneko/sandbox/compose.desktop.yml` there. It starts the same
 sandbox and egress proxy, and a third container that joins the sandbox
 network and publishes the sandbox's port on `127.0.0.1:8091` only. Set a
-key in `OPENNEKO_SANDBOX_KEY` and `OPENNEKO_VERSION`, run
+key of at least 32 characters in `OPENNEKO_SANDBOX_KEY` (for example
+`openssl rand -hex 32`; the sandbox refuses a shorter key on TCP) and
+`OPENNEKO_VERSION`, run
 `docker compose -f compose.desktop.yml up -d` in that folder, then set
 `OPENNEKO_SANDBOX_URL=http://127.0.0.1:8091` and the same key.
 `OPENNEKO_SANDBOX_PORT` changes the port. Each request needs the key.
@@ -1368,7 +1383,7 @@ key in `OPENNEKO_SANDBOX_KEY` and `OPENNEKO_VERSION`, run
 On a Linux server, run the install script once as root with `--server`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/main/scripts/install-native.sh \
+curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.sh \
   | sudo sh -s -- --server \
   --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full' --start
 ```
