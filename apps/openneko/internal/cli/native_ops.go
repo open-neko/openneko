@@ -745,16 +745,29 @@ func swapAside(staged, dst string) error {
 	if err := os.Remove(aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		aside = fmt.Sprintf("%s.old-%d", dst, time.Now().UnixNano())
 	}
-	if err := os.Rename(dst, aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := renameShared(dst, aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		_ = os.Remove(staged)
 		return err
 	}
-	if err := os.Rename(staged, dst); err != nil {
+	if err := renameShared(staged, dst); err != nil {
 		_ = os.Rename(aside, dst)
 		return err
 	}
 	_ = os.Remove(aside)
 	return nil
+}
+
+// renameShared waits out a scanner that opened a new executable without
+// delete sharing: Windows then refuses its rename for a moment.
+func renameShared(from, to string) error {
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		err := os.Rename(from, to)
+		if err == nil || !sharingViolation(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // finishExecutableSwap completes a swap that stopped between its two renames:

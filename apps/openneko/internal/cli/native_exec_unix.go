@@ -40,3 +40,5 @@ func becomeSupervisor(layout native.Layout, opts native.Options) error {
 	}
 	return syscall.Exec(opts.Exe, supervisorArgs(opts.Exe), clean)
 }
+
+func sharingViolation(error) bool { return false }
