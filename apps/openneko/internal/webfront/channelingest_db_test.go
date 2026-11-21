@@ -212,11 +212,17 @@ func TestInboundOrg(t *testing.T) {
 func TestChannelDispatch(t *testing.T) {
 	f, db := inboundFront(t)
 	a, ctx := f.API, t.Context()
-	seed(t, db, `insert into action_request (id, org_id, scope, kind, status, payload) values
-		($1, 'org', 'internal', 'note', 'pending_approval', '{}'), ($2, 'org', 'internal', 'note', 'pending_approval', '{}')`, arPending, arRejectMe)
+	seed(t, db, `insert into action_request (id, org_id, scope, kind, status, payload, actor_user_id) values
+		($1, 'org', 'internal', 'note', 'pending_approval', '{}', 'member'), ($2, 'org', 'internal', 'note', 'pending_approval', '{}', 'member')`, arPending, arRejectMe)
 	tg := func(update string) bool { return a.processInbound(ctx, "org", "telegram", parse(t, update)) }
 	seed(t, db, `insert into app_passkey (org_id, user_id, credential_id, public_key, name)
 		select org_id, id, 'cred-' || id, 'key', 'Phone' from app_user where org_id = 'org'`)
+	seed(t, db, `insert into channel_identity (org_id, channel_plugin, workspace_id, channel_user_id, status, app_user_id)
+		values ('org', 'telegram', '', '98', 'linked', 'member')`)
+	tg(`{"update_id":9,"callback_query":{"data":"approve:` + arPending + `","from":{"id":97},"message":{"chat":{"id":4242}}}}`)
+	if got := rowText(t, db, `select status from action_request where id = $1`, arPending); got != "pending_approval" {
+		t.Fatalf("a Telegram sender with no account decided a request that no rule covers: %s", got)
+	}
 
 	if !tg(`{"update_id":1,"callback_query":{"data":"approve:` + arPending + `","from":{"id":98},"message":{"chat":{"id":4242}}}}`) {
 		t.Fatal("approve held")

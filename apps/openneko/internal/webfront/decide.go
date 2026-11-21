@@ -177,7 +177,17 @@ func (a *API) applyDecisionWithPasskey(ctx context.Context, rp passkeyRP, act ac
 // mayDecide is assertMayDecide() in action-store.ts. Each decision passes no
 // approver role, so only a policy's approver group can refuse a member.
 func mayDecide(ctx context.Context, tx pgx.Tx, act actor, id string, policyID *string) error {
-	if act.Admin || policyID == nil {
+	if act.Admin {
+		return nil
+	}
+	if policyID == nil {
+		var requester *string
+		if err := tx.QueryRow(ctx, `select actor_user_id from action_request where org_id = $1 and id = $2`, act.OrgID, id).Scan(&requester); err != nil {
+			return err
+		}
+		if act.UserID == "" || deref(requester) != act.UserID {
+			return &decisionError{status: http.StatusForbidden, message: "action_request " + id + ": no rule names an approver, so only the person who asked for it or an admin decides it"}
+		}
 		return nil
 	}
 	var group *string

@@ -183,7 +183,10 @@ func TestActionRequestDecision(t *testing.T) {
 		t.Errorf("inside the approver group: %d %s", code, body)
 	}
 
-	if code, body := patch(arRetry, `{"decision":"retry"}`, member); code != 200 ||
+	if code, body := patch(arRetry, `{"decision":"retry"}`, member); code != 403 || !strings.Contains(body, "only the person who asked for it or an admin") {
+		t.Fatalf("a member retried a request that no rule covers and that they did not ask for: %d %s", code, body)
+	}
+	if code, body := patch(arRetry, `{"decision":"retry"}`, admin); code != 200 ||
 		body != `{"actionRequest":{"id":"`+arRetry+`","status":"approved"}}` {
 		t.Fatalf("retry: %d %s", code, body)
 	}
@@ -195,13 +198,13 @@ func TestActionRequestDecision(t *testing.T) {
 	if changeset != "approved" || changesetRow != "draft true" {
 		t.Errorf("retried change set: %s, row %s", changeset, changesetRow)
 	}
-	if a := lastAudit(t, db, arRetry); a != `retried {"kind": "user_admin", "retriedBy": "member"}` {
+	if a := lastAudit(t, db, arRetry); a != `retried {"kind": "user_admin", "retriedBy": "admin"}` {
 		t.Errorf("retry audit: %s", a)
 	}
 	if j := actionJobs(t, db); len(j) != 2 || !strings.Contains(j[1].Args, arRetry) {
 		t.Errorf("retry job: %+v", j)
 	}
-	if code, body := patch(arRetry, `{"decision":"retry"}`, member); code != 409 ||
+	if code, body := patch(arRetry, `{"decision":"retry"}`, admin); code != 409 ||
 		body != `{"error":"invalid action_request transition: approved → approved"}` {
 		t.Errorf("second retry: %d %s", code, body)
 	}

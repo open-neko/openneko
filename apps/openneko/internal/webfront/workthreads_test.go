@@ -428,8 +428,9 @@ func TestApproveRunAction(t *testing.T) {
 		{arDraft, ru1, "note", "draft"},
 		{arAdmin, ru1, "source_config_admin", "pending_approval"},
 	} {
-		seed(t, db, `insert into action_request (id, org_id, work_run_id, scope, kind, status, payload) values ($1, 'org', $2, 'internal', $3, $4, '{}')`,
-			a.id, a.run, a.kind, a.status)
+		seed(t, db, `insert into action_request (id, org_id, work_run_id, scope, kind, status, payload, actor_user_id)
+			select $1, 'org', $2, 'internal', $3, $4, '{}', t.created_by_user_id from work_run r join work_thread t on t.id = r.thread_id
+			where r.id = $2`, a.id, a.run, a.kind, a.status)
 	}
 	member := sessionCookie("member")
 	post := func(thread, run, body string, who map[string]string) (int, string) {

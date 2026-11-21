@@ -41,6 +41,7 @@ func TestTurnBuildersDatabase(t *testing.T) {
 		}
 		return s
 	}
+	httpCall := call
 	call := func(s *toolServer, tool string, args map[string]any) string {
 		t.Helper()
 		out, rpcErr := callTool(t, s, tool, args)
@@ -202,9 +203,28 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	if got := scalar(t, db, `select count(*)::text from action_policy where org_id = 'org' and name = 'slack_auto'`); got != "0" || len(events) != 0 {
 		t.Fatalf("a refused save wrote a rule: %s %v", got, events)
 	}
+	confirm := func() string {
+		t.Helper()
+		id := scalar(t, db, `select id::text from action_policy_proposal where status = 'pending' order by created_at desc limit 1`)
+		if w := httpCall(f, "POST", "/api/v1/policies/proposals/"+id+"/confirm", "", sessionCookie("member")); w.Code != 403 {
+			t.Fatalf("a member confirmed a rule: %d %s", w.Code, w.Body)
+		}
+		w := httpCall(f, "POST", "/api/v1/policies/proposals/"+id+"/confirm", "", sessionCookie("admin"))
+		if w.Code != 200 {
+			t.Fatalf("confirm: %d %s", w.Code, w.Body)
+		}
+		return w.Body.String()
+	}
 	out = call(admin, "rule_builder_save_rule", rule)
-	if !strings.Contains(out, `\"ok\":true,\"action\":\"created\",\"ruleId\":\"`) || len(events) != 1 || !strings.Contains(events[0], "**Scopes:** external") {
-		t.Fatalf("rule create: %s %v", out, events)
+	if !strings.Contains(out, `\"ok\":true,\"action\":\"proposed\",\"proposalId\":\"`) || len(events) != 1 || !strings.Contains(events[0], "**Scopes:** external") ||
+		!strings.Contains(events[0], "It has no effect until then.") {
+		t.Fatalf("rule proposal: %s %v", out, events)
+	}
+	if got := scalar(t, db, `select count(*)::text from action_policy where org_id = 'org' and name = 'slack_auto'`); got != "0" {
+		t.Fatalf("an admin run's rule took effect before an admin confirmed it: %s", got)
+	}
+	if body := confirm(); !strings.Contains(body, `"action":"created"`) {
+		t.Fatalf("confirm: %s", body)
 	}
 	if got := scalar(t, db, `select p.applies_to_scopes::text || ' ' || p.priority::text || ' ' || p.enabled::text || ' ' || p.limits::text || ' ' ||
 		p.allowed_targets::text || ' ' || coalesce(p.denied_targets::text, 'null') || ' ' || (p.approver_group_id = g.id)::text || ' ' || p.created_by_run_id::text
@@ -214,8 +234,11 @@ func TestTurnBuildersDatabase(t *testing.T) {
 	}
 	out = call(admin, "rule_builder_save_rule", map[string]any{"name": "slack_auto", "applies_to_kinds": []any{}, "applies_to_scopes": []any{"internal"},
 		"mode": "never", "priority": 5, "enabled": false, "description": "Off"})
-	if !strings.Contains(out, `\"action\":\"updated\"`) {
+	if !strings.Contains(out, `\"action\":\"proposed\"`) {
 		t.Fatalf("rule update: %s", out)
+	}
+	if body := confirm(); !strings.Contains(body, `"action":"updated"`) {
+		t.Fatalf("confirm the update: %s", body)
 	}
 	if got := scalar(t, db, `select p.mode || ' ' || p.applies_to_scopes::text || ' ' || p.priority::text || ' ' || p.enabled::text || ' ' ||
 		coalesce(p.allowed_targets::text, 'null') || ' ' || p.description || ' ' || (p.approver_group_id is not null)::text || ' ' || p.created_by_run_id::text
