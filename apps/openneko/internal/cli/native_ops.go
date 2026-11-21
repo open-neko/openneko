@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -684,56 +685,117 @@ func sameFile(a, b string) bool {
 }
 
 func replaceFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
+	if moveExecutableAside {
+		if err := finishExecutableSwap(dst); err != nil {
+			return err
+		}
+		staged := dst + ".new"
+		f, err := os.OpenFile(staged, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+		if err != nil {
+			return err
+		}
+		if err := copyExecutable(src, f); err != nil {
+			_ = os.Remove(staged)
+			return err
+		}
+		return swapAside(staged, dst)
 	}
-	defer in.Close()
 	tmp, err := os.CreateTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".new-*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := io.Copy(tmp, in); err != nil {
-		tmp.Close()
+	if err := copyExecutable(src, tmp); err != nil {
 		return err
 	}
-	if err := tmp.Chmod(0o755); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if !moveExecutableAside {
-		return os.Rename(tmp.Name(), dst)
-	}
-	return swapAside(tmp.Name(), dst)
+	return os.Rename(tmp.Name(), dst)
 }
 
-// Windows refuses a plain rename onto the image of a running process. A
-// POSIX rename replaces it in one step; where the system refuses that too,
-// the running openneko.exe moves aside first, which leaves a short gap with
-// no openneko.exe.
+func copyExecutable(src string, f *os.File) error {
+	in, err := os.Open(src)
+	if err != nil {
+		f.Close()
+		return err
+	}
+	defer in.Close()
+	if _, err := io.Copy(f, in); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Chmod(0o755); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// Windows refuses any rename onto the image of a running process, also a
+// POSIX one, but allows a rename of that image. So the running openneko.exe
+// moves aside to openneko.exe.old and the synced openneko.exe.new takes its
+// name. A crash between the two renames leaves no openneko.exe;
+// finishExecutableSwap repairs that from the two names.
 var moveExecutableAside = runtime.GOOS == "windows"
 
-func swapAside(next, dst string) error {
-	if replaceInPlace(next, dst) == nil {
-		return nil
-	}
+func swapAside(staged, dst string) error {
 	aside := dst + ".old"
 	if err := os.Remove(aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		aside = fmt.Sprintf("%s.old-%d", dst, time.Now().UnixNano())
 	}
 	if err := os.Rename(dst, aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		_ = os.Remove(staged)
 		return err
 	}
-	if err := os.Rename(next, dst); err != nil {
+	if err := os.Rename(staged, dst); err != nil {
 		_ = os.Rename(aside, dst)
 		return err
 	}
 	_ = os.Remove(aside)
 	return nil
+}
+
+// finishExecutableSwap completes a swap that stopped between its two renames:
+// with no exe, a staged exe.new is whole, else the newest exe.old goes back.
+// With an exe, a staged exe.new is a copy that stopped half way.
+func finishExecutableSwap(exe string) error {
+	staged := exe + ".new"
+	if _, err := os.Lstat(exe); err == nil {
+		if err := os.Remove(staged); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(staged, exe); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if aside := newestAside(exe); aside != "" {
+		return os.Rename(aside, exe)
+	}
+	return nil
+}
+
+func newestAside(exe string) string {
+	old, _ := filepath.Glob(exe + ".old*")
+	best, bestN := "", int64(-1)
+	for _, f := range old {
+		var n int64
+		if f == exe+".old" {
+			n = 0
+		} else if v, err := strconv.ParseInt(strings.TrimPrefix(f, exe+".old-"), 10, 64); err == nil && v > 0 {
+			n = v
+		} else {
+			continue
+		}
+		if n > bestN {
+			best, bestN = f, n
+		}
+	}
+	return best
 }
 
 func removeAsideExecutables(exe string) {

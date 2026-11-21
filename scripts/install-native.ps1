@@ -54,7 +54,8 @@ param(
   if ($tag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$') { Fail "not a release tag: $tag" }
 
   if ($Upgrade) {
-    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { Fail "no OpenNeko in $prefix; set OPENNEKO_PREFIX to the install folder" }
+    $cut = (Test-Path -LiteralPath "$exe.new" -PathType Leaf) -or [bool](Get-ChildItem -LiteralPath $bindir -Filter 'openneko.exe.old*' -File -ErrorAction SilentlyContinue)
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -and -not $cut) { Fail "no OpenNeko in $prefix; set OPENNEKO_PREFIX to the install folder" }
   } elseif (Test-Path -LiteralPath $exe) {
     Fail "$prefix already holds OpenNeko; run ``openneko upgrade`` or this script with -Upgrade"
   }

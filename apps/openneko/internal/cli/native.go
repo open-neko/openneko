@@ -150,6 +150,9 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 		return err
 	}
 	if moveExecutableAside {
+		if err := finishExecutableSwap(opts.Exe); err != nil {
+			return fmt.Errorf("finish the upgrade of %s: %w", opts.Exe, err)
+		}
 		removeAsideExecutables(opts.Exe)
 	}
 	if err := runNativeSteps(cmd, layout, opts, !skipMigrate); err != nil {
