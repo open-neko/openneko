@@ -26,7 +26,7 @@ const (
 	writeRights = readRights | unix.LANDLOCK_ACCESS_FS_WRITE_FILE | unix.LANDLOCK_ACCESS_FS_REMOVE_DIR |
 		unix.LANDLOCK_ACCESS_FS_REMOVE_FILE | unix.LANDLOCK_ACCESS_FS_MAKE_DIR | unix.LANDLOCK_ACCESS_FS_MAKE_REG |
 		unix.LANDLOCK_ACCESS_FS_MAKE_SOCK | unix.LANDLOCK_ACCESS_FS_MAKE_FIFO | unix.LANDLOCK_ACCESS_FS_MAKE_SYM |
-		unix.LANDLOCK_ACCESS_FS_REFER | unix.LANDLOCK_ACCESS_FS_TRUNCATE | fsResolveUnix
+		unix.LANDLOCK_ACCESS_FS_REFER | unix.LANDLOCK_ACCESS_FS_TRUNCATE
 	execRights = unix.LANDLOCK_ACCESS_FS_EXECUTE | unix.LANDLOCK_ACCESS_FS_READ_FILE
 )
 
@@ -105,7 +105,40 @@ func Available() State {
 	if abi < 1 {
 		return State{Mechanism: "landlock", Reason: noLandlock(e, kernel(), InContainer())}
 	}
-	return State{Mechanism: "landlock", ABI: abi, Confined: true, Gaps: gaps(abi)}
+	st := State{Mechanism: "landlock", ABI: abi, Confined: true, Gaps: gaps(abi)}
+	if bus := SessionBus(); bus != "" && abi < 9 {
+		st.Gaps = append(st.Gaps, "connect to the session bus "+bus+", through which systemd --user can start a program outside the confinement (ABI 9)")
+	}
+	return st
+}
+
+// SessionBus is the socket of the D-Bus session bus of this login, or "".
+// A system account with no login session has none.
+func SessionBus() string {
+	path := ""
+	if addr, ok := strings.CutPrefix(os.Getenv("DBUS_SESSION_BUS_ADDRESS"), "unix:path="); ok {
+		path, _, _ = strings.Cut(addr, ",")
+	} else {
+		dir := os.Getenv("XDG_RUNTIME_DIR")
+		if dir == "" {
+			dir = fmt.Sprintf("/run/user/%d", os.Getuid())
+		}
+		path = filepath.Join(dir, "bus")
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode()&os.ModeSocket == 0 {
+		return ""
+	}
+	return path
+}
+
+// coversBus returns the folder of spec that would let a connect reach bus.
+func coversBus(sockDirs []string, bus string) string {
+	for _, dir := range sockDirs {
+		if rel, err := filepath.Rel(dir, bus); err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
+			return dir
+		}
+	}
+	return ""
 }
 
 // noLandlock tells a kernel without Landlock apart from a kernel that has it
@@ -194,6 +227,11 @@ func Apply(spec Spec) (State, error) {
 	for _, s := range spec.Listen {
 		sockDirs = append(sockDirs, filepath.Dir(s))
 		listenDirs = append(listenDirs, filepath.Dir(s))
+	}
+	if bus := SessionBus(); bus != "" && st.ABI >= 9 {
+		if dir := coversBus(sockDirs, bus); dir != "" {
+			return fail(st, "keep the session bus "+bus+" out of reach: move the sockets in "+dir+" to a folder of their own", unix.EINVAL)
+		}
 	}
 	for _, step := range []struct {
 		paths  []string

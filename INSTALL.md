@@ -491,7 +491,26 @@ The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
 small gaps: rename and link between folders (Linux 5.19) and ioctl on a
 device (Linux 6.10). On every kernel, the runner can read the metadata (size,
 times, extended attributes) of a path that it names. `openneko doctor` prints
-the active security modules and the state. To check by hand:
+the active security modules and the state.
+
+The network part of serve opens sockets, and Landlock below ABI 9 cannot
+refuse a connect to a named socket. On a desktop login this includes the
+session bus, `/run/user/UID/bus`, through which `systemd --user` can start a
+program outside the confinement. `openneko doctor` lists it as a gap when
+the bus exists. A server install runs as the system user `openneko`, which
+has no login session and so no session bus. Keep it that way: do not turn
+on lingering for it with `loginctl enable-linger`. From ABI 9, the network
+part reaches only its own socket folders, and serve refuses to start a part
+whose socket folder holds the session bus.
+
+On RHEL 8 and any other kernel without Landlock, no agent turn runs, but
+the rest of serve runs unconfined. On a server install, the network part
+of serve (the files service and both GraphJin engines) then runs as the
+same system user as web, with only the database roles between them. The
+6.0.0 pre-releases put serve under a second system user; the one-account
+install has no such boundary. Use the Docker install where you need it.
+
+To check by hand:
 
 ```bash
 cat /sys/kernel/security/lsm   # must hold landlock
