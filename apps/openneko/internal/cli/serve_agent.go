@@ -20,7 +20,7 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
-func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns int, box sandbox.Config, confinement confine.State) (<-chan error, error) {
+func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns int, box sandbox.Config, confinement, network confine.State) (<-chan error, error) {
 	if err := box.Check(); err != nil {
 		return nil, err
 	}
@@ -48,6 +48,7 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	keydoor.SetSocket(door)
 	fmt.Fprintf(out, "openneko serve reaches the model providers through the key door at %s\n", door)
 	state, _ := json.Marshal(confinement)
+	networkState, _ := json.Marshal(network)
 	runnerState, confineRunner, turnsOff := runnerConfinement(out, webfront.Development())
 	runnerJSON, _ := json.Marshal(runnerState)
 	runner, runnerEnv, err := agentRunner()
@@ -58,7 +59,7 @@ func serveAgentTurns(ctx context.Context, out io.Writer, socket string, maxTurns
 	if runner != nil {
 		fmt.Fprintln(out, "openneko serve runs each agent turn in an agent runner process of its own")
 	}
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state,
+	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: maxTurns, Sandbox: box, RequireDoor: !webfront.Development(), KeyEnv: names, Confinement: state, NetworkConfinement: networkState,
 		Runner: runner, RunnerEnv: runnerEnv, RunnerConfinement: runnerJSON, ConfineRunner: confineRunner, TurnsOff: turnsOff}
 	done := make(chan error, 1)
 	go func() {

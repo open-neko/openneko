@@ -27,50 +27,57 @@ func confinementService() externalService {
 			return &serviceSettings{url: "unix://" + socket, where: "openneko serve"}, nil
 		},
 		check: func(ctx context.Context, _ string, s *serviceSettings) (string, string, error) {
-			st, runner, err := serveConfinement(ctx, strings.TrimPrefix(s.url, "unix://"))
+			st, err := serveConfinement(ctx, strings.TrimPrefix(s.url, "unix://"))
 			if err != nil {
 				return "", "", err
 			}
-			if runner.turnsOff != "" {
-				return "", "", errors.New(runner.turnsOff)
+			if st.turnsOff != "" {
+				return "", "", errors.New(st.turnsOff)
 			}
-			if !runner.state.Confined && runner.state.Mechanism != "" {
-				return "", "", fmt.Errorf("agent runners run unconfined: %s", runner.state.Reason)
+			if !st.runner.Confined && st.runner.Mechanism != "" {
+				return "", "", fmt.Errorf("agent runners run unconfined: %s", st.runner.Reason)
 			}
-			if !st.Confined {
-				if st.Mechanism == "" {
-					return fmt.Sprintf("Confinement of openneko serve on %s is not built yet: %s.", runtime.GOOS, st.Reason), "", nil
-				}
-				return "", "", fmt.Errorf("openneko serve runs unconfined: %s", st.Reason)
+			if !st.network.Confined && st.network.Mechanism != "" {
+				return "", "", fmt.Errorf("the network part of openneko serve runs unconfined: %s", st.network.Reason)
 			}
-			detail := fmt.Sprintf("openneko serve runs under %s: it cannot read the config folder or other files of this account.", st)
-			if len(st.Gaps) > 0 {
-				detail += " This kernel cannot refuse: " + strings.Join(st.Gaps, "; ") + "."
+			if !st.host.Confined && st.host.Mechanism != "" {
+				return "", "", fmt.Errorf("openneko serve runs unconfined: %s", st.host.Reason)
 			}
-			if runner.state.Confined {
-				detail += fmt.Sprintf(" Each agent turn runs in a runner under %s: it opens no socket and reaches only the files of its turn.", runner.state)
-			} else if runner.state.Reason != "" {
-				detail += " Agent runners: " + runner.state.Reason + "."
+			if !st.network.Confined {
+				return fmt.Sprintf("Confinement of openneko serve on %s is not built yet: %s.", runtime.GOOS, st.network.Reason), "", nil
+			}
+			detail := fmt.Sprintf("The network part of openneko serve (files, GraphJin) runs under %s: it cannot read the config folder or other files of this account.", st.network)
+			if len(st.network.Gaps) > 0 {
+				detail += " This system cannot refuse: " + strings.Join(st.network.Gaps, "; ") + "."
+			}
+			if st.host.Confined {
+				detail += fmt.Sprintf(" The part that starts agent turns runs under %s.", st.host)
+			} else if st.host.Reason != "" {
+				detail += " The part that starts agent turns runs unconfined: " + st.host.Reason + "."
+			}
+			if st.runner.Confined {
+				detail += fmt.Sprintf(" Each agent turn runs in a runner under %s: it opens no socket and reaches only the files of its turn.", st.runner)
+			} else if st.runner.Reason != "" {
+				detail += " Agent runners: " + st.runner.Reason + "."
 			}
 			return detail, "", nil
 		},
 	}
 }
 
-type runnerState struct {
-	state    confine.State
-	turnsOff string
+type serveStates struct {
+	host, network, runner confine.State
+	turnsOff              string
 }
 
 // serveConfinement asks serve over its agent socket how the OS confines it
 // and its agent runners.
-func serveConfinement(ctx context.Context, socket string) (confine.State, runnerState, error) {
-	var st confine.State
-	var runner runnerState
+func serveConfinement(ctx context.Context, socket string) (serveStates, error) {
+	var st serveStates
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", socket)
 	if err != nil {
-		return st, runner, errors.New("openneko serve did not answer on its agent socket")
+		return st, errors.New("openneko serve did not answer on its agent socket")
 	}
 	defer conn.Close()
 	if deadline, ok := ctx.Deadline(); ok {
@@ -81,12 +88,13 @@ func serveConfinement(ctx context.Context, socket string) (confine.State, runner
 		err = json.NewDecoder(conn).Decode(&reply)
 	}
 	var status serve.Status
-	if reply.Type != "status" || json.Unmarshal(reply.Result, &status) != nil || len(status.Confinement) == 0 || json.Unmarshal(status.Confinement, &st) != nil {
-		return st, runner, errors.New("openneko serve did not report its confinement; run serve from the same release as web")
+	if reply.Type != "status" || json.Unmarshal(reply.Result, &status) != nil || len(status.Confinement) == 0 || json.Unmarshal(status.Confinement, &st.host) != nil ||
+		len(status.NetworkConfinement) == 0 || json.Unmarshal(status.NetworkConfinement, &st.network) != nil {
+		return st, errors.New("openneko serve did not report its confinement; run serve from the same release as web")
 	}
 	if len(status.RunnerConfinement) > 0 {
-		_ = json.Unmarshal(status.RunnerConfinement, &runner.state)
+		_ = json.Unmarshal(status.RunnerConfinement, &st.runner)
 	}
-	runner.turnsOff = status.TurnsOff
-	return st, runner, nil
+	st.turnsOff = status.TurnsOff
+	return st, nil
 }

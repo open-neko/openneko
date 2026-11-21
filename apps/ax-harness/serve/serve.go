@@ -83,8 +83,11 @@ type Server struct {
 	// KeyEnv names the model key variables that serve's environment held at
 	// start. A status frame reports them.
 	KeyEnv []string
-	// Confinement is how the OS confines serve; a status frame reports it.
-	Confinement json.RawMessage
+	// Confinement is how the OS confines the part of serve that runs turns;
+	// NetworkConfinement is the part that holds the network. A status frame
+	// reports both.
+	Confinement        json.RawMessage
+	NetworkConfinement json.RawMessage
 	// MaxTurns bounds the turns that run at once; more are refused.
 	MaxTurns int
 	// Sandbox runs every turn's terminal commands. The worker cannot set it.
@@ -192,7 +195,7 @@ func (s *Server) handleStream(parent context.Context, conn io.Writer, reader *bu
 		if len(s.Runner) > 0 {
 			runner = "process"
 		}
-		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement, Runner: runner,
+		result, _ := json.Marshal(Status{RequireDoor: s.RequireDoor, KeyEnv: append([]string{}, s.KeyEnv...), Confinement: s.Confinement, NetworkConfinement: s.NetworkConfinement, Runner: runner,
 			RunnerConfinement: s.RunnerConfinement, TurnsOff: s.TurnsOff})
 		_ = out.write(Frame{Type: "status", Result: result})
 		return
@@ -360,6 +363,9 @@ type Status struct {
 	RequireDoor bool            `json:"require_door"`
 	KeyEnv      []string        `json:"key_env"`
 	Confinement json.RawMessage `json:"confinement,omitempty"`
+	// NetworkConfinement is how the OS confines the part of serve that holds
+	// the network: the files service and the GraphJin engines.
+	NetworkConfinement json.RawMessage `json:"network_confinement,omitempty"`
 	// Runner is "process" when each turn runs in an agent runner process.
 	Runner string `json:"runner,omitempty"`
 	// RunnerConfinement is how the OS confines each agent runner.
