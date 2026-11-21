@@ -34,6 +34,18 @@ describe("buildToolDocument", () => {
     expect(TOOL_CSP).not.toMatch(/https?:|\*/);
   });
 
+  it("blocks WebRTC in the frame before the tool runs", () => {
+    expect(TOOL_CSP).toContain("webrtc 'block'");
+    const doc = buildToolDocument(CALCULATOR);
+    const blocker = doc.indexOf("RTCPeerConnection");
+    expect(blocker).toBeGreaterThan(-1);
+    expect(blocker).toBeLessThan(doc.indexOf(CALCULATOR));
+    const frame = { RTCPeerConnection: function peer() {} } as Record<string, unknown>;
+    new Function("window", doc.slice(doc.indexOf("<script>") + 8, doc.indexOf("</script>")))(frame);
+    expect(frame.RTCPeerConnection).toBeUndefined();
+    expect(() => { frame.RTCPeerConnection = function again() {}; }).toThrow();
+  });
+
   it("reports its height after the tool markup", () => {
     const doc = buildToolDocument(CALCULATOR);
     expect(doc.lastIndexOf(TOOL_HEIGHT_MESSAGE)).toBeGreaterThan(doc.indexOf(CALCULATOR));
@@ -69,6 +81,9 @@ describe("toolHtmlProblem", () => {
     ["window.open", "<script>window.open('https://example.com')</script>"],
     ["fetch", "<script>fetch('/api/x')</script>"],
     ["a handler that navigates", '<button onclick="location=\'https://example.com\'">Go</button>'],
+    ["a WebRTC peer", "<script>const pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.example.com'}]});</script>"],
+    ["a prefixed WebRTC peer", "<script>new webkitRTCPeerConnection({})</script>"],
+    ["a WebRTC data channel", '<button onclick="RTCDataChannel">Go</button>'],
   ])("rejects %s", (_name, html) => {
     expect(toolHtmlProblem(html)).toMatch(/reaches outside/);
   });

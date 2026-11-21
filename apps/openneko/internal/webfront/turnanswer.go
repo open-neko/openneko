@@ -368,6 +368,7 @@ var (
 		jsRe(`\bopen\s*\(`),
 		jsRe(`\bimport\s*\(`),
 		regexp.MustCompile(`\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|Worker|SharedWorker)\b`),
+		regexp.MustCompile(`\b(\w*RTCPeerConnection|RTCDataChannel|RTCIceCandidate|RTCSessionDescription)\b`),
 	}
 )
 
