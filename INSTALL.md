@@ -1289,6 +1289,11 @@ data folder, and the program is in `%LOCALAPPDATA%\Programs\OpenNeko`.
 Windows has no file modes, so OpenNeko gives
 these two folders, the secret key, `secrets.json`, the backup key and each
 backup a protected access list: only your account and SYSTEM can open them.
+A Windows socket takes the access list of its folder. Before serve, web,
+the key door and GraphJin listen on a socket, each one gives the socket's
+folder the same list, also when an `OPENNEKO_*_SOCKET` variable points
+outside the data folder. When it cannot, it does not listen and names the
+folder.
 The supervisor puts serve, web and GraphJin in a Windows job object, so they
 stop when the supervisor stops. `openneko stop` asks each process to stop
 and ends it when it does not. macOS keeps the Linux folders under your home

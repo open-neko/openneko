@@ -23,6 +23,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/llm"
 	"github.com/open-neko/neko/apps/openneko/internal/secrets"
 	"github.com/open-neko/neko/apps/openneko/internal/testsock"
+	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -201,5 +202,82 @@ func TestAnotherAccountCannotReachTheSocketsOrTheSecrets(t *testing.T) {
 	}
 	if err := as(t, other, readFile(probe)); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("the other account reads a user file: err = %v", err)
+	}
+}
+
+// lockedOpenFolder gives a folder an access list that lets every account in
+// and denies the current account the right to change it.
+func lockedOpenFolder(t *testing.T) string {
+	t.Helper()
+	dir := testsock.Dir(t)
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd, err := windows.SecurityDescriptorFromString("D:P(D;;WD;;;OW)(D;;WD;;;" + user.User.Sid.String() + ")(A;OICI;FA;;;WD)(A;OICI;FA;;;SY)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dacl, _, _ := sd.DACL()
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestSocketsInAnOpenFolderShutOutAnotherAccount(t *testing.T) {
+	other := otherAccount(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cleanServeEnv(t)
+	gjConfig := filepath.Join(t.TempDir(), "graphjin.yml")
+	if err := os.WriteFile(gjConfig, []byte("app_name: x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	listeners := map[string]func(string) error{
+		"serve": func(path string) error {
+			_, err := serveAgentTurns(ctx, io.Discard, path, 1, sandbox.Config{}, confine.State{})
+			return err
+		},
+		"config check": func(path string) error {
+			_, err := serveConfigCheck(ctx, io.Discard, path, gjConfig)
+			return err
+		},
+		"key door": func(path string) error {
+			_, err := llm.ListenDoor(ctx, path, &llm.KeyDoor{})
+			return err
+		},
+		"web admin": func(path string) error {
+			stop, err := serveWebAdmin(path, http.NotFoundHandler())
+			if err == nil {
+				t.Cleanup(stop)
+			}
+			return err
+		},
+	}
+	for name, listen := range listeners {
+		open := openFolder(t)
+		path := filepath.Join(open, "x.sock")
+		if err := listen(path); err != nil {
+			t.Fatalf("%s: listen in a folder the account may limit: %v", name, err)
+		}
+		if err := ownacl.Verify(open); err != nil {
+			t.Errorf("%s: the socket folder stays open: %v", name, err)
+		}
+		if err := dial(path)(); err != nil {
+			t.Fatalf("%s: the owner cannot connect: %v", name, err)
+		}
+		if err := as(t, other, dial(path)); err == nil {
+			t.Errorf("%s: the other account connects to a socket in a folder that was open", name)
+		}
+
+		locked := lockedOpenFolder(t)
+		path = filepath.Join(locked, "x.sock")
+		if err := listen(path); err == nil {
+			t.Errorf("%s: listens in a folder that stays open to every account", name)
+		} else if _, statErr := os.Lstat(path); statErr == nil {
+			t.Errorf("%s: refused, but left a socket at %s", name, path)
+		}
 	}
 }

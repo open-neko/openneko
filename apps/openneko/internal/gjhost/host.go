@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/serv/v3"
+
+	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
 )
 
 const (
@@ -63,6 +65,9 @@ func Serve(ctx context.Context, configFile, addr string, log io.Writer) error {
 
 func listen(addr string) (net.Listener, error) {
 	if path, ok := strings.CutPrefix(addr, "unix:"); ok {
+		if err := ownacl.SocketFolder(path); err != nil {
+			return nil, err
+		}
 		_ = os.Remove(path)
 		return net.Listen("unix", path)
 	}
