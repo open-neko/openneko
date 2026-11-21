@@ -23,7 +23,10 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 )
 
-const confineProbeEnv = "OPENNEKO_TEST_CONFINE_PROBE"
+const (
+	confineProbeEnv        = "OPENNEKO_TEST_CONFINE_PROBE"
+	confineProbeControlEnv = "OPENNEKO_TEST_CONFINE_PROBE_CONTROL"
+)
 
 // requireLandlock fails in CI and skips elsewhere when the kernel has no
 // Landlock, so a runner that cannot prove the confinement shows red.
@@ -74,12 +77,15 @@ func TestConfineProbeChild(t *testing.T) {
 	var st confine.State
 	var start turnHostStart
 	var err error
+	if os.Getenv(confineProbeControlEnv) == "1" {
+		serveAvailable = func() confine.State { return confine.State{Mechanism: "landlock", Reason: "the control of the probe"} }
+	}
 	if in.Part == "host" {
 		t.Setenv("OPENNEKO_SANDBOX_KEY", "")
 		t.Setenv("OPENNEKO_SANDBOX_KEY_FILE", in.KeyFile)
-		st, start, err = confineTurnHost(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
+		st, start, err = confineTurnHost(&log, f)
 	} else {
-		st, err = confineServe(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
+		st, err = confineServe(&log, f)
 	}
 	out := probeResult{Refused: map[string]bool{}, Allowed: map[string]bool{}}
 	out.Notes = append(out.Notes, strings.TrimSpace(log.String()), fmt.Sprintf("state %s, err %v", st, err))
@@ -288,10 +294,9 @@ func probeServePart(t *testing.T, l native.Layout, home, configDir string, env m
 		cmd := exec.Command(os.Args[0], "-test.run=^TestConfineProbeChild$", "-test.count=1")
 		cmd.Env = append(os.Environ(), confineProbeEnv+"="+string(in), "HOME="+home, "XDG_CONFIG_HOME="+filepath.Dir(configDir),
 			"TMPDIR="+l.Tmp(), "OPENNEKO_AGENT_RUNS_DIR="+l.AgentRuns(), "OPENNEKO_KEY_DOOR_SOCKET="+env["OPENNEKO_KEY_DOOR_SOCKET"])
+		cmd.Env = append(cmd.Env, "OPENNEKO_ENV=production")
 		if mode == "control" {
-			cmd.Env = append(cmd.Env, "OPENNEKO_ENV=development", serveConfineEnv+"=off")
-		} else {
-			cmd.Env = append(cmd.Env, "OPENNEKO_ENV=production", serveConfineEnv+"=")
+			cmd.Env = append(cmd.Env, confineProbeControlEnv+"=1")
 		}
 		raw, err := cmd.Output()
 		var res probeResult
@@ -360,18 +365,6 @@ type unixDialer struct{ path string }
 func (d *unixDialer) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 	var nd net.Dialer
 	return nd.DialContext(ctx, "unix", d.path)
-}
-
-func TestServeRefusesToStartUnconfinedInProduction(t *testing.T) {
-	t.Setenv(serveConfineEnv, "off")
-	if _, err := confineServe(io.Discard, serveFolders{}, false); err == nil || !strings.Contains(err.Error(), "works only with OPENNEKO_ENV=development") {
-		t.Fatalf("production with %s=off: %v", serveConfineEnv, err)
-	}
-	var out bytes.Buffer
-	st, err := confineServe(&out, serveFolders{}, true)
-	if err != nil || st.Confined || !strings.Contains(out.String(), "runs unconfined") {
-		t.Fatalf("development with %s=off: %v, %v, %q", serveConfineEnv, st, err, out.String())
-	}
 }
 
 func TestServeSpecKeepsOnlyServesFolders(t *testing.T) {

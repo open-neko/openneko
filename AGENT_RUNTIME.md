@@ -463,9 +463,8 @@ can still connect to a named socket, so:
 
 On a Linux kernel with no Landlock, both parts start unconfined and say so,
 so that data reads, the web app and workflows without an agent step still
-work. In production mode serve then refuses every agent turn (see the next
-section). A kernel that has Landlock and fails to apply it stops serve in
-production mode.
+work. Serve then refuses every agent turn (see the next section). A kernel
+that has Landlock and fails to apply it stops serve in every mode.
 
 Serve's network does not change: Landlock here governs files only.
 
@@ -486,14 +485,14 @@ process record of every process of the same account.
 
 When macOS has no `sandbox_init`, the network part starts unconfined and
 says so, as on a Linux kernel with no Landlock. When macOS refuses the
-profile, serve stops in production mode. The proof tests
+profile, serve stops in every mode. The proof tests
 (`TestConfinedServeNetworkPart`, `TestServeNetworkPartFailsClosed`) run on
 macOS 15 on every push.
 
 ### On every system
 
-`OPENNEKO_SERVE_CONFINE=off` turns the confinement off in development mode
-only. `openneko release-check --serve-socket` prints `serve_confinement`
+No mode, setting, flag or variable turns the confinement off, also in
+development mode. `openneko release-check --serve-socket` prints `serve_confinement`
 (the turn part), `serve_network_confinement` and `runner_confinement`, and
 fails when a part that the system can confine runs unconfined in production
 mode. The status page shows the state under "Agent confinement". On
@@ -633,13 +632,14 @@ it opened (ABI 5). The lowest kernel for agent turns is Linux 5.13 (ABI 1)
 with `landlock` in the active security modules.
 
 Fail closed: when Landlock or seccomp is missing, serve refuses every agent
-turn in production mode. Each refused turn, the start of serve, the status
+turn in every mode. Each refused turn, the start of serve, the status
 page and `openneko doctor` show one line, for example "agent confinement:
 off. Linux 4.18.0 has no Landlock: use kernel 5.13 or later with landlock in
-the lsm= boot list, so agent turns are off". The line tells a kernel with no
+the lsm= boot list, so agent turns are off (INSTALL.md, "Agent
+confinement")". The line tells a kernel with no
 Landlock apart from a kernel that has it off (`EOPNOTSUPP`) and from a
-container engine that blocks the calls. No setting turns agent turns on
-without the confinement in production mode. `openneko release-check
+container engine that blocks the calls. No setting, flag or variable turns
+agent turns on without the confinement, in any mode. `openneko release-check
 --serve-socket` prints `runner_confinement=landlock+seccomp ABI <n>` and
 fails when a turn would run unconfined. A runner that cannot confine itself
 ends the turn with an error and runs no agent code.
@@ -699,7 +699,7 @@ environment of each process with no confinement (`kern.procargs2` on
 macOS, `/proc` on Linux).
 
 Fail closed: with no `sandbox_init`, or a profile that macOS refuses,
-serve refuses every agent turn in production mode with the same lines as
+serve refuses every agent turn in every mode with the same lines as
 on Linux (start, status page, doctor, each refused turn, and
 `release-check --serve-socket`, which prints `runner_confinement=seatbelt`).
 

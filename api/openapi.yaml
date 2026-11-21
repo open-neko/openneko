@@ -53,63 +53,6 @@ components:
       in: header
       name: X-Webhook-Token
   schemas:
-    UnconfinedTurns:
-      type: object
-      required:
-      - setting
-      - system
-      - applies
-      - commands
-      additionalProperties: false
-      properties:
-        applies:
-          type: boolean
-        notApplied:
-          type: string
-        commands:
-          type: object
-          required:
-          - allow
-          - deny
-          properties:
-            allow:
-              type: string
-            deny:
-              type: string
-        setting:
-          type: object
-          required:
-          - "on"
-          properties:
-            "on":
-              type: boolean
-            host:
-              type: string
-            kernel:
-              type: string
-            missing:
-              type: string
-            reason:
-              type: string
-            hostUser:
-              type: string
-            at:
-              type: string
-        system:
-          type: object
-          required:
-          - available
-          properties:
-            available:
-              type: boolean
-            blocked:
-              type: string
-            host:
-              type: string
-            kernel:
-              type: string
-            reason:
-              type: string
     ChannelReplyPlaces:
       type: object
       additionalProperties: false
@@ -8549,36 +8492,6 @@ paths:
                 properties:
                   error:
                     type: string
-  /settings/agent/unconfined:
-    get:
-      operationId: getSettingsAgentUnconfined
-      tags:
-      - settings
-      summary: Read the host override that runs agent turns without OS confinement
-      description: Denied by default. Only the host operator changes it, with `openneko confinement allow-unconfined` or `deny` on the host; no route of the API changes it. It applies only to the host id and kernel it was given for, and only while serve reports that the host cannot confine agent turns.
-      x-access: admin
-      security:
-      - session: []
-      - deviceToken: []
-      responses:
-        '200':
-          description: The override, whether it applies, and the host commands that change it
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UnconfinedTurns'
-        '401':
-          description: The session or device token is not valid
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '403':
-          description: The caller is not an admin
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
   /settings/channel-identities:
     get:
       operationId: getSettingsChannelIdentities

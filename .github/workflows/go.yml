@@ -91,7 +91,7 @@ jobs:
           set -euo pipefail
           uname -r
           cat /sys/kernel/security/lsm || true
-          tests=(TestEveryThreadIsConfined TestConfinedServeOneAccount TestServeRefusesToStartUnconfinedInProduction
+          tests=(TestEveryThreadIsConfined TestConfinedServeOneAccount TestServeRefusesToStartUnconfinedInEveryMode
             TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined
             TestDoctorNamesTheConfinementAndTheModules TestNoLandlockNamesTheCause TestRunnerFilterRefusesTheListedCalls
             TestRunnerThreadFloodStaysInTheRunner)

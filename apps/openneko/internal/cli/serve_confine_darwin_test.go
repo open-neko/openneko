@@ -73,10 +73,10 @@ func TestServeNetworkProbeChild(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &in); err != nil {
 		t.Fatal(err)
 	}
-	confine.SetForTest(in.Mode == "nosandbox", in.Loosen)
+	confine.SetForTest(in.Mode == "nosandbox" || in.Mode == "control", in.Loosen)
 	f := serveFolders{files: in.Files, index: in.Index, subsDir: in.Subs, gjConfig: in.GraphJin, checkSocket: in.Check}
 	var log bytes.Buffer
-	st, err := confineServe(&log, f, in.Mode == "control")
+	st, err := confineServe(&log, f)
 	out := probeResult{Refused: map[string]bool{}, Allowed: map[string]bool{}, Errors: map[string]string{}}
 	out.Notes = append(out.Notes, strings.TrimSpace(log.String()), fmt.Sprintf("state %s, err %v", st, err))
 	if err != nil {
@@ -283,11 +283,7 @@ func runNetworkProbe(t *testing.T, tg networkTargets, mode string) (probeResult,
 	raw, _ := json.Marshal(in)
 	cmd := exec.Command(os.Args[0], "-test.run=^TestServeNetworkProbeChild$", "-test.count=1")
 	cmd.Env = append(os.Environ(), networkProbeEnv+"="+string(raw), "HOME="+tg.home, "TMPDIR="+tg.tmp)
-	if mode == "control" {
-		cmd.Env = append(cmd.Env, "OPENNEKO_ENV=development", serveConfineEnv+"=off")
-	} else {
-		cmd.Env = append(cmd.Env, "OPENNEKO_ENV=production", serveConfineEnv+"=")
-	}
+	cmd.Env = append(cmd.Env, "OPENNEKO_ENV=production")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()

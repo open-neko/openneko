@@ -32,16 +32,6 @@ func (a *API) confinementService() externalService {
 				return "", "", err
 			}
 			if st.turnsOff != "" {
-				setting, err := a.unconfinedTurnsSetting(ctx)
-				if err != nil {
-					return "", "", fmt.Errorf("%s; the admin setting for turns without confinement cannot be read: %w", st.turnsOff, err)
-				}
-				if setting.appliesTo(st) {
-					return "", "", errors.New(setting.line())
-				}
-				if why := setting.notHere(st); why != "" {
-					return "", "", fmt.Errorf("%s. The override for agent turns without OS confinement does not apply: %s", st.turnsOff, why)
-				}
 				return "", "", errors.New(st.turnsOff)
 			}
 			if !st.runner.Confined && st.runner.Mechanism != "" {

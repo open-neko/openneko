@@ -15,8 +15,8 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 
 - PostgreSQL 16 or later with the `vector` extension (pgvector 0.6.0 or later) for production and native installs (`--mode demo` and `--mode dev` run a bundled Postgres container)
 - An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
-- On Linux, for agent turns: kernel 5.13 or later with `landlock` in the active security modules, and seccomp. Without them, OpenNeko starts but refuses every agent turn in production mode. See [Agent confinement](#agent-confinement-linux).
-- On macOS, for agent turns: the system call `sandbox_init`, which macOS 15 has. Without it, OpenNeko starts but refuses every agent turn in production mode. See [Agent confinement (macOS)](#agent-confinement-macos).
+- On Linux, for agent turns: kernel 5.13 or later with `landlock` in the active security modules, and seccomp. Without them, OpenNeko starts but refuses every agent turn. See [Agent confinement](#agent-confinement-linux).
+- On macOS, for agent turns: the system call `sandbox_init`, which macOS 15 has. Without it, OpenNeko starts but refuses every agent turn. See [Agent confinement (macOS)](#agent-confinement-macos).
 
 ## Install
 
@@ -471,8 +471,8 @@ setting.
 
 `openneko web` runs chat, channel and workflow agent turns in Go. It stages each
 run's files in a private folder under `OPENNEKO_AGENT_RUNS_DIR` and sends the
-turn to `openneko serve` over a Unix socket (`OPENNEKO_SERVE_SOCKET`), or runs
-the Ax harness in-process when no socket is set. The model keys stay in
+turn to `openneko serve` over a Unix socket (`OPENNEKO_SERVE_SOCKET`). With no
+socket set, agent turns are off. The model keys stay in
 `openneko web` ([Model keys](#model-keys)). The agent reads and writes files in its run folder and reaches data only through
 `openneko web`'s tool handlers. The agent has a terminal only when a sandbox is
 connected.
@@ -483,10 +483,9 @@ On Linux, each agent turn runs in an `openneko agent-runner` process that
 confines itself with Landlock and a seccomp filter before agent code runs
 ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-runner-confines-itself-linux)).
 Without both, `openneko serve` still starts, unconfined, and refuses every
-agent turn in production mode. The web app, data reads, host model calls,
-embeddings and workflows without an agent step still work.
-The host operator can allow agent turns without confinement
-([Agent turns without confinement](#agent-turns-without-confinement)).
+agent turn. The web app, data reads, host model calls, embeddings and
+workflows without an agent step still work. No mode, setting, flag or
+variable runs agent turns without the confinement, also in development mode.
 
 The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
 small gaps: rename and link between folders (Linux 5.19) and ioctl on a
@@ -572,50 +571,11 @@ OpenNeko as an account of its own on a shared Mac.
 
 ### Agent confinement (Windows)
 
-Windows has no agent confinement yet. In production mode, `openneko serve`
-refuses every agent turn. The start line, the status page, `openneko doctor`
+Windows has no agent confinement yet, so `openneko serve` refuses every
+agent turn in every mode. The start line, the status page, `openneko doctor`
 and `openneko release-check --serve-socket` say "agent confinement: not
-available on this system yet". The host operator can allow agent turns
-without confinement ([Agent turns without confinement](#agent-turns-without-confinement)).
-
-### Agent turns without confinement
-
-On a host that cannot confine agent turns, the host operator can let them
-run without OS confinement. This applies to Linux without Landlock or
-seccomp, macOS without `sandbox_init`, and Windows. The agent then can read
-the files and reach the network of the OpenNeko account, also the secret key
-and the database login.
-
-Run the command on the host, as the account that owns the install, or as
-root for a server install. In a Docker install, run it where you run
-`docker compose`; it names your host user.
-
-```sh
-openneko confinement allow-unconfined --reason "RHEL 8, no Landlock until the kernel upgrade"
-openneko confinement status
-openneko confinement deny
-```
-
-The web app and the API show the state and the commands. They cannot change
-it, and no environment variable, pack, member or agent run can set it.
-
-The override holds only for the host id (the machine id, the macOS platform
-UUID or the Windows machine GUID) and the kernel it was given for, and only
-while serve reports that the host cannot confine agent turns. After a move
-to another host or a kernel upgrade, it does not apply, and the status page
-and `openneko doctor` say why.
-
-While the override applies:
-
-- The audit chain of each organization records each allow and deny, with
-  the host user, the host, the host id, the kernel, the reason that
-  confinement is missing and the reason the operator gave.
-- Serve logs one line at its first turn without confinement after each
-  start, and web logs one line for each such turn.
-- Each run record and each agent job record stores `ran_unconfined`.
-- The status page and `openneko doctor` show the state as a failure.
-- `openneko release-check --serve-socket` fails. Add `--allow-unconfined`
-  to accept the state; it then prints `unconfined_turns=on`.
+available on this system yet" and tell you to run serve on Linux or macOS
+for agent turns. The web app, sign-in, data reads and host model calls work.
 
 ### Model keys
 
@@ -1482,8 +1442,7 @@ The agent does not run in either service. Serve starts a confined runner
 for each agent turn. The runner opens no socket, runs no program and reads
 only the folders of its turn and the time zone data. Its environment holds only `PATH` and
 `TMPDIR`. See [Agent confinement](#agent-confinement-linux). On a kernel
-that cannot confine it, serve refuses every agent turn until an admin turns
-them on without confinement.
+that cannot confine it, serve refuses every agent turn.
 
 Before each start, web runs the database check, the migrations and serve's
 credentials step. Put extra settings for a service in

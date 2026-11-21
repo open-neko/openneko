@@ -84,7 +84,7 @@ func newServeCmd() *cobra.Command {
 			if err := os.Setenv("TMPDIR", tmp.Turns); err != nil {
 				return err
 			}
-			hostState, start, err := confineTurnHost(cmd.ErrOrStderr(), serveFolders{agentRuns: webfront.AgentRunsDir(), agentSocket: agentSocket, sandboxURL: sandboxURL}, development)
+			hostState, start, err := confineTurnHost(cmd.ErrOrStderr(), serveFolders{agentRuns: webfront.AgentRunsDir(), agentSocket: agentSocket, sandboxURL: sandboxURL})
 			if err != nil {
 				return err
 			}

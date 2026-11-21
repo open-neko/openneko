@@ -138,9 +138,6 @@ func (a *API) runAgentCore(ctx context.Context, in agentCoreInput) (axRunResult,
 	if o.Door, err = a.keyDoor(in.Socket); err != nil {
 		return axRunResult{}, err
 	}
-	if o.Unconfined, err = a.turnRunsUnconfined(ctx, in.Socket, unconfinedRecord{workRun: in.RunID}); err != nil {
-		return axRunResult{}, err
-	}
 	if in.Shell && a.DB != nil {
 		if o.EgressHosts, err = a.orgEgressHosts(ctx, in.OrgID); err != nil {
 			return axRunResult{}, err

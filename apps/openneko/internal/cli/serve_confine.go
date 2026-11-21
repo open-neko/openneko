@@ -16,10 +16,6 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
-const (
-	serveConfineEnv = "OPENNEKO_SERVE_CONFINE"
-)
-
 type serveFolders struct {
 	dsn, files, index, agentRuns, subsDir, subsURLFile, gjConfig, duckdb string
 	agentSocket, checkSocket, sandboxURL, gjSocket, subsSocket           string
@@ -101,12 +97,12 @@ type turnHostStart struct {
 
 // confineTurnHost confines the part of serve that starts agent runners where
 // the OS lets a confined process start a runner that confines itself.
-func confineTurnHost(out io.Writer, f serveFolders, development bool) (confine.State, turnHostStart, error) {
+func confineTurnHost(out io.Writer, f serveFolders) (confine.State, turnHostStart, error) {
 	start := turnHostStart{sandbox: sandbox.Config{URL: f.sandboxURL, Key: secretenv.Get("OPENNEKO_SANDBOX_KEY")}, hostID: confine.HostID()}
 	if !confine.Stacks {
 		return confine.State{Reason: fmt.Sprintf("on %s the agent runners confine themselves, and a confined process cannot start them", confine.Kernel())}, start, nil
 	}
-	st, err := confinePart(out, "the agent turn part of openneko serve", hostSpec(f), []string{os.TempDir(), f.agentRuns}, development)
+	st, err := confinePart(out, "the agent turn part of openneko serve", hostSpec(f), []string{os.TempDir(), f.agentRuns})
 	return st, start, err
 }
 
@@ -115,12 +111,12 @@ func confineTurnHost(out io.Writer, f serveFolders, development bool) (confine.S
 // every agent turn; host calls, data reads and the rest still run.
 // Production refuses to start only when a system that can confine refuses
 // the rules.
-func confineServe(out io.Writer, f serveFolders, development bool) (confine.State, error) {
+func confineServe(out io.Writer, f serveFolders) (confine.State, error) {
 	dirs := []string{os.TempDir(), f.files, f.index, f.subsDir}
 	if f.checkSocket != "" {
 		dirs = append(dirs, filepath.Dir(f.checkSocket))
 	}
-	return confinePart(out, "the network part of openneko serve", serveSpec(f), dirs, development)
+	return confinePart(out, "the network part of openneko serve", serveSpec(f), dirs)
 }
 
 // networkSocketFolder refuses a config check socket in a folder that holds,
@@ -144,18 +140,9 @@ func networkSocketFolder(check string, kept ...string) error {
 	return nil
 }
 
-// confinePart confines a part of serve for good. Production refuses to start
-// when the system has the confinement and fails to give it; development
-// starts unconfined and says so.
-func confinePart(out io.Writer, name string, spec confine.Spec, dirs []string, development bool) (confine.State, error) {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv(serveConfineEnv)), "off") {
-		if !development {
-			return confine.State{}, fmt.Errorf("%s=off works only with OPENNEKO_ENV=development; remove it", serveConfineEnv)
-		}
-		st := confine.State{Reason: serveConfineEnv + "=off in development mode"}
-		fmt.Fprintf(out, "warning: %s runs unconfined: %s\n", name, st.Reason)
-		return st, nil
-	}
+// confinePart confines a part of serve for good. Serve refuses to start when
+// the system has the confinement and fails to give it.
+func confinePart(out io.Writer, name string, spec confine.Spec, dirs []string) (confine.State, error) {
 	for _, dir := range dirs {
 		if dir != "" {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -166,7 +153,7 @@ func confinePart(out io.Writer, name string, spec confine.Spec, dirs []string, d
 	st := serveAvailable()
 	var err error
 	if st.Confined {
-		st, err = confine.Apply(spec)
+		st, err = serveApply(spec)
 	} else {
 		err = fmt.Errorf("%w: %s", confine.ErrUnsupported, st.Reason)
 	}
@@ -177,7 +164,7 @@ func confinePart(out io.Writer, name string, spec confine.Spec, dirs []string, d
 		}
 		return st, nil
 	}
-	if !errors.Is(err, confine.ErrUnsupported) && st.Mechanism != "" && !development {
+	if !errors.Is(err, confine.ErrUnsupported) && st.Mechanism != "" {
 		return st, fmt.Errorf("%s cannot confine itself: %w", name, err)
 	}
 	st.Confined, st.Reason = false, err.Error()
@@ -187,49 +174,35 @@ func confinePart(out io.Writer, name string, spec confine.Spec, dirs []string, d
 
 var (
 	serveAvailable  = confine.Available
+	serveApply      = confine.Apply
 	runnerAvailable = confine.RunnerAvailable
 )
 
-// runnerConfinement tells how each agent runner will be confined. On Linux
-// in production mode a runner that cannot be confined runs no turn: turnsOff
-// then holds the line that each refused turn shows.
-func runnerConfinement(out io.Writer, development bool) (st confine.State, confineRunner bool, turnsOff string) {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv(serveConfineEnv)), "off") {
-		st = confine.State{Reason: serveConfineEnv + "=off in development mode"}
-		fmt.Fprintf(out, "warning: agent runners run unconfined: %s\n", st.Reason)
-		return st, false, ""
-	}
+// runnerConfinement tells how each agent runner will be confined. A runner
+// that cannot be confined runs no turn, in every mode: turnsOff then holds
+// the line that each refused turn shows.
+func runnerConfinement(out io.Writer) (st confine.State, turnsOff string) {
 	st = runnerAvailable()
-	switch {
-	case st.Confined:
+	if st.Confined {
 		fmt.Fprintf(out, "each agent runner confines itself: %s\n", st)
 		if len(st.Gaps) > 0 {
 			fmt.Fprintf(out, "agent runner gaps on this system: %s\n", strings.Join(st.Gaps, "; "))
 		}
-		return st, true, ""
-	case st.Mechanism == "" && development:
-		fmt.Fprintf(out, "warning: %s (%s); agent turns run unconfined in development mode\n", confine.NotAvailable, st.Reason)
-		return st, false, ""
-	case development:
-		fmt.Fprintf(out, "warning: agent runners run unconfined in development mode: %s\n", st.Reason)
-		return st, false, ""
+		return st, ""
 	}
 	turnsOff = turnsOffLine(st)
 	fmt.Fprintln(out, turnsOff)
-	fmt.Fprintln(out, unconfinedHint)
-	return st, false, turnsOff
+	return st, turnsOff
 }
 
 // turnsOffLine is the one line that the start, the status page, doctor and
 // each refused turn show when agent runners cannot be confined.
 func turnsOffLine(st confine.State) string {
 	if st.Mechanism == "" {
-		return fmt.Sprintf("%s (%s), so agent turns are off", confine.NotAvailable, st.Reason)
+		return fmt.Sprintf(`%s (%s), so agent turns are off. Run openneko serve on Linux or macOS for agent turns (INSTALL.md, "Agent confinement").`, confine.NotAvailable, st.Reason)
 	}
-	return fmt.Sprintf("agent confinement: off. %s, so agent turns are off", st.Reason)
+	return fmt.Sprintf(`agent confinement: off. %s, so agent turns are off (INSTALL.md, "Agent confinement").`, st.Reason)
 }
-
-const unconfinedHint = `the host operator can allow agent turns without OS confinement on this host: openneko confinement allow-unconfined --reason "..." (INSTALL.md, "Agent confinement")`
 
 // postgresCertPaths lists where the Postgres client looks for TLS files: the
 // URL, the PG variables and ~/.postgresql.

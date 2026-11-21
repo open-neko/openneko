@@ -24,7 +24,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
-	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
@@ -223,7 +222,7 @@ func runNetworkPart(ctx context.Context, stdout, stderr io.Writer, in networkSta
 		}
 		defer os.RemoveAll(in.TempDir)
 	}
-	confinement, err := confineServe(stderr, in.folders(), webfront.Development())
+	confinement, err := confineServe(stderr, in.folders())
 	if err != nil {
 		return err
 	}

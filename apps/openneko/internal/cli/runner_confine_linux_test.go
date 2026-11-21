@@ -625,23 +625,25 @@ func TestRunnerRefusesATurnWhenItCannotConfine(t *testing.T) {
 }
 
 func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
-	t.Setenv(serveConfineEnv, "")
 	kernelLacks := confine.State{Mechanism: "landlock+seccomp", Reason: "Linux 4.18.0 has no Landlock: use kernel 5.13 or later with landlock in the lsm= boot list"}
 	defer func(old func() confine.State) { runnerAvailable = old }(runnerAvailable)
 	runnerAvailable = func() confine.State { return kernelLacks }
 
 	var log strings.Builder
-	st, confineIt, off := runnerConfinement(&log, false)
-	want := "agent confinement: off. Linux 4.18.0 has no Landlock: use kernel 5.13 or later with landlock in the lsm= boot list, so agent turns are off"
-	if off != want || confineIt || st.Confined || !strings.Contains(log.String(), want) {
-		t.Fatalf("production: off=%q confine=%v log=%q", off, confineIt, log.String())
+	st, off := runnerConfinement(&log)
+	want := "agent confinement: off. Linux 4.18.0 has no Landlock: use kernel 5.13 or later with landlock in the lsm= boot list, so agent turns are off (INSTALL.md, \"Agent confinement\")."
+	if off != want || st.Confined || !strings.Contains(log.String(), want) {
+		t.Fatalf("production: off=%q log=%q", off, log.String())
 	}
-	if _, _, off := runnerConfinement(io.Discard, true); off != "" {
-		t.Fatalf("development mode turned turns off: %q", off)
+	t.Setenv("OPENNEKO_ENV", "development")
+	t.Setenv("OPENNEKO_SERVE_CONFINE", "off")
+	if _, off := runnerConfinement(io.Discard); off != want {
+		t.Fatalf("development mode with OPENNEKO_SERVE_CONFINE=off: off=%q", off)
 	}
+	t.Setenv("OPENNEKO_ENV", "production")
 	runnerAvailable = func() confine.State { return confine.State{Reason: "confinement on darwin is not built yet"} }
-	if _, confineIt, off := runnerConfinement(io.Discard, false); off != confine.NotAvailable+" (confinement on darwin is not built yet), so agent turns are off" || confineIt {
-		t.Fatalf("a system with no runner confinement built yet: off=%q confine=%v", off, confineIt)
+	if _, off := runnerConfinement(io.Discard); !strings.HasPrefix(off, confine.NotAvailable+" (confinement on darwin is not built yet), so agent turns are off.") {
+		t.Fatalf("a system with no runner confinement built yet: off=%q", off)
 	}
 
 	runnerAvailable = func() confine.State { return kernelLacks }
