@@ -487,7 +487,7 @@ func (a *API) createActionRequestInGo(ctx context.Context, in *jsObj) (*jsObj, e
 		return nil, err
 	}
 
-	facts := a.approvalFactsFor(ctx, orgID, kind, target, payloadObj)
+	facts := a.approvalFactsFor(ctx, orgID, kind, payloadObj)
 	return jsObjOf("id", record.ID, "status", record.Status, "facts", jsFromGo(facts)), nil
 }
 

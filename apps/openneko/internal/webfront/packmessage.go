@@ -3,6 +3,7 @@ package webfront
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -81,7 +82,8 @@ var slackFetchKeys = map[string]bool{"image_url": true, "thumb_url": true, "thum
 var urlShaped = regexp.MustCompile(`(?i)^\s*(?:[a-z][a-z0-9+.-]*://|//|data:|www\.)`)
 
 // slackURLProblem refuses every URL in blocks and attachments except the
-// url of a button or a link element whose shown text names its host.
+// url of a button, which the approval card shows with its host, and of a
+// link element whose text, if it has one, names its host.
 func slackURLProblem(v any, key, parentType string) string {
 	switch x := v.(type) {
 	case string:
@@ -102,7 +104,7 @@ func slackURLProblem(v any, key, parentType string) string {
 				if !valid {
 					return fmt.Sprintf("the %s link %q is not an http, https or mailto link", t, u)
 				}
-				if shown := slackShownText(x.vals["text"]); (shown != "" || t == "button") && !showsHost(shown, host) {
+				if shown := slackShownText(x.vals["text"]); t == "link" && shown != "" && !showsHost(shown, host) {
 					return fmt.Sprintf("the %s text %q hides its host %s; name the host in the text", t, shown, host)
 				}
 			}
@@ -454,14 +456,23 @@ func rawMIMEProblem(v any) string {
 	return ""
 }
 
-func mimeMessageProblem(raw string) string {
+var errRawNotBase64 = errors.New("the raw message is not base64")
+
+func decodeRawMessage(raw string) (*mail.Message, error) {
 	data, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(strings.TrimSpace(raw), "="))
 	if err != nil {
 		if data, err = base64.StdEncoding.DecodeString(strings.TrimSpace(raw)); err != nil {
-			return "the raw message is not base64"
+			return nil, errRawNotBase64
 		}
 	}
-	msg, err := mail.ReadMessage(bytes.NewReader(data))
+	return mail.ReadMessage(bytes.NewReader(data))
+}
+
+func mimeMessageProblem(raw string) string {
+	msg, err := decodeRawMessage(raw)
+	if errors.Is(err, errRawNotBase64) {
+		return err.Error()
+	}
 	if err != nil {
 		return "the raw message does not parse as an email"
 	}

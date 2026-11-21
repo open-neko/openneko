@@ -315,7 +315,7 @@ export default function ActionPage() {
           meta={OUTCOME_LABEL[outcome]}
           description={[
             ar.kind,
-            ar.target,
+            ar.target ? `The agent's target: ${ar.target}` : null,
             ar.riskLevel ? `${ar.riskLevel.charAt(0).toUpperCase()}${ar.riskLevel.slice(1)} risk` : null,
             formatRelative(ar.createdAt),
           ]
