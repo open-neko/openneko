@@ -231,15 +231,16 @@ func (a *API) upsertWatcher(ctx context.Context, orgID string, wf workflowRecord
 	valuePath, _ := jsGet(watch, "value_path").(string)
 	description := `Watcher for workflow "` + wf.Name + `"`
 	var id string
-	err := a.DB.QueryRow(ctx, `with found as (select id from watcher where org_id = $1 and name = $2 limit 1),
+	err := a.DB.QueryRow(ctx, `with found as (select id from watcher where org_id = $1 and workflow_id = $3 order by created_at limit 1),
 		changed as (
-		  update watcher set workflow_id = $3, description = $4, enabled = true, query = $5, value_path = $6, op = $7,
+		  update watcher set description = $4, enabled = true, query = $5, value_path = $6, op = $7,
 		    threshold = $8::jsonb, cadence_seconds = $9, debounce_seconds = $10, severity = $11, updated_at = now()
 		  where id = (select id from found) returning id),
 		added as (
 		  insert into watcher (org_id, name, workflow_id, description, enabled, query, value_path, op, threshold,
 		    cadence_seconds, debounce_seconds, severity)
-		  select $1, $2, $3, $4, true, $5, $6, $7, $8::jsonb, $9, $10, $11 where not exists (select 1 from found)
+		  select $1, case when exists (select 1 from watcher where org_id = $1 and name = $2) then $2 || ' (' || left($3::text, 8) || ')' else $2 end,
+		    $3, $4, true, $5, $6, $7, $8::jsonb, $9, $10, $11 where not exists (select 1 from found)
 		  returning id)
 		select id::text from changed union all select id::text from added`,
 		orgID, wf.Name, wf.ID, description, query, valuePath, op, threshold, int(max(60, cadence)), int(max(0, debounce)),
