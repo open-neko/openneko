@@ -172,8 +172,8 @@ func runnerConfinement(out io.Writer, development bool) (st confine.State, confi
 			fmt.Fprintf(out, "agent runner gaps on this system: %s\n", strings.Join(st.Gaps, "; "))
 		}
 		return st, true, ""
-	case st.Mechanism == "":
-		fmt.Fprintf(out, "warning: %s (%s); agent turns run unconfined\n", confine.NotAvailable, st.Reason)
+	case st.Mechanism == "" && development:
+		fmt.Fprintf(out, "warning: %s (%s); agent turns run unconfined in development mode\n", confine.NotAvailable, st.Reason)
 		return st, false, ""
 	case development:
 		fmt.Fprintf(out, "warning: agent runners run unconfined in development mode: %s\n", st.Reason)
@@ -181,14 +181,20 @@ func runnerConfinement(out io.Writer, development bool) (st confine.State, confi
 	}
 	turnsOff = turnsOffLine(st)
 	fmt.Fprintln(out, turnsOff)
+	fmt.Fprintln(out, unconfinedHint)
 	return st, false, turnsOff
 }
 
 // turnsOffLine is the one line that the start, the status page, doctor and
 // each refused turn show when agent runners cannot be confined.
 func turnsOffLine(st confine.State) string {
+	if st.Mechanism == "" {
+		return fmt.Sprintf("%s (%s), so agent turns are off", confine.NotAvailable, st.Reason)
+	}
 	return fmt.Sprintf("agent confinement: off. %s, so agent turns are off", st.Reason)
 }
+
+const unconfinedHint = `an admin can run agent turns without OS confinement on this system: Admin, Settings, Agent, "Run agent turns without OS confinement on this system" (INSTALL.md, "Agent confinement")`
 
 // postgresCertPaths lists where the Postgres client looks for TLS files: the
 // URL, the PG variables and ~/.postgresql.
