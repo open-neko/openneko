@@ -516,15 +516,31 @@ func (a *API) followSubscription(ctx context.Context, sub liveSubscription, acke
 	}
 	endpoint := subscriptionsGraphjinURL()
 	var sc sourceChange
+	initPayload := map[string]any{}
 	if sub.SourceKind == "source_change" {
 		var f map[string]any
 		_ = json.Unmarshal(sub.Filter, &f)
 		sc, _ = parseSourceChange(f)
-		_, u, err := a.orgDataSource(ctx, sub.OrgID)
+		id, u, err := a.orgDataSource(ctx, sub.OrgID)
 		if err != nil {
 			return err
 		}
 		endpoint = graphqlEndpoint(u)
+		owner, err := a.workflowPrincipalByID(ctx, sub.OrgID, sub.WorkflowID)
+		if err != nil {
+			return err
+		}
+		var authMode string
+		if err := a.DB.QueryRow(ctx, `select auth_mode from data_source where id::text = $1`, id).Scan(&authMode); err != nil {
+			return err
+		}
+		if authMode == "jwt" {
+			token, err := a.graphjinPrincipalToken(ctx, sub.OrgID, owner, 5*time.Minute)
+			if err != nil {
+				return err
+			}
+			initPayload["Authorization"] = "Bearer " + token
+		}
 	}
 	wsURL := endpoint
 	if strings.HasPrefix(wsURL, "http") {
@@ -551,7 +567,7 @@ func (a *API) followSubscription(ctx context.Context, sub liveSubscription, acke
 		case <-connCtx.Done():
 		}
 	}()
-	if err := send(map[string]any{"type": "connection_init", "payload": map[string]any{}}); err != nil {
+	if err := send(map[string]any{"type": "connection_init", "payload": initPayload}); err != nil {
 		return err
 	}
 	for {

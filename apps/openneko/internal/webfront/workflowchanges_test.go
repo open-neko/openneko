@@ -330,6 +330,7 @@ func TestWorkflowPatchWatchers(t *testing.T) {
 	}
 	seed(t, db, `insert into data_source (org_id, name, kind, graphql_url, auth_mode, is_default, enabled)
 		values ('org', 'default', 'graphjin', $1, 'jwt', true, true)`, srv.URL)
+	seed(t, db, `update workflow_definition set team_approved_by = 'admin' where id = $1`, wfHeld)
 	for i, wf := range []string{wfHeld, wfHeld, wfOther} {
 		seed(t, db, `insert into watcher (org_id, workflow_id, name, query, value_path, op, threshold, cadence_seconds)
 			values ('org', $1, $2, '{ m { v } }', 'm.v', 'gt', '10', 60)`, wf, fmt.Sprintf("w%d", i))
