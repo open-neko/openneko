@@ -5,21 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/open-neko/neko/apps/openneko/internal/appdir"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
-	"github.com/open-neko/neko/apps/openneko/internal/db"
-	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
-	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
@@ -36,105 +32,65 @@ func newServeCmd() *cobra.Command {
 			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
 			native.FollowSupervisor()
+			development := webfront.Development()
 
+			if credentials == "" && !development {
+				return errors.New("openneko serve needs --credentials from `openneko serve-init` in production mode, so that no part of serve holds the secret-key or the main database login")
+			}
 			key, dsn, err := serveKeyAndDatabase(credentials)
 			if err != nil {
 				return err
 			}
-			pool, err := db.Open(ctx, db.ConnConfig{URL: dsn}, "openneko serve", nil)
+			in := networkStart{TokenKey: key, DatabaseURL: dsn, Addr: addr, FilesDir: filesDir, IndexDir: indexDir, DuckDB: duckdb,
+				CheckSocket: checkSocket, GraphJinConfig: gjConfig, GraphJinAddr: gjAddr, SubscriptionsDir: subsDir}
+			sockDir, err := os.MkdirTemp("", "openneko-serve-")
 			if err != nil {
 				return err
 			}
-			defer pool.Close()
-			folders := serveFolders{dsn: dsn, files: filesDir, index: indexDir, agentRuns: webfront.AgentRunsDir(), subsDir: subsDir, gjConfig: gjConfig,
-				duckdb: duckdb, agentSocket: agentSocket, checkSocket: checkSocket, sandboxURL: sandboxURL}
+			defer os.RemoveAll(sockDir)
+			if gjConfig != "" {
+				in.GraphJinSocket = filepath.Join(sockDir, "gj.sock")
+			}
 			if subsAddr != "" && credentials != "" {
-				folders.subsURLFile = filepath.Join(credentials, serveSubsFile)
+				raw, err := os.ReadFile(filepath.Join(credentials, serveSubsFile))
+				if err != nil {
+					return fmt.Errorf("read the subscriptions login: %w", err)
+				}
+				in.SubscriptionsAddr, in.SubscriptionsURL = subsAddr, strings.TrimSpace(string(raw))
+				in.SubscriptionsSocket = filepath.Join(sockDir, "subs.sock")
+			} else if subsAddr != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "subscriptions GraphJin off: it needs --credentials from `openneko serve-init`")
 			}
-			confinement, err := confineServe(cmd.ErrOrStderr(), folders, webfront.Development())
+			network, err := startNetworkPart(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), in)
+			clear(key)
 			if err != nil {
 				return err
 			}
-			store, err := filestore.Open(ctx, filestore.FromEnv(filesDir))
-			if err != nil {
-				return err
-			}
-			reportFileStore(ctx, cmd.ErrOrStderr(), store, filesDir)
-			ix, err := filecontent.Open(pool, indexDir, 0)
-			if err != nil {
-				return err
-			}
-			svc := files.New(store, ix, key, files.Options{DuckDB: duckdb})
+			defer network.stop()
 
-			ln, err := net.Listen("tcp", addr)
+			hostState, err := confineTurnHost(cmd.ErrOrStderr(), serveFolders{agentRuns: webfront.AgentRunsDir(), agentSocket: agentSocket, sandboxURL: sandboxURL}, development)
 			if err != nil {
 				return err
 			}
 			var agentDone <-chan error
 			if agentSocket != "" {
-				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: os.Getenv("OPENNEKO_SANDBOX_KEY")}, confinement); err != nil {
-					_ = ln.Close()
+				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: os.Getenv("OPENNEKO_SANDBOX_KEY")}, hostState, network.state); err != nil {
 					return err
 				}
 			}
-			var checkDone <-chan error
-			if checkSocket != "" && gjConfig != "" {
-				if checkDone, err = serveConfigCheck(ctx, cmd.OutOrStdout(), checkSocket, gjConfig); err != nil {
-					_ = ln.Close()
-					return err
-				}
-			}
-			gjDone := make(chan error, 1)
-			if gjConfig != "" {
-				gj := &gjhost.Supervisor{ConfigFile: gjConfig, Addr: gjAddr, Log: cmd.ErrOrStderr(), Command: gjhost.SelfCommand(gjConfig)}
-				go func() { gjDone <- gj.Run(ctx) }()
-			} else {
-				gjDone <- nil
-			}
-			subsDone := make(chan error, 1)
-			if subsAddr != "" && credentials != "" {
-				subs := &gjhost.Subscriptions{URLFile: filepath.Join(credentials, serveSubsFile), Dir: subsDir, Addr: subsAddr, Log: cmd.ErrOrStderr()}
-				go func() { subsDone <- subs.Run(ctx) }()
-			} else {
-				if subsAddr != "" {
-					fmt.Fprintln(cmd.ErrOrStderr(), "subscriptions GraphJin off: it needs --credentials from `openneko serve-init`")
-				}
-				subsDone <- nil
-			}
-			srv := &http.Server{Handler: svc.Handler(), ReadHeaderTimeout: 10 * time.Second}
-			fmt.Fprintf(cmd.OutOrStdout(), "openneko serve listening on %s\n", ln.Addr())
-			errc := make(chan error, 1)
-			go func() { errc <- srv.Serve(ln) }()
 			select {
-			case err := <-errc:
+			case err := <-network.done:
 				stop()
-				return err
+				return fmt.Errorf("the network part of openneko serve stopped: %w", err)
 			case err := <-agentDone:
 				stop()
-				_ = srv.Close()
 				return fmt.Errorf("agent socket: %w", err)
-			case err := <-checkDone:
-				stop()
-				_ = srv.Close()
-				return fmt.Errorf("config check socket: %w", err)
 			case <-ctx.Done():
-			}
-			shut, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			if err := srv.Shutdown(shut); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-				return err
 			}
 			if agentDone != nil {
 				select {
 				case <-agentDone:
-				case <-shut.Done():
-				}
-			}
-			wait := time.After(7 * time.Second)
-			for _, done := range []chan error{gjDone, subsDone} {
-				select {
-				case <-done:
-				case <-wait:
+				case <-time.After(time.Second):
 				}
 			}
 			return nil
@@ -148,7 +104,7 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&checkSocket, "config-check-socket", os.Getenv("OPENNEKO_CONFIG_CHECK_SOCKET"), "Unix socket where web asks serve to load a candidate GraphJin config with the pinned loader; empty turns the check off")
 	cmd.Flags().StringVar(&sandboxURL, "sandbox-url", os.Getenv("OPENNEKO_SANDBOX_URL"), "Sandbox service for agent terminal commands (unix:///path or http(s)://host:port); empty turns the terminal off. Its key is read from OPENNEKO_SANDBOX_KEY")
 	cmd.Flags().IntVar(&maxTurns, "max-turns", envInt("OPENNEKO_SERVE_MAX_TURNS", 32), "Agent turns that run at once; more are refused")
-	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the files role database URL. Empty reads the secret-key and the main database login")
+	cmd.Flags().StringVar(&credentials, "credentials", os.Getenv(serveCredentialsEnv), "Folder written by `openneko serve-init`: the token key and the files role database URL. Production mode needs it; in development mode, empty reads the secret-key and the main database login")
 	cmd.Flags().StringVar(&gjConfig, "graphjin-config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml); empty runs no GraphJin. GraphJin runs as a child process; a new token in .openneko-graphjin-restart beside it restarts the child")
 	cmd.Flags().StringVar(&gjAddr, "graphjin-addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address for the customer GraphJin")
 	cmd.Flags().StringVar(&subsAddr, "subscriptions-addr", envOr("OPENNEKO_SUBSCRIPTIONS_ADDR", "127.0.0.1:8089"), "Listen address for the subscriptions GraphJin, which serves workflow output subscriptions as the subscriptions role; empty turns it off")

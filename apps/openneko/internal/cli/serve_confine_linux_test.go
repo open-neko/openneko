@@ -56,6 +56,8 @@ func TestConfineProbeChild(t *testing.T) {
 		Outside   string
 		ExecCopy  string
 		FilesFile string
+		Part      string
+		Hidden    []string
 	}
 	if err := json.Unmarshal([]byte(os.Getenv(confineProbeEnv)), &in); err != nil {
 		t.Fatal(err)
@@ -64,13 +66,25 @@ func TestConfineProbeChild(t *testing.T) {
 		gjConfig: in.Folders["gj"], agentSocket: in.Folders["agentSocket"], checkSocket: in.Folders["checkSocket"], duckdb: "duckdb"}
 	tool := mustRead(t, "/bin/true")
 	var log bytes.Buffer
-	st, err := confineServe(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
+	var st confine.State
+	var err error
+	if in.Part == "host" {
+		st, err = confineTurnHost(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
+	} else {
+		st, err = confineServe(&log, f, os.Getenv("OPENNEKO_ENV") == "development")
+	}
 	out := probeResult{Refused: map[string]bool{}, Allowed: map[string]bool{}}
 	out.Notes = append(out.Notes, strings.TrimSpace(log.String()), fmt.Sprintf("state %s, err %v", st, err))
 
 	for _, p := range in.Planted {
 		_, err := os.ReadFile(p)
 		out.Refused["read "+filepath.Base(p)] = err != nil
+	}
+	for _, p := range in.Hidden {
+		_, err := os.ReadFile(p)
+		out.Refused["read the other part's "+filepath.Base(p)] = err != nil
+		err = os.WriteFile(p+".new", []byte("x"), 0o600)
+		out.Refused["write beside the other part's "+filepath.Base(p)] = err != nil
 	}
 	token, err := os.ReadFile(in.WebAdmin + ".token")
 	out.Refused["read the web admin token"] = err != nil
@@ -101,16 +115,18 @@ func TestConfineProbeChild(t *testing.T) {
 	if err == nil {
 		_, err = os.ReadFile(in.FilesFile)
 	}
-	out.Allowed["write and read its files folder"] = err == nil
+	out.Allowed["write and read its own folder"] = err == nil
 	exe, _ := os.Executable()
 	err = exec.Command(exe, "-test.run=^$").Run()
 	out.Allowed["run its own program"] = err == nil
-	conn, err := net.Dial("unix", in.Door)
-	if err == nil {
-		conn.Close()
+	if in.Part == "host" {
+		conn, err := net.Dial("unix", in.Door)
+		if err == nil {
+			conn.Close()
+		}
+		out.Allowed["connect to the key door"] = err == nil
 	}
-	out.Allowed["connect to the key door"] = err == nil
-	if path, lerr := exec.LookPath("duckdb"); lerr == nil {
+	if path, lerr := exec.LookPath("duckdb"); lerr == nil && in.Part != "host" {
 		cmd := exec.Command(path, "-c", "select 1")
 		cmd.Env = []string{"HOME=" + os.TempDir()}
 		msg, err := cmd.CombinedOutput()
@@ -214,13 +230,31 @@ func TestConfinedServeOneAccount(t *testing.T) {
 	}()
 	_ = unix.Prctl(unix.PR_SET_PTRACER, unix.PR_SET_PTRACER_ANY, 0, 0, 0)
 
-	in, _ := json.Marshal(map[string]any{
-		"Folders": map[string]string{"files": l.Files(), "index": l.Index(), "agentRuns": l.AgentRuns(), "subs": l.Subscriptions(),
-			"gj": l.GraphJin(), "agentSocket": env["OPENNEKO_SERVE_SOCKET"], "checkSocket": env["OPENNEKO_CONFIG_CHECK_SOCKET"]},
-		"Planted": planted, "WebAdmin": l.WebAdmin(), "Door": env["OPENNEKO_KEY_DOOR_SOCKET"], "WebPID": os.Getpid(), "WebAddr": uintptr(unsafe.Pointer(unsafe.StringData(webSecret))),
-		"Outside": filepath.Join(l.Root, "planted-by-serve"), "ExecCopy": filepath.Join(l.AgentRuns(), "tool"),
-		"FilesFile": filepath.Join(l.Files(), "kept.txt"),
-	})
+	runFile, userFile, gjFile := filepath.Join(l.AgentRuns(), "run-of-another-user.md"), filepath.Join(l.Files(), "user-upload.csv"), l.GraphJin()
+	for _, p := range []string{runFile, userFile, gjFile} {
+		if err := os.WriteFile(p, []byte("planted"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, part := range []string{"network", "host"} {
+		t.Run(part, func(t *testing.T) {
+			own, hidden := l.Files(), []string{runFile}
+			if part == "host" {
+				own, hidden = l.AgentRuns(), []string{userFile, gjFile}
+			}
+			in, _ := json.Marshal(map[string]any{
+				"Folders": map[string]string{"files": l.Files(), "index": l.Index(), "agentRuns": l.AgentRuns(), "subs": l.Subscriptions(),
+					"gj": l.GraphJin(), "agentSocket": env["OPENNEKO_SERVE_SOCKET"], "checkSocket": env["OPENNEKO_CONFIG_CHECK_SOCKET"]},
+				"Planted": planted, "WebAdmin": l.WebAdmin(), "Door": env["OPENNEKO_KEY_DOOR_SOCKET"], "WebPID": os.Getpid(), "WebAddr": uintptr(unsafe.Pointer(unsafe.StringData(webSecret))),
+				"Outside": filepath.Join(l.Root, "planted-by-serve"), "ExecCopy": filepath.Join(own, "tool"),
+				"FilesFile": filepath.Join(own, "kept.txt"), "Part": part, "Hidden": hidden,
+			})
+			probeServePart(t, l, home, configDir, env, in)
+		})
+	}
+}
+
+func probeServePart(t *testing.T, l native.Layout, home, configDir string, env map[string]string, in []byte) {
 	run := func(mode string) probeResult {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestConfineProbeChild$", "-test.count=1")
 		cmd.Env = append(os.Environ(), confineProbeEnv+"="+string(in), "HOME="+home, "XDG_CONFIG_HOME="+filepath.Dir(configDir),
@@ -244,6 +278,10 @@ func TestConfinedServeOneAccount(t *testing.T) {
 			t.Logf("%s: %s", mode, n)
 		}
 		_ = os.Remove(filepath.Join(l.AgentRuns(), "tool"))
+		_ = os.Remove(filepath.Join(l.Files(), "tool"))
+		for _, p := range []string{filepath.Join(l.AgentRuns(), "run-of-another-user.md.new"), filepath.Join(l.Files(), "user-upload.csv.new"), l.GraphJin() + ".new"} {
+			_ = os.Remove(p)
+		}
 		return res
 	}
 	control := run("control")
@@ -311,30 +349,41 @@ func TestServeSpecKeepsOnlyServesFolders(t *testing.T) {
 	env := native.ServeEnv(l)
 	t.Setenv("TMPDIR", l.Tmp())
 	t.Setenv("OPENNEKO_KEY_DOOR_SOCKET", env["OPENNEKO_KEY_DOOR_SOCKET"])
-	spec := serveSpec(serveFolders{files: l.Files(), index: l.Index(), agentRuns: l.AgentRuns(), subsDir: l.Subscriptions(), gjConfig: l.GraphJin(),
-		subsURLFile: filepath.Join(l.Credentials(), serveSubsFile), agentSocket: env["OPENNEKO_SERVE_SOCKET"], checkSocket: env["OPENNEKO_CONFIG_CHECK_SOCKET"]})
-	all := append(append(append([]string{}, spec.Read...), spec.ReadWrite...), spec.Exec...)
-	for _, p := range all {
-		if p == l.Root || p == l.Credentials() || p == "/" || p == "/home" || p == "/etc" || strings.HasPrefix(p, appdirConfigPrefix()) {
-			t.Errorf("serve's spec holds %s", p)
+	f := serveFolders{files: l.Files(), index: l.Index(), agentRuns: l.AgentRuns(), subsDir: l.Subscriptions(), gjConfig: l.GraphJin(),
+		agentSocket: env["OPENNEKO_SERVE_SOCKET"], checkSocket: env["OPENNEKO_CONFIG_CHECK_SOCKET"], gjSocket: filepath.Join(l.Tmp(), "s", "gj.sock")}
+	network, host := serveSpec(f), hostSpec(f)
+	for name, spec := range map[string]confine.Spec{"network": network, "host": host} {
+		all := append(append(append([]string{}, spec.Read...), spec.ReadWrite...), spec.Exec...)
+		for _, p := range all {
+			if p == l.Root || p == l.Run() || strings.HasPrefix(p, l.Credentials()) || p == "/" || p == "/home" || p == "/etc" || strings.HasPrefix(p, appdirConfigPrefix()) {
+				t.Errorf("the %s part's spec holds %s", name, p)
+			}
+		}
+		if len(spec.Exec) == 0 {
+			t.Errorf("the %s part cannot run its own program", name)
 		}
 	}
-	for _, want := range []string{l.Files(), l.Index(), l.AgentRuns(), l.Subscriptions(), l.Tmp(), filepath.Dir(l.GraphJin()), l.Run()} {
-		if !hasPath(spec.ReadWrite, want) {
-			t.Errorf("serve's spec does not write %s: %v", want, spec.ReadWrite)
+	for _, want := range []string{l.Files(), l.Index(), l.Subscriptions(), l.Tmp(), filepath.Dir(l.GraphJin())} {
+		if !hasPath(network.ReadWrite, want) {
+			t.Errorf("the network part does not write %s: %v", want, network.ReadWrite)
 		}
+		if want != l.Tmp() && hasPath(host.ReadWrite, want) {
+			t.Errorf("the turn part writes %s: %v", want, host.ReadWrite)
+		}
+	}
+	if hasPath(network.ReadWrite, l.AgentRuns()) || hasPath(network.Sockets, env["OPENNEKO_KEY_DOOR_SOCKET"]) || hasPath(network.Listen, env["OPENNEKO_SERVE_SOCKET"]) {
+		t.Errorf("the network part reaches the agent runs, the key door or the turn socket: %+v", network)
+	}
+	for _, want := range []string{env["OPENNEKO_CONFIG_CHECK_SOCKET"], f.gjSocket} {
+		if !hasPath(network.Listen, want) {
+			t.Errorf("the network part cannot listen on %s: %v", want, network.Listen)
+		}
+	}
+	if !hasPath(host.ReadWrite, l.AgentRuns()) || !hasPath(host.Listen, env["OPENNEKO_SERVE_SOCKET"]) || !hasPath(host.Sockets, env["OPENNEKO_KEY_DOOR_SOCKET"]) {
+		t.Errorf("the turn part cannot reach the agent runs, its socket or the key door: %+v", host)
 	}
 	if got := postgresCertPaths("postgres://u@db/x?sslmode=verify-full&sslrootcert=/etc/openneko/pg-ca.pem"); !hasPath(got, "/etc/openneko/pg-ca.pem") {
 		t.Errorf("serve cannot read the CA file in the database URL: %v", got)
-	}
-	if !hasPath(spec.Read, filepath.Join(l.Credentials(), serveSubsFile)) {
-		t.Errorf("serve cannot read the subscriptions URL: %v", spec.Read)
-	}
-	if !hasPath(spec.Sockets, env["OPENNEKO_KEY_DOOR_SOCKET"]) {
-		t.Errorf("serve cannot reach the key door: %v", spec.Sockets)
-	}
-	if len(spec.Exec) == 0 {
-		t.Error("serve cannot run its own program")
 	}
 }
 

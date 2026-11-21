@@ -44,7 +44,7 @@ func TestListenersReplaceAStaleSocket(t *testing.T) {
 			return err
 		},
 		"serve.sock": func(path string) error {
-			_, err := serveAgentTurns(ctx, io.Discard, path, 1, sandbox.Config{}, confine.State{})
+			_, err := serveAgentTurns(ctx, io.Discard, path, 1, sandbox.Config{}, confine.State{}, confine.State{})
 			return err
 		},
 		"keydoor.sock": func(path string) error {

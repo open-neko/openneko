@@ -446,7 +446,7 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 	defer stop()
 	t.Setenv("OPENNEKO_ENV", "production")
 	cleanServeEnv(t)
-	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, confine.State{Mechanism: "landlock", ABI: 8, Confined: true})
+	done, err := serveAgentTurns(ctx, io.Discard, sock, 1, sandbox.Config{}, confine.State{Mechanism: "landlock", ABI: 8, Confined: true}, confine.State{Mechanism: "landlock", ABI: 8, Confined: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +464,7 @@ func TestTurnsAreOffWhenRunnersCannotBeConfined(t *testing.T) {
 	if err := json.NewDecoder(conn).Decode(&exit); err != nil || exit.Type != "exit" || exit.Error != want {
 		t.Fatalf("a turn on a host that cannot confine its runner: %+v, %v", exit, err)
 	}
-	if _, _, err := checkServeSocket(context.Background(), sock); err == nil || !strings.Contains(err.Error(), want) {
+	if _, _, _, err := checkServeSocket(context.Background(), sock); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("release-check passed a serve that refuses turns: %v", err)
 	}
 }

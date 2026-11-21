@@ -545,7 +545,12 @@ profile. The web app, data reads and workflows without an agent step still
 work. `openneko doctor` shows the state, and `openneko release-check
 --serve-socket` fails.
 
-On macOS, `openneko serve` itself is not confined yet.
+On macOS, the network part of `openneko serve` (the files service and the
+GraphJin engines) confines itself with a Seatbelt profile too. It keeps its
+network and its own folders, and it cannot read the config folder or the
+serve credentials. The part that starts the agent runners is not confined,
+because macOS does not let a confined process start a runner that confines
+itself ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
 
 ### Model keys
 
@@ -566,11 +571,12 @@ lists the names. `openneko release-check --serve-socket` fails when
 serve started with one, or when serve runs with `OPENNEKO_ENV=development`.
 In production, serve refuses a turn that carries a real key.
 
-On Linux, serve also confines itself at start: it cannot read the config
-folder, `secrets.json` or the web admin socket token, and it cannot run a
-file that it wrote. `openneko release-check --serve-socket` prints
-`serve_confinement=` and fails when serve runs unconfined in production
-mode ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux)).
+On Linux and macOS, serve also confines itself at start: it cannot read
+the config folder, `secrets.json`, the serve credentials or the web admin
+socket token, and it cannot run a file that it wrote. `openneko
+release-check --serve-socket` prints `serve_confinement=` and
+`serve_network_confinement=`, and fails when a part of serve runs
+unconfined in production mode ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
 
 The model calls now leave from web. A firewall that let only serve reach
 the model APIs must let web reach them.
@@ -884,7 +890,9 @@ services:
 ```
 
 Without a key ID and secret, serve uses the host's AWS credentials, for
-example an instance role. The endpoint must use `https://`; serve accepts
+example an instance role or the `AWS_*` variables. A confined serve cannot
+read `~/.aws`, so a native install on Linux or macOS uses the variables or
+the instance role. The endpoint must use `https://`; serve accepts
 `http://` only for `localhost`. The login needs list, read, write and delete
 rights on the prefix. Two installs can share one bucket with two prefixes.
 

@@ -95,6 +95,10 @@ func abiOf() (int, syscall.Errno) {
 	return int(r), 0
 }
 
+// Stacks is true: Landlock domains stack, so a confined serve may start an
+// agent runner that confines itself further.
+const Stacks = true
+
 // Available tells what this kernel can give, with no change to the process.
 func Available() State {
 	abi, e := abiOf()
@@ -182,14 +186,19 @@ func Apply(spec Spec) (State, error) {
 		}
 		return nil
 	}
-	sockDirs := make([]string, 0, len(spec.Sockets))
+	sockDirs := make([]string, 0, len(spec.Sockets)+len(spec.Listen))
+	listenDirs := make([]string, 0, len(spec.Listen))
 	for _, s := range spec.Sockets {
 		sockDirs = append(sockDirs, filepath.Dir(s))
+	}
+	for _, s := range spec.Listen {
+		sockDirs = append(sockDirs, filepath.Dir(s))
+		listenDirs = append(listenDirs, filepath.Dir(s))
 	}
 	for _, step := range []struct {
 		paths  []string
 		rights uint64
-	}{{spec.Read, readRights}, {spec.ReadWrite, writeRights}, {spec.Exec, execRights}, {sockDirs, fsResolveUnix}} {
+	}{{spec.Read, readRights}, {spec.ReadWrite, writeRights}, {listenDirs, writeRights}, {spec.Exec, execRights}, {sockDirs, fsResolveUnix}} {
 		if err := add(step.paths, step.rights); err != nil {
 			st.Confined = false
 			st.Reason = err.Error()
