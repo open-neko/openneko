@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
@@ -35,7 +36,7 @@ type sandboxEgressGate struct {
 // sandboxEgress is "off" with no sandbox, "operator" when OperatorEgressEnv
 // is on, else what the sandbox reports: "closed", "open" or "unknown".
 func (a *API) sandboxEgress(ctx context.Context, fresh bool) (string, error) {
-	cfg := sandbox.ConfigFromEnv(os.Getenv)
+	cfg := sandbox.ConfigFromEnv(secretenv.Get)
 	if !cfg.Enabled() {
 		return "off", nil
 	}

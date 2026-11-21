@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
@@ -64,6 +65,18 @@ func runHelper(mode, arg string) int {
 		_ = os.WriteFile(arg, []byte(fmt.Sprint(grandchild.Process.Pid)), 0o600)
 		time.Sleep(2 * time.Minute)
 		return 0
+	case "handed":
+		if err := secretenv.ReadHanded(os.Stdin); err != nil {
+			fmt.Println(err)
+			return 1
+		}
+		f, err := os.OpenFile(arg, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return 1
+		}
+		fmt.Fprintf(f, "%s|%s\n", secretenv.Get("OPENNEKO_SANDBOX_KEY"), os.Getenv("OPENNEKO_SANDBOX_KEY"))
+		_ = f.Close()
+		return 4
 	case "detached":
 		_ = os.WriteFile(arg, []byte(detachedState()), 0o600)
 		return 0
@@ -191,6 +204,31 @@ func TestSupervisorRestartsAndStops(t *testing.T) {
 	}
 	if err := Stop(l, time.Second); err != ErrNotRunning {
 		t.Errorf("Stop with no supervisor: %v", err)
+	}
+}
+
+func TestServeReadsItsSecretsOnStdinAtEachStart(t *testing.T) {
+	l := preparedLayout(t)
+	out := filepath.Join(t.TempDir(), "handed")
+	key := "box-" + strings.Repeat("k", 8)
+	serve := Procs(l, Options{Exe: "x", Env: []string{"OPENNEKO_SANDBOX_KEY=" + key}})[0]
+	p := helperProc("serve", "handed", out)
+	p.Env, p.Stdin = append(p.Env, secretenv.StdinEnv+"=1", "OPENNEKO_SANDBOX_KEY="), serve.Stdin
+	s := &Supervisor{Layout: l, WebAddr: "127.0.0.1:1", Log: &syncBuffer{}, Grace: 5 * time.Second, Backoff: 20 * time.Millisecond, Procs: []Proc{p}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	waitFor(t, "serve starts twice", 20*time.Second, func() bool {
+		raw, _ := os.ReadFile(out)
+		return strings.Count(string(raw), "\n") >= 2
+	})
+	cancel()
+	<-done
+	raw, _ := os.ReadFile(out)
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if line != key+"|" {
+			t.Errorf("serve read %q, want the key from stdin and none in its environment", line)
+		}
 	}
 }
 

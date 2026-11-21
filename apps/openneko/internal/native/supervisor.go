@@ -1,6 +1,7 @@
 package native
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -146,6 +147,9 @@ func (s *Supervisor) runOnce(ctx context.Context, p Proc) error {
 	defer logFile.Close()
 	cmd := exec.Command(p.Args[0], p.Args[1:]...)
 	cmd.Env = p.Env
+	if p.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(p.Stdin)
+	}
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = childAttr()
 	if s.follow != nil {

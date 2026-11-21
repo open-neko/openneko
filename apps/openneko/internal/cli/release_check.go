@@ -16,6 +16,7 @@ import (
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/confine"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
@@ -94,7 +95,7 @@ func newReleaseCheckCmd() *cobra.Command {
 				}
 				fmt.Fprintf(out, "sandbox=%s\n", state)
 				if state != "off" {
-					egress := checkSandboxEgress(ctx, sandbox.ConfigFromEnv(os.Getenv))
+					egress := checkSandboxEgress(ctx, sandbox.ConfigFromEnv(secretenv.Get))
 					fmt.Fprintf(out, "sandbox_egress=%s\n", egress)
 					if webfront.OperatorEnforcesEgress() {
 						fmt.Fprintf(out, "sandbox_egress_by_operator=on\n")

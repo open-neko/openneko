@@ -214,9 +214,15 @@ started with such a variable or runs in development mode.
 The one-user native install (`openneko start` with no server install)
 starts serve with a filtered copy of the shell environment. The copy holds
 no variable whose name holds `KEY`, `TOKEN`, `SECRET`, `PASS`,
-`CREDENTIAL`, `DATABASE_URL`, `DSN` or `AUTH`. Serve keeps its own
-`OPENNEKO_SANDBOX_KEY`, its bucket login (`OPENNEKO_FILES_BUCKET_KEY_ID`,
-`OPENNEKO_FILES_BUCKET_SECRET`) and GraphJin's `GJ_*` variables. Web and
+`CREDENTIAL`, `DATABASE_URL`, `DSN` or `AUTH`, except GraphJin's `GJ_*`
+variables. Serve reads its own `OPENNEKO_SANDBOX_KEY` and its bucket login
+(`OPENNEKO_FILES_BUCKET_KEY_ID`, `OPENNEKO_FILES_BUCKET_SECRET`) as one
+line on its stdin at each start, and passes the bucket login to its network
+part the same way. Web gets the same filtered copy plus the secret-named
+variables that it reads (`webReads` in `apps/openneko/internal/native/native.go`;
+`TestWebReadsIsComplete` fails when the code reads a new one). In Docker, web
+and serve read the sandbox key and the embedding key from compose secret
+files. Web and
 serve still run as the same OS user there, so the OS does not separate the
 zones: serve can read web's files. Use the one-user install for development
 and demos only; a server install or Docker gives each zone its own account

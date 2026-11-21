@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/fstable"
+
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 )
 
 type Config struct {
@@ -32,8 +34,8 @@ func FromEnv(dir string) Config {
 		Bucket:      strings.TrimSpace(os.Getenv("OPENNEKO_FILES_BUCKET")),
 		Endpoint:    strings.TrimSpace(os.Getenv("OPENNEKO_FILES_BUCKET_ENDPOINT")),
 		Region:      strings.TrimSpace(os.Getenv("OPENNEKO_FILES_BUCKET_REGION")),
-		AccessKeyID: strings.TrimSpace(os.Getenv("OPENNEKO_FILES_BUCKET_KEY_ID")),
-		SecretKey:   strings.TrimSpace(os.Getenv("OPENNEKO_FILES_BUCKET_SECRET")),
+		AccessKeyID: strings.TrimSpace(secretenv.Get("OPENNEKO_FILES_BUCKET_KEY_ID")),
+		SecretKey:   strings.TrimSpace(secretenv.Get("OPENNEKO_FILES_BUCKET_SECRET")),
 	}
 }
 

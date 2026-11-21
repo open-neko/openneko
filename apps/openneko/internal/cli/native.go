@@ -24,6 +24,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/installation"
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 )
 
@@ -139,7 +140,7 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 	if err := layout.Prepare(); err != nil {
 		return err
 	}
-	if err := prepareNativeSandbox(nativeSandboxDir(), os.Getenv("OPENNEKO_SANDBOX_URL"), os.Getenv("OPENNEKO_SANDBOX_KEY")); err != nil {
+	if err := prepareNativeSandbox(nativeSandboxDir(), os.Getenv("OPENNEKO_SANDBOX_URL"), secretenv.Get("OPENNEKO_SANDBOX_KEY")); err != nil {
 		return err
 	}
 	if err := os.WriteFile(layout.Seed(), assets.GraphJinSeed, 0o600); err != nil {

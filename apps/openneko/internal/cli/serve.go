@@ -17,6 +17,7 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 	"github.com/open-neko/neko/apps/openneko/internal/filestore"
 	"github.com/open-neko/neko/apps/openneko/internal/native"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 	"github.com/open-neko/neko/apps/openneko/internal/webfront"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/ownacl"
@@ -34,6 +35,9 @@ func newServeCmd() *cobra.Command {
 			ctx, stop := native.NotifyStop(cmd.Context())
 			defer stop()
 			native.FollowSupervisor()
+			if err := secretenv.ReadHanded(os.Stdin); err != nil {
+				return err
+			}
 			development := webfront.Development()
 
 			if credentials == "" && !development {
@@ -44,7 +48,7 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			in := networkStart{TokenKey: key, DatabaseURL: dsn, Addr: addr, FilesDir: filesDir, IndexDir: indexDir, DuckDB: duckdb,
-				CheckSocket: checkSocket, GraphJinConfig: gjConfig, GraphJinAddr: gjAddr, SubscriptionsDir: subsDir}
+				CheckSocket: checkSocket, GraphJinConfig: gjConfig, GraphJinAddr: gjAddr, SubscriptionsDir: subsDir, FileStore: filestore.FromEnv(filesDir)}
 			sandboxSocket, _ := sandbox.SocketPath(sandboxURL)
 			if err := networkSocketFolder(checkSocket, agentSocket, keydoor.SocketPath(os.Getenv, agentSocket), sandboxSocket, webAdminSocket()); err != nil {
 				return err
@@ -86,7 +90,7 @@ func newServeCmd() *cobra.Command {
 			}
 			var agentDone <-chan error
 			if agentSocket != "" {
-				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: os.Getenv("OPENNEKO_SANDBOX_KEY")}, hostState, network.state); err != nil {
+				if agentDone, err = serveAgentTurns(ctx, cmd.OutOrStdout(), agentSocket, maxTurns, sandbox.Config{URL: sandboxURL, Key: secretenv.Get("OPENNEKO_SANDBOX_KEY")}, hostState, network.state); err != nil {
 					return err
 				}
 			}
