@@ -133,7 +133,7 @@ func runnerConfinement(out io.Writer, development bool) (st confine.State, confi
 	case st.Confined:
 		fmt.Fprintf(out, "each agent runner confines itself: %s\n", st)
 		if len(st.Gaps) > 0 {
-			fmt.Fprintf(out, "agent runner gaps on this kernel: %s\n", strings.Join(st.Gaps, "; "))
+			fmt.Fprintf(out, "agent runner gaps on this system: %s\n", strings.Join(st.Gaps, "; "))
 		}
 		return st, true, ""
 	case st.Mechanism == "":

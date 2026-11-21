@@ -97,6 +97,19 @@ jobs:
           go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/confine ./internal/cli | tee "$RUNNER_TEMP/confine.log"
           ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
 
+      - name: macOS confinement proofs run and do not skip
+        if: runner.os == 'macOS'
+        env:
+          CGO_ENABLED: "0"
+          OPENNEKO_TEST_REQUIRE_CONFINE: "1"
+          OPENNEKO_TEST_VERBOSE: "1"
+        run: |
+          set -euo pipefail
+          sw_vers
+          tests=(TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined TestConfinedRunnerTurn)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli ./internal/webfront | tee "$RUNNER_TEMP/confine.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
+
       - name: go build
         run: go build ./...
 

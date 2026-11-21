@@ -40,12 +40,6 @@ func requireLandlock(t *testing.T) confine.State {
 	return st
 }
 
-type probeResult struct {
-	Notes   []string        `json:"notes"`
-	Refused map[string]bool `json:"refused"`
-	Allowed map[string]bool `json:"allowed"`
-}
-
 // TestConfineProbeChild is the confined serve of TestConfinedServeOneAccount.
 // It confines itself with serve's own spec and code, then tries each path.
 func TestConfineProbeChild(t *testing.T) {
@@ -135,9 +129,6 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return b
 }
-
-// webSecret stands for a secret in web's memory.
-var webSecret = "planted-secret-in-web-memory"
 
 func webAdminAnswers(socket, token string) bool {
 	c := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{DialContext: (&unixDialer{socket}).dial}}
