@@ -555,8 +555,10 @@ func TestConfinedRunner(t *testing.T) {
 		}
 	}
 
-	open, _ := runRunnerProbe(t, tg, "nolimits")
-	if len(open.Limited) != len(control.Limited) {
+	open, msg := runRunnerProbe(t, tg, "nolimits")
+	if open.Limited == nil && strings.Contains(msg, "this build uses cgo") && os.Getenv("OPENNEKO_TEST_REQUIRE_CONFINE") == "" {
+		t.Logf("the limits proof needs a CGO_ENABLED=0 build, as the release is: %s", msg)
+	} else if len(open.Limited) != len(control.Limited) {
 		t.Fatalf("with no limits the runner checked %d limits, with them %d", len(open.Limited), len(control.Limited))
 	}
 	for what, held := range open.Limited {
@@ -595,11 +597,10 @@ func TestConfinedRunner(t *testing.T) {
 	}
 }
 
-// TestRunnerThreadFloodStaysInTheRunner floods threads in a confined
-// runner: the runner stops at its cap, and the account can still start
-// threads.
+// TestRunnerThreadFloodStaysInTheRunner floods threads in a runner: the
+// runner stops at its cap, and the account can still start threads. The
+// runner sets its limits with or without confinement.
 func TestRunnerThreadFloodStaysInTheRunner(t *testing.T) {
-	requireRunnerConfinement(t)
 	tg := newRunnerTargets(t)
 	open, msg := runRunnerProbe(t, tg, "flood-nolimits")
 	if open.Threads < floodTarget {
