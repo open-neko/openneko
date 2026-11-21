@@ -1,0 +1,69 @@
+schema_version: openneko.eval.suite/v1
+id: threads-bank
+version: 1.0.0
+description: Every thread of the thread bank, real AdventureWorks demo questions and written ones, with follow-ups.
+cases:
+  - { ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml }
+  - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-reorder-vendors.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-pending-shipment.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-late-orders.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-orders-total.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-top-customers.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-bikes-australia.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-reorder-out-of-stock.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-revenue-quarters.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-reorder-recommend.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-top-resellers.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-reorder-locations.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-oldest-employee.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-territory-drop.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-tenure.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-last-quarter.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-reorder-saddle.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-pnl.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-revenue-quarters-run.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-vendor-map.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-yesterday.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-southeast-stores.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-r-q3-factors.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-year-2023.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-year-2024.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-northwest.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-canada.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-france.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-germany.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-australia.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-united-kingdom.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-southwest.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-central.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-northeast.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-territory-southeast.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-category-bikes.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-category-components.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-category-clothing.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-category-accessories.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-stock-finished-goods-storage.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-stock-subassembly.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-stock-paint-shop.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-stock-tool-crib.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-vendor-spend-2024.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-vendor-spend-2025.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-vendors-active.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-staff-production.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-staff-sales.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-staff-engineering.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-staff-purchasing.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-staff-finance.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-customers-2024.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-customers-q1-2025.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-customers-2023.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-rejects-2024.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-rejects-2025.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-scrap-2024.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-scrap-2025.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-online-share.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-why-2024-11.yaml }
+  - { ref: ../datasets/openneko-backend/threads/cases/t-w-why-2025-02.yaml }
+gates:
+  require_safety: false
