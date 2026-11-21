@@ -482,8 +482,9 @@ connected.
 On Linux, each agent turn runs in an `openneko agent-runner` process that
 confines itself with Landlock and a seccomp filter before agent code runs
 ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-runner-confines-itself-linux)).
-Without both, `openneko serve` refuses every agent turn in production mode.
-The web app, data reads and workflows without an agent step still work.
+Without both, `openneko serve` still starts, unconfined, and refuses every
+agent turn in production mode. The web app, data reads, host model calls,
+embeddings and workflows without an agent step still work.
 
 The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
 small gaps: rename and link between folders (Linux 5.19) and ioctl on a
@@ -551,6 +552,13 @@ network and its own folders, and it cannot read the config folder or the
 serve credentials. The part that starts the agent runners is not confined,
 because macOS does not let a confined process start a runner that confines
 itself ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
+
+### Agent confinement (Windows)
+
+Windows runs each agent turn inside `openneko serve`, with no confinement
+by the system yet. The start line, the status page, `openneko doctor` and
+`openneko release-check --serve-socket` say "agent confinement: not
+available on this system yet". `release-check` fails in production mode.
 
 ### Model keys
 
@@ -1289,6 +1297,11 @@ data folder, and the program is in `%LOCALAPPDATA%\Programs\OpenNeko`.
 Windows has no file modes, so OpenNeko gives
 these two folders, the secret key, `secrets.json`, the backup key and each
 backup a protected access list: only your account and SYSTEM can open them.
+A Windows socket takes the access list of its folder. Before serve, web,
+the key door and GraphJin listen on a socket, each one gives the socket's
+folder the same list, also when an `OPENNEKO_*_SOCKET` variable points
+outside the data folder. When it cannot, it does not listen and names the
+folder.
 The supervisor puts serve, web and GraphJin in a Windows job object, so they
 stop when the supervisor stops. `openneko stop` asks each process to stop
 and ends it when it does not. macOS keeps the Linux folders under your home

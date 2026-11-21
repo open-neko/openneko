@@ -54,6 +54,8 @@
 * On Linux, the agent runner's seccomp filter also refuses queued signals, `fcntl` owner and signal changes, the scheduling and limit calls on another process, mode, owner, time and attribute changes by path, path watches, socket pairs and datagrams with an address. A call newer than the build gets `ENOSYS`. A file that a sandbox command changes comes back with its mode set through the open file.
 * A native install gives serve its own temp folder, `<data>/tmp`.
 * `openneko release-check --serve-socket` prints `serve_confinement=` and fails when serve runs unconfined in production mode. The status page shows "Agent confinement".
+* On a Linux kernel without Landlock, serve starts and refuses only agent turns; host model calls and embeddings run. On Windows, the start line, status page, `openneko doctor` and `release-check` say "agent confinement: not available on this system yet", and `release-check` fails in production mode.
+* `web_fetch` refuses shared (100.64.0.0/10) and NAT64 addresses, and checks the host's addresses also when web uses a proxy. Serve labels each stderr line of an agent runner and caps it.
 
 ### Sandbox image
 
@@ -90,6 +92,7 @@
 * The native install runs on Windows and macOS, on amd64 and arm64, for one user with no admin rights. Each release holds `openneko-native_<version>_darwin_<arch>.tar.gz` and `openneko-native_<version>_windows_<arch>.zip`. `install-native.sh` installs it on macOS, and the new `install-native.ps1` on Windows. `openneko upgrade` downloads the release for the host on all three systems.
 * The server install with two system users stays Linux only. The Docker stack runs on Linux and macOS, and not on Windows.
 * Windows keeps data, logs and the sockets in `%LOCALAPPDATA%\OpenNeko`, the config in `%APPDATA%\OpenNeko` and the program in `%LOCALAPPDATA%\Programs\OpenNeko`. These folders, the secret key, `secrets.json`, the backup key and each backup get an access list that allows only your account and SYSTEM.
+* On Windows, each socket listener (serve, the config check, the key door, web admin and GraphJin) gives its socket's folder an access list for only your account and SYSTEM before it listens. It refuses a folder that it cannot limit.
 * On Windows, serve and web stop with the supervisor through a job object, and `openneko upgrade` moves the running `openneko.exe` aside before it puts the new one in place.
 * On macOS, serve and web stop when the supervisor stops, also when it is killed.
 * The Homebrew cask installs the native archive, with `bin/openneko` and `share/openneko` beside it. `openneko start --native` finds the web app there. The Docker path works from the same cask.

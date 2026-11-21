@@ -15,7 +15,7 @@ import (
 func confinementDoctorLines(out io.Writer) bool {
 	st := runnerAvailable()
 	if st.Mechanism == "" {
-		fmt.Fprintf(out, "agent confinement: %s\n", st.Reason)
+		fmt.Fprintf(out, "%s (%s); agent turns run unconfined\n", confine.NotAvailable, st.Reason)
 		return false
 	}
 	if runtime.GOOS == "linux" {

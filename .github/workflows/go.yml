@@ -242,7 +242,7 @@ jobs:
         working-directory: apps/openneko
         run: |
           set -euo pipefail
-          tests=(TestAnotherAccountCannotReachTheSocketsOrTheSecrets TestStatusRestartAndStopFollowTheWholeTree TestKillingTheSupervisorEndsTheWholeTree)
+          tests=(TestAnotherAccountCannotReachTheSocketsOrTheSecrets TestSocketsInAnOpenFolderShutOutAnotherAccount TestStatusRestartAndStopFollowTheWholeTree TestKillingTheSupervisorEndsTheWholeTree)
           go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli | tee "$RUNNER_TEMP/security.log"
           ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/security.log" "${tests[@]}"
 

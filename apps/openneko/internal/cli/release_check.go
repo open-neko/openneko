@@ -187,6 +187,9 @@ func checkServeSocket(ctx context.Context, socket string) (host, network, runner
 	if !runner.Confined && runner.Mechanism != "" {
 		return state, network, runner, fmt.Errorf("agent runners run unconfined in production mode: %s", runner.Reason)
 	}
+	if !runner.Confined {
+		return state, network, runner, fmt.Errorf("%s: agent turns run unconfined in production mode (%s)", confine.NotAvailable, runner.Reason)
+	}
 	if !state.Confined && state.Mechanism != "" {
 		return state, network, runner, fmt.Errorf("openneko serve runs unconfined in production mode: %s", state.Reason)
 	}

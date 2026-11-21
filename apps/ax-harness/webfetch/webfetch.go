@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -40,6 +41,8 @@ type Web struct {
 	hosts   []string
 	client  *http.Client
 	allowIP func(net.IP) bool
+	proxy   func(*http.Request) (*url.URL, error)
+	lookup  func(ctx context.Context, host string) ([]net.IPAddr, error)
 }
 
 // ParseHosts reads a comma list of hosts. "*.example.com" matches
@@ -67,33 +70,28 @@ func Description(hosts []string) string {
 	return "GET a web page or API response from an allowed host. HTML returns as plain text; JSON, XML and text return as received. Returns {url,status,content_type,content,truncated}. Allowed hosts: " + strings.Join(hosts, ", ") + "."
 }
 
+var errNotPublic = errors.New("web_fetch reaches public addresses only")
+
 // Open takes a comma list of hosts, as ParseHosts reads it.
 func Open(allowlist string) (*Web, error) {
 	hosts, err := ParseHosts(allowlist)
 	if err != nil {
 		return nil, err
 	}
-	w := &Web{allowIP: publicIP, hosts: hosts}
-	// The sandbox egress proxy may sit on a private address. Every other
-	// connection must reach a public address.
-	proxy := ""
-	if u, _ := http.ProxyFromEnvironment(&http.Request{URL: &url.URL{Scheme: "https", Host: "example.com"}}); u != nil {
-		proxy = u.Host
-		if u.Port() == "" {
-			proxy = net.JoinHostPort(u.Hostname(), map[string]string{"http": "80", "https": "443"}[u.Scheme])
-		}
-	}
+	w := &Web{allowIP: publicIP, hosts: hosts, proxy: http.ProxyFromEnvironment, lookup: net.DefaultResolver.LookupIPAddr}
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 10 * time.Second,
+	// The operator's proxy may sit on a private address. Every other
+	// connection must reach a public address.
+	transport := &http.Transport{Proxy: w.proxyFor, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 10 * time.Second,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			if address == proxy {
+			if address == w.proxyAddress() {
 				return dialer.DialContext(ctx, network, address)
 			}
 			public := *dialer
 			public.Control = func(_, address string, _ syscall.RawConn) error {
 				host, _, err := net.SplitHostPort(address)
 				if ip := net.ParseIP(host); err != nil || ip == nil || !w.allowIP(ip) {
-					return fmt.Errorf("web_fetch reaches public addresses only")
+					return errNotPublic
 				}
 				return nil
 			}
@@ -109,8 +107,63 @@ func Open(allowlist string) (*Web, error) {
 	return w, nil
 }
 
+func (w *Web) proxyAddress() string {
+	u, _ := w.proxy(&http.Request{URL: &url.URL{Scheme: "https", Host: "example.com"}})
+	if u == nil {
+		return ""
+	}
+	if u.Port() == "" {
+		return net.JoinHostPort(u.Hostname(), map[string]string{"http": "80", "https": "443"}[u.Scheme])
+	}
+	return u.Host
+}
+
+// proxyFor sends a request through the proxy only when every address of its
+// host is public. The proxy resolves the name again, so a name that changes
+// its answer between the two lookups is not covered.
+func (w *Web) proxyFor(req *http.Request) (*url.URL, error) {
+	u, err := w.proxy(req)
+	if err != nil || u == nil {
+		return u, err
+	}
+	host := req.URL.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		if !w.allowIP(ip) {
+			return nil, errNotPublic
+		}
+		return u, nil
+	}
+	addrs, err := w.lookup(req.Context(), host)
+	if err != nil {
+		return nil, err
+	}
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("no address for %s", host)
+	}
+	for _, a := range addrs {
+		if !w.allowIP(a.IP) {
+			return nil, errNotPublic
+		}
+	}
+	return u, nil
+}
+
+var notPublic = []*net.IPNet{
+	{IP: net.IP{100, 64, 0, 0}, Mask: net.CIDRMask(10, 32)},
+	{IP: net.ParseIP("64:ff9b::"), Mask: net.CIDRMask(96, 128)},
+	{IP: net.ParseIP("64:ff9b:1::"), Mask: net.CIDRMask(48, 128)},
+}
+
 func publicIP(ip net.IP) bool {
-	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+		return false
+	}
+	for _, n := range notPublic {
+		if n.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 func (w *Web) check(u *url.URL) error {
