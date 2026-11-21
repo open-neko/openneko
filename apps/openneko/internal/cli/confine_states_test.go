@@ -36,10 +36,10 @@ func TestServeStartsWithoutLandlockAndRefusesOnlyTurns(t *testing.T) {
 }
 
 func TestNoRunnerConfinementIsSaidOnStartDoctorAndReleaseCheck(t *testing.T) {
-	notBuilt := confine.State{Reason: "confinement on windows is not built yet"}
+	notBuilt := confine.State{Reason: "confinement on freebsd is not built yet"}
 	stubConfinement(t, notBuilt, notBuilt)
 	var start strings.Builder
-	want := confine.NotAvailable + " (confinement on windows is not built yet), so agent turns are off. Run openneko serve on Linux or macOS for agent turns (INSTALL.md, \"Agent confinement\")."
+	want := confine.NotAvailable + " (confinement on freebsd is not built yet), so agent turns are off. Run openneko serve on Linux, macOS or Windows for agent turns (INSTALL.md, \"Agent confinement\")."
 	if _, off := runnerConfinement(&start); off != want || !strings.Contains(start.String(), want) {
 		t.Fatalf("start: off=%q log=%q", off, start.String())
 	}

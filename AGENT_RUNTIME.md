@@ -497,15 +497,14 @@ development mode. `openneko release-check --serve-socket` prints `serve_confinem
 (the turn part), `serve_network_confinement` and `runner_confinement`, and
 fails when a part that the system can confine runs unconfined in production
 mode. The status page shows the state under "Agent confinement". On
-Windows the confinement is not built yet: serve starts, and the status page
-and release-check say "agent confinement: not available on this system
-yet".
+Windows the agent runner is confined (see "The runner is confined
+(Windows)"), and the network part of serve is not.
 
 Neither OS can limit the network part to the hosts that the install's
 configuration names without root or admin rights. A root-installed systemd
 unit can add `IPAddressAllow=`.
 
-## The agent runner (Linux and macOS)
+## The agent runner
 
 On Linux and macOS, `openneko serve` runs each agent turn in a new
 process, `openneko agent-runner`. Serve checks the turn's frame, then
@@ -551,8 +550,7 @@ with no link followed, checks that the open file is the regular file it
 saw, and skips a file with a second name. The broker answers at most 1,024
 requests per turn, then closes.
 `openneko serve` says on start that it uses the runner, and its status
-frame reports `"runner":"process"`. On Windows, turns still run inside
-serve; the Windows runner waits for the Windows probe.
+frame reports `"runner":"process"`.
 
 ### The runner confines itself (Linux)
 
@@ -737,6 +735,71 @@ must open the checks that it covers, and each check must be covered.
 `sandbox_init` and a refused profile. `TestConfinedRunnerTurn`
 (`internal/webfront`) runs a whole turn of the release binary's runner with
 a fake model through the door descriptor.
+
+### The runner is confined (Windows)
+
+Windows has no call with which a process confines itself for good, and it
+passes no socket to a child. So on Windows serve starts each runner
+confined, and the runner reaches serve on two sockets:
+
+- Serve makes a new app container profile for each turn
+  (`OpenNeko.Runner.<serve pid>.<random>`), with no capabilities, and
+  starts the runner in it. A profile per turn gives each runner its own
+  SID: two runners at once cannot open each other, and no runner finds what
+  an earlier turn left in the container's own folders. Serve deletes the
+  profile when the turn ends. At start it deletes the profiles whose serve
+  process has ended.
+- The container SID gets read, write and delete on the turn's folders,
+  with no `WRITE_DAC` and no `WRITE_OWNER`, so the runner cannot open a
+  file that it made to other app containers. It gets read and execute on
+  the program file, and connect on the two sockets. Serve takes these
+  grants back when the turn ends. Each turn's folder must lie inside the
+  agent runs folder. Before the grant, serve removes each junction and
+  symbolic link in the turn's folders, so the grant does not follow a link
+  that an earlier runner made.
+- Serve listens on `link.sock` and `broker.sock` in a new folder that only
+  the account, SYSTEM and the container SID can open. It takes a
+  connection only from the runner's process, which it checks with
+  `SIO_AF_UNIX_GETPEERPID`, and closes the link socket after the first. For
+  each connection to the key door or the sandbox, the runner connects to
+  the broker socket and names the target. Serve answers `+` and carries the
+  bytes both ways, or answers `-` and the reason. The 1,024 requests a
+  minute of the broker hold here too.
+- A job object holds the runner: one process, killed when serve's handle
+  closes, 8 GiB of committed memory, the turn's CPU time, and no
+  clipboard, desktop, global atoms or handles of other jobs.
+- The runner's environment holds `PATH`, `TMPDIR`, `SYSTEMROOT` and the
+  folder of its sockets.
+
+Fail closed: the runner checks its own token before the turn. When the
+token is not an app container, or holds a capability, the runner refuses
+the turn. A serve that must confine and has no way to start a confined
+runner refuses every turn. On a Windows older than 10 1809 or Server
+2019, which has no Unix sockets for app containers, serve refuses every
+agent turn with one line.
+
+The app container refuses TCP and UDP to loopback and to other hosts, and
+name lookup. The proof sends a UDP packet to a receiver on loopback that
+the test holds, and a DNS question to 1.1.1.1:53; the receiver gets
+nothing and no answer comes back. An unconfined runner does both.
+
+Proof tests, run on the `windows-latest` GitHub runner with `CI` set, so
+they fail when they cannot run (`internal/cli/runner_confine_windows_test.go`):
+`TestConfinedRunnerWindows` runs the checks in a real runner, first with
+no container as a control, where each must succeed, then confined, where
+each must fail, and reads the job's limits. `TestWindowsRunnerRefusesATurnOutsideAnAppContainer`
+starts the runner with no container and expects the turn to be refused.
+`TestWindowsRunnersCannotReachEachOther` runs two turns at once.
+`TestWindowsRunnerGetsNoFolderThroughALink` puts a junction to the config
+folder in a workspace. `TestWindowsStarterKeepsTheTurnInsideAgentRuns`,
+`TestWindowsTurnsAreOffWithNoAppContainer` and `TestStaleRunnerContainersGo`
+cover the rest. In `apps/ax-harness/serve`,
+`TestWindowsRunnerSocketsTakeOnlyTheRunner` shows that a socket refuses
+another process.
+
+Gaps: the runner can read what Windows opens to every app container, such
+as the system folders and parts of the registry. Its threads are capped in
+the Go runtime only.
 
 Agent runs read customer data only through the direct GraphJin tools. No run
 hands a question to GraphJin's own agent, so GraphJin gets no provider key.

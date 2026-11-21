@@ -11,7 +11,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 * **Breaking:** each agent turn runs in its own `openneko agent-runner` process, which confines itself before agent code runs. The runner has no network, starts no other program, reads and writes only the files of its turn, and holds no model key and no sandbox key. `openneko serve` hands it each link to the key door and the sandbox.
 * On Linux, the runner uses Landlock and a seccomp filter. The lowest kernel is Linux 5.13, with `landlock` in the active security modules. In a container, the engine must allow the Landlock and seccomp calls: Docker 20.10.18, containerd 1.6.0 or Podman 4.2.0 or later.
 * On macOS, the runner uses a Seatbelt profile (`sandbox_init`). Seatbelt on macOS 15.8 does not stop a read of the arguments and environment of another process of the same account. For this reason, no OpenNeko process keeps a secret in its arguments or environment: `openneko start`, web, serve and the customer GraphJin get their secrets on stdin.
-* **Breaking:** on Windows, serve refuses every agent turn, because OpenNeko has no agent confinement for Windows yet. In 5.0.0, turns ran unconfined. The web app, sign-in, data reads and host model calls work.
+* On Windows, serve starts each runner in an app container of its own, with no capabilities, in a job object that refuses a second process. The runner has no network and reaches only the folders of its turn and two sockets of serve. It needs Windows 10 1809, Windows Server 2019 or later. In 5.0.0, turns ran unconfined.
 * **Breaking:** no mode of `openneko` runs an agent turn without confinement: production, development, demo, test installs and the eval install all use the confined runner. `OPENNEKO_SERVE_CONFINE=off` is gone. On a system that cannot confine, serve refuses each agent turn with one line that names what is missing. On RHEL 8 (kernel 4.18, no Landlock), agent turns are off until the host runs a kernel with Landlock. `openneko doctor` names the cause.
 * Serve runs as two processes. The child `openneko serve-network` runs the files service, both GraphJins and the config check; it keeps its network but cannot read the config folder, the serve credentials or the agent runs. The network part confines itself on Linux and macOS. On Linux, the part that starts the runners keeps only the agent runs, its socket, the key door and the sandbox socket. In production mode, serve does not start without the credentials from `openneko serve-init`; in Docker, `openneko start` and `openneko upgrade` run it.
 * Each runner has limits: CPU time to the turn's deadline, 8 GiB of address space, 128 MiB for one file, 1024 open files and 256 threads, on Linux and macOS. A runner that cannot start a thread ends only its own turn, with one line. Serve ends the runner's process group at turn end, when web hangs up, and at the deadline.
@@ -95,14 +95,14 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 * Team memory, team skill and rule changes from a chat wait for an admin. Skill learning no longer changes team skills by itself: each lesson waits for an admin too.
 * A web search through the Parallel pack asks for approval, unless an admin chose auto.
 * In a Slack channel or a Telegram group, an answer can come as a private message, with a note in the thread.
-* On Windows, and on a Linux host with no Landlock, agent questions are refused. Data reads and the rest of the app work.
+* On a Linux host with no Landlock, and on a Windows older than 10 1809 or Server 2019, agent questions are refused. Data reads and the rest of the app work.
 
 ### What to do when you upgrade
 
 Do these steps in order. Steps 1 to 5 come before the upgrade.
 
 1. Take a backup with `openneko backup`, and keep the backup key off the host.
-2. Check that the host can confine agent turns. On Linux, `uname -r` must show 5.13 or later, and `cat /sys/kernel/security/lsm` must hold `landlock`. Agent turns are off on Windows and on RHEL 8. After the upgrade, `openneko doctor` shows the same check.
+2. Check that the host can confine agent turns. On Linux, `uname -r` must show 5.13 or later, and `cat /sys/kernel/security/lsm` must hold `landlock`. On Windows, `cmd /c ver` must show build 17763 or later. Agent turns are off on RHEL 8. After the upgrade, `openneko doctor` shows the same check.
 3. Find the script skills of your organization that import pypdf, openpyxl, python-docx or python-pptx, call git, npm or pip, write to `/tmp` by a fixed path or use `multiprocessing`. Change them before the upgrade, or expect them to fail.
 4. Choose the hosts that sandbox commands must reach, and where Slack and Telegram answers go.
 5. Remove each `*_API_KEY` variable from an override of `openneko-serve`, and move the sandbox and embedding keys from `compose.override.yml` to the environment of `openneko upgrade`. Let web reach the model APIs.
