@@ -376,7 +376,7 @@ func TestTurnToolsMatchNode(t *testing.T) {
 	}
 }
 
-var surfaceIDPattern = regexp.MustCompile(`(answer|source-form|pack-setup)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+var surfaceIDPattern = regexp.MustCompile(`(answer|source-form|pack-setup|openapi-import)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 func fixtureNeutral(text, skillsRoot string) string {
 	root, _ := json.Marshal(filepath.ToSlash(skillsRoot))

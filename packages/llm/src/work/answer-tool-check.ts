@@ -13,6 +13,7 @@ const SCRIPT_PATTERNS = [
   /\bopen\s*\(/,
   /\bimport\s*\(/,
   /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|Worker|SharedWorker)\b/,
+  /\b(\w*RTCPeerConnection|RTCDataChannel|RTCIceCandidate|RTCSessionDescription)\b/,
 ];
 
 function scriptText(html: string): string {
