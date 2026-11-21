@@ -3798,6 +3798,146 @@ paths:
                 properties:
                   error:
                     type: string
+  /admin/team-proposals:
+    get:
+      operationId: getAdminTeamProposals
+      tags:
+      - admin
+      summary: List the changes to team memory, team skills and skill lessons that wait for an admin
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '200':
+          description: Each pending change with a title and a line diff for each file
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - proposals
+                additionalProperties: false
+                properties:
+                  proposals:
+                    type: array
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /admin/team-proposals/{proposalId}/confirm:
+    post:
+      operationId: postAdminTeamProposalsByProposalIdConfirm
+      tags:
+      - admin
+      summary: Confirm a team change; it then takes effect
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: proposalId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The change is applied
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: No pending team change has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The item changed after the change was proposed; nothing is applied and the change is marked stale
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/team-proposals/{proposalId}/reject:
+    post:
+      operationId: postAdminTeamProposalsByProposalIdReject
+      tags:
+      - admin
+      summary: Reject a team change
+      x-access: admin
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: proposalId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The change is rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not an admin, or SSO is live and no session is present
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: No pending team change has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/graphjin/config:
     get:
       operationId: getAdminGraphjinConfig

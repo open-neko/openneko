@@ -332,5 +332,15 @@ export const adminCases: Case[] = [
     op: "POST /policies/proposals/{proposalId}/reject", name: "refuses an unknown proposal", status: 404,
     request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
   },
+  { op: "GET /admin/team-proposals", name: "lists the pending team changes", status: 200 },
+  { op: "GET /admin/team-proposals", name: "refuses a member", as: "member", status: 403 },
+  {
+    op: "POST /admin/team-proposals/{proposalId}/confirm", name: "refuses an unknown change", status: 404,
+    request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
+  },
+  {
+    op: "POST /admin/team-proposals/{proposalId}/reject", name: "refuses an unknown change", status: 404,
+    request: (c) => ({ params: { proposalId: c.ids.unknownId } }),
+  },
   { op: "PATCH /policies/{policyId}", name: "needs a change", status: 400, request: (c) => ({ params: { policyId: c.ids.unknownId }, body: {} }) },
 ];

@@ -243,6 +243,9 @@ func memoryTools(b turnBinding, be toolBackend) []toolDef {
 			}
 			be.audit(ctx, "/v1/memory/remember")
 			id, err := be.rememberMemory(ctx, in)
+			if result, ok := teamWriteResult(err); ok {
+				return result, nil
+			}
 			if err != nil {
 				return toolResult{}, err
 			}
@@ -259,6 +262,9 @@ func memoryTools(b turnBinding, be toolBackend) []toolDef {
 			be.audit(ctx, "/v1/memory/update")
 			id, err := be.updateMemory(ctx, memoryUpdateIn{OrgID: b.OrgID, RunID: b.runID(), ThreadID: b.threadID(),
 				MemoryID: memoryID, Text: stringArg(args, "text")})
+			if result, ok := teamWriteResult(err); ok {
+				return result, nil
+			}
 			if err != nil {
 				return toolResult{isError: true, text: jsStringify(jsObjOf("ok", false,
 					"error", "No saved memory "+memoryID+" is visible to this run."), false)}, nil
@@ -461,19 +467,20 @@ func (r *runTools) rememberMemory(ctx context.Context, in memoryRememberIn) (str
 	if in.Scope == "thread" && deref(in.ThreadID) != "" {
 		scope, scopeID = "thread", in.ThreadID
 	}
-	var layer *string
-	if in.RunID != nil {
-		var userID, role *string
-		err := r.api.DB.QueryRow(ctx, `select actor_user_id, actor_role from work_run where id::text = $1`, *in.RunID).Scan(&userID, &role)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return "", err
-		}
-		if deref(role) == "member" && deref(userID) != "" {
-			layer = userID
-		}
+	mode, userID, err := r.api.runTeamWrite(ctx, in.OrgID, in.RunID)
+	if err != nil {
+		return "", err
+	}
+	switch mode {
+	case teamWriteRefused:
+		return "", errTeamWriteRefused
+	case teamWritePropose:
+		id, err := r.api.proposeTeamItem(ctx, in.OrgID, "memory", "new", nil, memoryProposal{Kind: in.Kind, Text: strings.TrimSpace(in.Text),
+			Scope: scope, ScopeID: scopeID, Pinned: in.Pinned, ThreadID: in.ThreadID}, "", userID, in.RunID)
+		return "", teamChangeWaits(id, err)
 	}
 	m, err := r.api.insertMemory(ctx, r.api.DB, in.OrgID, memoryDraft{Kind: in.Kind, Text: in.Text, Scope: scope, ScopeID: scopeID,
-		Pinned: in.Pinned, Confidence: 0.8, Metadata: []byte("{}"), RunID: in.RunID, ThreadID: in.ThreadID, Layer: layer}, jsNow())
+		Pinned: in.Pinned, Confidence: 0.8, Metadata: []byte("{}"), RunID: in.RunID, ThreadID: in.ThreadID, Layer: userID}, jsNow())
 	if err != nil {
 		return "", err
 	}
@@ -481,7 +488,7 @@ func (r *runTools) rememberMemory(ctx context.Context, in memoryRememberIn) (str
 }
 
 // updateMemory is updateWorkMemoryForRun(): a member's run edits through the
-// member's own layer; a team run rewrites the team row in place.
+// member's own layer; an admin's chat run proposes the new team text.
 func (r *runTools) updateMemory(ctx context.Context, in memoryUpdateIn) (string, error) {
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
@@ -512,15 +519,17 @@ func (r *runTools) updateMemory(ctx context.Context, in memoryUpdateIn) (string,
 			err = errors.New("Memory not found: " + in.MemoryID)
 		}
 	} else {
-		var updated memoryOut
-		updated, err = r.api.scanMemory(tx.QueryRow(ctx, `update work_memory set text = $3, integrity_hmac = $4, embedding = null, updated_at = $5
-			where org_id = $1 and id = $2 returning `+memoryColumns,
-			in.OrgID, target.ID, text, r.api.memoryHMAC(in.OrgID, "", target.Kind, target.Scope, deref(target.ScopeID), text), jsNow()))
-		m = &updated
-		if err == nil {
-			err = memoryEvent(ctx, tx, in.OrgID, &target.ID, in.RunID, in.ThreadID, "update",
-				map[string]any{"previousText": target.Text, "text": text})
+		mode, userID, err := r.api.runTeamWrite(ctx, in.OrgID, in.RunID)
+		if err != nil {
+			return "", err
 		}
+		if mode != teamWritePropose {
+			return "", errTeamWriteRefused
+		}
+		id, err := r.api.proposeTeamItem(ctx, in.OrgID, "memory", target.ID, map[string]string{"text": target.Text},
+			memoryProposal{Kind: target.Kind, Text: text, Scope: target.Scope, ScopeID: target.ScopeID, Pinned: target.Pinned, ThreadID: in.ThreadID},
+			sha256Hex(target.Text), userID, in.RunID)
+		return "", teamChangeWaits(id, err)
 	}
 	if err != nil {
 		return "", err

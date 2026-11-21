@@ -713,8 +713,8 @@ func TestTurnToolsDatabase(t *testing.T) {
 	as, _ := turnTools(admin, a.runTools(admin), []string{"neko_memory", "neko_guides"})
 	got, _ = callTool(t, as, "memory_update", map[string]any{"memoryId": memDatabase, "text": "AOV excludes tax and shipping"})
 	_ = db.QueryRow(ctx, `select text from work_memory where id = $1`, memDatabase).Scan(&teamText)
-	if !strings.Contains(got, memDatabase) || teamText != "AOV excludes tax and shipping" {
-		t.Fatalf("admin update: %s, row %q", got, teamText)
+	if !strings.Contains(got, `\"proposed\":true`) || teamText == "AOV excludes tax and shipping" {
+		t.Fatalf("an admin's chat run changed a team memory with no confirmation: %s, row %q", got, teamText)
 	}
 
 	seed(t, db, `insert into skill_embedding (org_id, skill_name, document) values

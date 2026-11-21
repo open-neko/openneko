@@ -86,18 +86,22 @@ func TestRunSkillLearnDecisions(t *testing.T) {
 	}
 
 	res, err := runSkillLearn(base(root, nil))
-	if err != nil || res.Decision != "applied" || res.Overlay == nil {
-		t.Fatalf("apply: %+v %v", res, err)
+	if err != nil || res.Decision != "proposed" || res.Overlay == nil {
+		t.Fatalf("propose: %+v %v", res, err)
+	}
+	if _, err := os.Stat(learnedOverlayPath(root, "refunds")); err == nil {
+		t.Fatal("a lesson was written with no admin confirmation")
 	}
 	baseHash, _ := fingerprintSkillTree(filepath.Join(root, "skills", "refunds"))
-	raw, _ := os.ReadFile(learnedOverlayPath(root, "refunds"))
-	want := "---\nskill_name: refunds\nbase_hash: " + baseHash + "\nstatus: applied\n---\n\nPrefer parent items when product structures would double-count.\n"
-	if string(raw) != want || res.Trace.BaseHash != baseHash || res.Trace.ContentHash != "same-hash" ||
-		res.Diff != "--- before\n\n+++ after\nPrefer parent items when product structures would double-count.\n" {
-		t.Fatalf("overlay %q, result %+v", raw, res)
+	if res.Overlay.BaseHash != baseHash || res.Overlay.Body != "Prefer parent items when product structures would double-count." ||
+		res.Trace.ContentHash != "same-hash" || res.Diff != "--- before\n\n+++ after\nPrefer parent items when product structures would double-count.\n" {
+		t.Fatalf("result %+v", res)
 	}
-	if skill, _ := os.ReadFile(filepath.Join(root, "skills", "refunds", "SKILL.md")); string(skill) != "# Refunds\n" {
-		t.Errorf("SKILL.md changed: %q", skill)
+	if res, _ := runSkillLearn(base(root, func(in *skillLearnInput) { in.Pending = true })); res.Decision != "skipped" || res.Reason != "lesson_pending" {
+		t.Errorf("a waiting lesson: %+v", res)
+	}
+	if err := writeLearnedOverlay(root, res.Overlay); err != nil {
+		t.Fatal(err)
 	}
 	if hash, _ := fingerprintEffectiveSkill(root, "refunds", filepath.Join(root, "skills", "refunds")); hash == baseHash {
 		t.Error("the turn's skill hash does not see the overlay")
@@ -215,18 +219,34 @@ func TestSkillLearnJob(t *testing.T) {
 			t.Fatal(err)
 		}
 		events = append(events, decision+"/"+reason+"/"+lesson)
-		if decision == "applied" {
+		if decision == "proposed" {
 			var got []string
 			_ = json.Unmarshal([]byte(ids), &got)
 			if strings.Join(got, ",") != strings.Join(runIDs[:3], ",") || traceBase == nil || !strings.Contains(diff, "+++ after\nPrefer parent items") {
-				t.Errorf("applied event: ids %s base %v diff %q", ids, traceBase, diff)
+				t.Errorf("proposed event: ids %s base %v diff %q", ids, traceBase, diff)
 			}
 			baseHash = *traceBase
 		}
 	}
 	rows.Close()
-	if strings.Join(events, " | ") != "skipped/flags_off/ | applied/applied additive learned guidance/parent items" {
+	if strings.Join(events, " | ") != "skipped/flags_off/ | proposed/proposed additive learned guidance/parent items" {
 		t.Fatalf("events %q", events)
+	}
+	if o := readLearnedOverlay(root, "magento-investigate-refunds"); o != nil {
+		t.Fatalf("the job wrote a lesson with no admin confirmation: %+v", o)
+	}
+	if got := scalar(t, db, `select count(*)::text from skill_learn_state where org_id = 'org' and skill_name = 'magento-investigate-refunds'`); got != "0" {
+		t.Errorf("the job recorded a lesson as applied: %s", got)
+	}
+	if err := f.API.SkillLearn(ctx, "org", "magento-investigate-refunds"); err != nil || len(g.calls) != 1 {
+		t.Fatalf("a second job asked the model while a lesson waits: %d calls, %v", len(g.calls), err)
+	}
+	id := scalar(t, db, `select id::text from team_item_proposal where kind = 'skill_lesson' and target = 'magento-investigate-refunds' and status = 'pending'`)
+	if w := call(f, "POST", "/api/v1/admin/team-proposals/"+id+"/confirm", "", sessionCookie("member")); w.Code != 403 {
+		t.Fatalf("a member confirmed a lesson: %d", w.Code)
+	}
+	if w := call(f, "POST", "/api/v1/admin/team-proposals/"+id+"/confirm", "", sessionCookie("admin")); w.Code != 200 {
+		t.Fatalf("confirm: %d %s", w.Code, w.Body)
 	}
 	var stateBase, learned string
 	var on bool
