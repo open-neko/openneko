@@ -939,6 +939,17 @@ missing or incomplete.
 Last actions of the earlier turn:
 ${trail}
 </continuation>
+@@ playbook
+<playbook>
+Rules this organization's earlier runs proved. Each one made a question
+that had been answered wrong come out right. Follow them.
+
+${items}
+</playbook>
+@@ mined_test_role
+You answer a business question from the organization's data. Query the data
+through GraphJin, then answer in a few sentences. State the figure or the
+name that answers the question.
 @@ answer_check
 <answer_check>
 An earlier attempt at this question answered that no data exists, but none

@@ -71,7 +71,7 @@ func TestVerifyCompiledKeepsAQueryThatGivesBackTheRunsResult(t *testing.T) {
 			Result: `{"data":{"salesorderheader":{"sum_subtotal":51234.5}}}`},
 	}
 	p := compileProposal{AnswerCall: "c3", AnchorCall: "c1",
-		Query: `{ salesorderheader(where: { orderdate: { gte: $day } }) { sum_subtotal } }`,
+		Query:     `{ salesorderheader(where: { orderdate: { gte: $day } }) { sum_subtotal } }`,
 		Variables: []compiledVar{{Name: "day", Value: "2025-06-28T00:00:00", Base: "anchor", Align: "day", Offset: -1, Unit: "day", Format: "timestamp"}}}
 	call, seen := fakeCompileCall(map[string]string{`{"day":"2025-06-28T00:00:00"}`: `{"data":{"salesorderheader":{"sum_subtotal":51234.5}}}`})
 	today := time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)

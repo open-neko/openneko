@@ -47,6 +47,7 @@ type Queue struct {
 	ActionExecute    func(ctx context.Context, orgID, actionRequestID string) error
 	SkillLearn       func(ctx context.Context, orgID, skillName string) error
 	BotNameSweep     func(context.Context) error
+	PlaybookSweep    func(context.Context) error
 	Build            BuildFunc
 	WorkflowRunFire  WorkflowRunFireFunc
 	WorkflowAPISweep func(context.Context) error
@@ -245,6 +246,7 @@ func (q *Queue) config() *river.Config {
 	river.AddWorker(workers, &actionExecute{run: q.ActionExecute})
 	river.AddWorker(workers, &skillLearn{run: q.SkillLearn})
 	river.AddWorker(workers, &botNameSweep{run: q.BotNameSweep})
+	river.AddWorker(workers, &playbookSweep{run: q.PlaybookSweep})
 	addBuildWorkers(workers, q.Build)
 	river.AddWorker(workers, &workflowRunFire{run: q.WorkflowRunFire})
 	river.AddWorker(workers, &workflowAPISweep{run: q.WorkflowAPISweep})
@@ -282,6 +284,7 @@ var cronJobs = []cronJob{
 	{schedule: EveryMinute{}, period: time.Minute, args: EmbeddingSweepArgs{}, runOnStart: true},
 	{schedule: SixHourly{}, period: 6 * time.Hour, args: DirectorySyncArgs{}},
 	{schedule: QuarterHourly{}, period: 15 * time.Minute, args: BotNameSweepArgs{}, runOnStart: true},
+	{schedule: SixHourly{}, period: 6 * time.Hour, args: PlaybookSweepArgs{}},
 	{schedule: EveryMinute{}, period: time.Minute, args: WorkflowAPISweepArgs{}, runOnStart: true},
 	{schedule: EveryMinute{}, period: time.Minute, args: SSOSetupPollArgs{}},
 }

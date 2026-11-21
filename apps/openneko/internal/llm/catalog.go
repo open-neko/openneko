@@ -123,6 +123,7 @@ var Tasks = []Task{
 	{"skill_lessons", "Skill lessons", "Proposes a skill change from a finished run."},
 	{"research_mission", "Research mission", "Writes the company mission during setup."},
 	{"workflow_compile", "Workflow compiler", "Turns a finished workflow run into a stored query for its next runs."},
+	{"playbook", "Playbook", "Proposes a rule for every run from a test that failed."},
 }
 
 func IsTask(task string) bool {
