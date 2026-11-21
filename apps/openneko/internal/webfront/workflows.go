@@ -33,6 +33,8 @@ type workflowSummary struct {
 	NeedsOwner   bool       `json:"needsOwner"`
 	AccessHeld   bool       `json:"accessHeld"`
 	VersionHash  *string    `json:"versionHash,omitempty"`
+	APIAccess    bool       `json:"apiAccess"`
+	Webhook      bool       `json:"webhook"`
 }
 
 func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +52,9 @@ func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.Query(ctx, `
 		select id::text, name, description, goal, enabled, status, cron, cron_timezone, cron_enabled, steps,
 		  created_at, updated_at, owner_user_id, `+workflowNeedsOwner+`, access_held_at is not null or access_approved_hash is not null
-		  or exists (select 1 from workflow_api_access x where x.workflow_id = w.id and x.enabled)
+		  or exists (select 1 from workflow_api_access x where x.workflow_id = w.id and x.enabled),
+		  exists (select 1 from workflow_api_access x where x.workflow_id = w.id and x.enabled),
+		  exists (select 1 from compat_webhook h where h.workflow_id = w.id and h.enabled)
 		from workflow_definition w where org_id = $1 order by updated_at desc`, act.OrgID)
 	if err != nil {
 		a.fail(w, r, err)
@@ -64,7 +68,7 @@ func (a *API) workflows(w http.ResponseWriter, r *http.Request) {
 		var created, updated time.Time
 		var owner string
 		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.Goal, &s.Enabled, &s.Status, &s.Cron, &s.CronTimezone,
-			&s.CronEnabled, &steps, &created, &updated, &owner, &s.NeedsOwner, &s.AccessHeld); err != nil {
+			&s.CronEnabled, &steps, &created, &updated, &owner, &s.NeedsOwner, &s.AccessHeld, &s.APIAccess, &s.Webhook); err != nil {
 			a.fail(w, r, err)
 			return
 		}

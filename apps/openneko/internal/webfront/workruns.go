@@ -480,7 +480,7 @@ func (a *API) workflowPrincipal(ctx context.Context, wf workflowRecord) (graphji
 			return graphjinPrincipal{}, err
 		}
 		if needs {
-			return graphjinPrincipal{}, workflowRefusal("Workflow " + wf.Name + " has no owner. An admin assigns one at Admin, Settings, Workflow API before it runs.")
+			return graphjinPrincipal{}, workflowRefusal("Workflow " + wf.Name + " has no owner, so it does not run. An admin assigns an owner at Admin, Settings, Workflow API; the workflow then runs with the owner's access, and its API key and webhook keep working.")
 		}
 		return graphjinPrincipal{role: "service"}, nil
 	}

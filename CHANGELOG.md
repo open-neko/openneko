@@ -118,6 +118,7 @@
 
 ### Upgrade from 5.0.0
 
+* Check Admin, Settings, Workflow API after the upgrade. A workflow from 5.0.0 with no owner and no pack, and with API access or a webhook, ran as the service account; it now stops, and its callers get `409 workflow_not_runnable` with a line that tells them an admin must assign an owner. The page lists these workflows first, marked "API access" or "webhook". Assign an owner there: the workflow then runs with the owner's access, and its API key and webhook keep working with no change for the caller. The AdventureWorks demo data has no such workflow.
 * `openneko start` and `openneko upgrade` ignore the entries of `compose.override.yml` for services that this release does not run (`worker`, `librarian`, `embedding`, `neko-backup`, `neko-reaper`, the OpenShell, Records and old GraphJin services). They print one warning line that names the entries and the file, and leave the file as it is. Before, Compose stopped the upgrade with a service that has no image.
 * `openneko stop`, `status`, `logs`, `reset` and `seed` set `OPENNEKO_VERSION` from the install's image tag, as `start` and `upgrade` do. Before, they failed when `compose.override.yml` held the sandbox recipe, which requires that variable.
 * The upgrade removes the untagged images of the OpenNeko repositories too. 5.0.0 pulled the librarian image by digest, so an earlier upgrade kept it (2.45 GB).

@@ -22,3 +22,13 @@ it("lists each workflow with no owner on one line with an owner choice", () => {
 it("shows nothing when every workflow has an owner", () => {
   expect(renderToStaticMarkup(createElement(OwnerlessWorkflows, { workflows: [], users }))).toBe("");
 });
+
+it("lists a workflow with API access or a webhook first and says that the key and the hook keep working", () => {
+  const html = renderToStaticMarkup(createElement(OwnerlessWorkflows, {
+    workflows: [{ id: "w1", name: "Stock Reorder Watch" }, { id: "w2", name: "Order intake", apiAccess: true, webhook: true }],
+    users,
+  }));
+  expect(html.indexOf("Order intake")).toBeLessThan(html.indexOf("Stock Reorder Watch"));
+  expect(html).toContain("API access · webhook: callers wait for an owner");
+  expect(html).toContain("Assign an owner and the API key and the webhook keep working.");
+});
