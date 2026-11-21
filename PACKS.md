@@ -149,6 +149,18 @@ and the [bundle loader](apps/openneko/internal/packs/bundle.go) for identity and
 validation. Avoid renaming a query file or skill casually: filenames and skill
 names participate in artifact identity.
 
+### Message bodies
+
+OpenNeko checks the `body` of every pack action when the action is proposed
+and again before it runs. Nothing in it may make the receiver's mail client,
+the chat service or a browser fetch a URL, and a link must show its real host.
+A Slack body gets `unfurl_links` and `unfurl_media` set to false, and an image
+block or an image URL field is refused. The Resend `html` field is reduced to
+safe HTML (text, headings, lists, tables and links), and Resend `attachments`
+are refused. A Gmail `raw` message is refused when its HTML part loads a URL
+or hides a link's host, or when it holds an attachment. Any other body that
+holds HTML which loads a URL is refused.
+
 ## Connectors and credentials
 
 A custom API source can declare bearer authentication like this:
