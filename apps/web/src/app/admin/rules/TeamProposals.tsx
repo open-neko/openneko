@@ -13,7 +13,15 @@ export type TeamProposal = {
   kind: "memory" | "skill" | "skill_lesson";
   target: string;
   title: string;
-  files: Array<{ path: string; change: "added" | "changed" | "removed"; binary: boolean; lines: DiffLine[] }>;
+  files: Array<{
+    path: string;
+    change: "added" | "changed" | "removed";
+    binary: boolean;
+    binaryKind?: string;
+    charset?: string;
+    unshown?: boolean;
+    lines: DiffLine[];
+  }>;
   proposedBy: string | null;
   createdAt: string;
 };
@@ -73,9 +81,16 @@ function ProposalRow({ proposal, onDecided }: { proposal: TeamProposal; onDecide
       <p className="m-0 text-ui-body-sm text-text2">Proposed by {proposal.proposedBy ?? "the skill-learning job"}</p>
       {proposal.files.map((file) => (
         <div key={file.path} className="grid gap-1">
-          <p className="m-0 text-ui-caption font-semibold text-text3">{file.path} · {file.change}</p>
-          {file.binary ? (
-            <p className="m-0 text-ui-body-sm text-text2">A binary file. OpenNeko does not show its content.</p>
+          <p className="m-0 text-ui-caption font-semibold text-text3">
+            {file.path} · {file.change}
+            {file.charset ? ` · shown as ${file.charset} text` : ""}
+          </p>
+          {file.unshown ? (
+            <p className="m-0 text-ui-body-sm text-danger">OpenNeko cannot show this file, so you cannot confirm this change. Reject it.</p>
+          ) : file.binary ? (
+            <p className="m-0 text-ui-body-sm text-text2">
+              {file.binaryKind ?? "A file that is not text"}. OpenNeko does not show its content, and a run does not execute this file type.
+            </p>
           ) : (
             <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-bg px-3 py-2.5 font-mono text-ui-caption text-text2">
               {file.lines.map((line, index) => (

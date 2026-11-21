@@ -31,6 +31,7 @@ type stagedSkillFile struct {
 type savedSkillEdits struct {
 	Proposed []string
 	Refused  []string
+	Unshown  []string
 	Own      []string
 	Copies   map[string]string
 	Skipped  []string
@@ -42,6 +43,24 @@ func (s savedSkillEdits) copyList() []string {
 		out = append(out, from+" -> "+to)
 	}
 	slices.Sort(out)
+	return out
+}
+
+// notices are the run events that tell the person who reads the run what
+// happened to a team skill it changed and did not save.
+func (s *savedSkillEdits) notices() []any {
+	if s == nil {
+		return nil
+	}
+	var out []any
+	if len(s.Refused) > 0 {
+		out = append(out, jsObjOf("type", "notice", "code", "team_skill_refused", "message",
+			"This run changed the team skill "+strings.Join(s.Refused, ", ")+". A workflow or service run cannot change team skills, so OpenNeko did not save the change. An admin changes team skills in Settings."))
+	}
+	for _, p := range s.Unshown {
+		out = append(out, jsObjOf("type", "notice", "code", "team_skill_unshown", "message",
+			unshownFile{p}.Error()+" OpenNeko did not propose the change to "+skillOf(p)+"."))
+	}
 	return out
 }
 
@@ -352,7 +371,13 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 
 	for _, n := range proposed {
 		userID := act.UserID
-		if _, err := a.proposeSkillEdit(ctx, orgID, teamRoot, n, baseline, changed, removed, &userID, runID); err != nil {
+		_, err := a.proposeSkillEdit(ctx, orgID, teamRoot, n, baseline, changed, removed, &userID, runID)
+		var unshown unshownFile
+		if errors.As(err, &unshown) {
+			out.Unshown = append(out.Unshown, unshown.path)
+			continue
+		}
+		if err != nil {
 			log.Printf("[agent-run] skill proposal failed for %s: %v", runID, err)
 			continue
 		}
