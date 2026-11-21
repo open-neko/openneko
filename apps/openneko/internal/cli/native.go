@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -166,6 +167,9 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 		ctx, stop := native.NotifyStop(cmd.Context())
 		defer stop()
 		fmt.Fprintf(out, "OpenNeko runs at %s. Logs are in %s. Press Ctrl-C to stop.\n", opts.PublicURL, layout.Logs())
+		if err := becomeSupervisor(layout, opts); err != nil {
+			return err
+		}
 		return runNativeSupervisor(ctx, out, layout, opts)
 	}
 	logFile, err := os.OpenFile(layout.Log("supervisor"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -173,12 +177,24 @@ func startNative(cmd *cobra.Command, webDir, dbURL string, detach, skipMigrate b
 		return err
 	}
 	defer logFile.Close()
-	child := exec.Command(opts.Exe, "native-run")
-	child.Env, child.Stdout, child.Stderr = opts.Env, logFile, logFile
-	child.SysProcAttr = native.Detach()
-	if err := child.Start(); err != nil {
+	clean, secrets := supervisorEnv(opts.Env)
+	handR, handW, err := os.Pipe()
+	if err != nil {
 		return err
 	}
+	child := exec.Command(opts.Exe, "native-run")
+	child.Env, child.Stdin, child.Stdout, child.Stderr = clean, handR, logFile, logFile
+	child.SysProcAttr = native.Detach()
+	err = child.Start()
+	_ = handR.Close()
+	if err != nil {
+		_ = handW.Close()
+		return err
+	}
+	go func() {
+		_, _ = handW.Write(secretenv.Line(secrets))
+		_ = handW.Close()
+	}()
 	_ = child.Process.Release()
 	probe, err := native.ProbeHost(opts.WebAddr)
 	if err != nil {
@@ -204,6 +220,46 @@ func runNativeSteps(cmd *cobra.Command, layout native.Layout, opts native.Option
 	return nil
 }
 
+// supervisorEnv splits the environment of `openneko start` into the
+// variables the supervisor may show and the secrets it gets on stdin.
+func supervisorEnv(env []string) ([]string, map[string]string) {
+	var kept []string
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, secretenv.StdinEnv+"=") {
+			kept = append(kept, kv)
+		}
+	}
+	clean, secrets := secretenv.Split(kept)
+	return append(clean, secretenv.StdinEnv+"=1"), secrets
+}
+
+// handedSupervisorEnv puts back, in memory only, the secrets that `openneko
+// start` wrote on the supervisor's stdin.
+func handedSupervisorEnv(stdin io.Reader, env []string) ([]string, error) {
+	if os.Getenv(secretenv.StdinEnv) != "1" {
+		return env, nil
+	}
+	line, err := bufio.NewReader(stdin).ReadBytes('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("read the supervisor's secrets on stdin: %w", err)
+	}
+	var secrets map[string]string
+	if err := json.Unmarshal(line, &secrets); err != nil {
+		return nil, fmt.Errorf("read the supervisor's secrets on stdin: %w", err)
+	}
+	clear(line)
+	out := make([]string, 0, len(env)+len(secrets))
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, secretenv.StdinEnv+"=") {
+			out = append(out, kv)
+		}
+	}
+	for k, v := range secrets {
+		out = append(out, k+"="+v)
+	}
+	return out, nil
+}
+
 func runNativeSupervisor(ctx context.Context, log io.Writer, layout native.Layout, opts native.Options) error {
 	s := &native.Supervisor{Layout: layout, Procs: native.Procs(layout, opts), WebAddr: opts.WebAddr, Log: log}
 	return s.Run(ctx)
@@ -222,6 +278,9 @@ func newNativeRunCmd() *cobra.Command {
 			}
 			opts, err := nativeOptions(settings)
 			if err != nil {
+				return err
+			}
+			if opts.Env, err = handedSupervisorEnv(os.Stdin, opts.Env); err != nil {
 				return err
 			}
 			ctx, stop := native.NotifyStop(cmd.Context())

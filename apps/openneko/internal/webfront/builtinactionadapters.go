@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
 )
 
 const (
@@ -218,9 +219,9 @@ func (a *API) executeCodeCreateIssue(ctx context.Context, req *actionRequestReco
 			}
 		}
 	}
-	token := strings.TrimSpace(os.Getenv("OPENNEKO_GITHUB_TOKEN"))
+	token := strings.TrimSpace(secretenv.Get("OPENNEKO_GITHUB_TOKEN"))
 	if token == "" {
-		token = strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+		token = strings.TrimSpace(secretenv.Get("GITHUB_TOKEN"))
 	}
 	if token == "" {
 		return nil, errors.New("code_create_issue: no forge token configured (set OPENNEKO_GITHUB_TOKEN)")

@@ -26,6 +26,13 @@ type Config struct {
 	Region      string
 	AccessKeyID string
 	SecretKey   string
+	// AWS holds the host's AWS_* login, for a bucket with no login of its
+	// own; the part that opens the bucket keeps no AWS_* variable.
+	AWS AWSLogin
+}
+
+type AWSLogin struct {
+	KeyID, Secret, Session string
 }
 
 func FromEnv(dir string) Config {
@@ -36,6 +43,8 @@ func FromEnv(dir string) Config {
 		Region:      strings.TrimSpace(os.Getenv("OPENNEKO_FILES_BUCKET_REGION")),
 		AccessKeyID: strings.TrimSpace(secretenv.Get("OPENNEKO_FILES_BUCKET_KEY_ID")),
 		SecretKey:   strings.TrimSpace(secretenv.Get("OPENNEKO_FILES_BUCKET_SECRET")),
+		AWS: AWSLogin{KeyID: strings.TrimSpace(secretenv.Get("AWS_ACCESS_KEY_ID")), Secret: strings.TrimSpace(secretenv.Get("AWS_SECRET_ACCESS_KEY")),
+			Session: strings.TrimSpace(secretenv.Get("AWS_SESSION_TOKEN"))},
 	}
 }
 
