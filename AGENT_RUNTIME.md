@@ -467,29 +467,57 @@ confines itself for good, before any agent code runs:
   right to run a program. From ABI 4 it also refuses every TCP bind and
   connect; from ABI 6 it refuses signals to, and abstract sockets of, a
   process outside its domain.
-- A seccomp filter, on every thread with `no_new_privs`, refuses `socket`,
-  `connect`, `bind`, `listen`, the `io_uring` calls, `ptrace`,
-  `process_vm_readv`, `process_vm_writev`, `kcmp`, `pidfd_getfd`,
-  `process_madvise`, `kill`, `tkill`, `pidfd_send_signal`, `truncate` by
-  path, `unshare`, `setns`, `fork`, `vfork`, `clone` without
-  `CLONE_THREAD` or with a namespace flag, `bpf`,
-  `perf_event_open`, `userfaultfd` and the key calls. It allows `tgkill` and
-  `pidfd_open` only for the runner's own process: the Go runtime signals its
-  own threads. It refuses the `TIOCSTI` and `TIOCLINUX` ioctls. `clone3`
-  gets `ENOSYS`, because a filter cannot read its flags. A call from another
-  architecture ends the process.
+- A seccomp filter, on every thread with `no_new_privs`, refuses with
+  `EPERM`:
+  - sockets: `socket`, `socketpair`, `connect`, `bind`, `listen`,
+    `sendmsg`, `sendmmsg`, and `sendto` with a destination address;
+  - new processes: `fork`, `vfork`, `clone` without `CLONE_THREAD` or with
+    a namespace flag, `unshare`, `setns`;
+  - the reach into other processes: `ptrace`, `process_vm_readv`,
+    `process_vm_writev`, `kcmp`, `pidfd_getfd`, `process_madvise`,
+    `get_robust_list`, `migrate_pages`, `move_pages`;
+  - signals: `kill`, `tkill`, `pidfd_send_signal`, `rt_sigqueueinfo`,
+    `rt_tgsigqueueinfo`, and `fcntl` `F_SETOWN`, `F_SETOWN_EX`,
+    `F_SETSIG`, `F_SETLEASE` and `F_NOTIFY`;
+  - scheduling: `sched_setscheduler`, `sched_setparam`, `sched_setattr`,
+    `ioprio_set`; `prlimit64` and `sched_setaffinity` on another process,
+    and `setpriority` on anything but itself;
+  - file changes that Landlock does not check: `truncate` by path,
+    `chmod`, `fchmodat`, `fchmodat2`, the `chown` family, `utime`,
+    `utimes`, `futimesat`, `utimensat` on a path, the `setxattr` and
+    `removexattr` families, `file_setattr`;
+  - path watches: `inotify_init`, `inotify_init1`, `inotify_add_watch`,
+    `fanotify_init`, `fanotify_mark`;
+  - kernel surface: the `io_uring` calls, `bpf`, `perf_event_open`,
+    `userfaultfd` and the key calls; the `TIOCSTI` and `TIOCLINUX` ioctls.
+
+  It allows `tgkill` and `pidfd_open` only for the runner's own process:
+  the Go runtime signals its own threads. `fchmod` on a descriptor stays:
+  the runner opens files only in its folders, and the sandbox sync sets the
+  mode of a file it wrote that way. `clone3` and any call newer than the
+  build gets `ENOSYS`, as on a kernel that lacks it: a filter cannot read
+  the flags of `clone3`. A call from another architecture ends the process.
+
+  The filter is a list of refused calls, not a list of allowed ones. A
+  list of allowed calls would have to hold every call of the Go runtime and
+  the standard library on every path, also the error paths that one turn's
+  trace does not show; a missing call breaks a turn in production. The
+  refused list closes each class of reach outside the turn, and the
+  `ENOSYS` rule closes calls that a later kernel adds.
 
 So the runner holds the two sockets that serve passed and the connections
 that the broker passes, and can open no other. It starts threads only, no
-process. It reaches no file of another turn, the config folder or the home folder, and cannot read,
-trace or signal serve or web.
+process. It reaches no file of another turn, the config folder or the home
+folder, and cannot read, trace, signal or reschedule serve or web, or change
+the mode, owner, times or attributes of a file outside its folders.
 
 The seccomp filter closes the gaps of the low Landlock ABIs: truncate (ABI
 3), signals and abstract sockets (ABI 6) and connects to named sockets (ABI
-9). Two gaps stay below ABI 5: a rename or link between folders fails (ABI
-2), and the runner can send an ioctl to a device it opened (ABI 5). The
-lowest kernel for agent turns is Linux 5.13 (ABI 1) with `landlock` in the
-active security modules.
+9). The runner can read the metadata (size, times, extended attributes) of a
+path that it names on every ABI. Two gaps stay below ABI 5: a rename or link
+between folders fails (ABI 2), and the runner can send an ioctl to a device
+it opened (ABI 5). The lowest kernel for agent turns is Linux 5.13 (ABI 1)
+with `landlock` in the active security modules.
 
 Fail closed: when Landlock or seccomp is missing, serve refuses every agent
 turn in production mode. Each refused turn, the start of serve, the status
@@ -505,8 +533,8 @@ ends the turn with an error and runs no agent code.
 
 Proof tests (`apps/openneko/internal/cli/runner_confine_linux_test.go`):
 `TestConfinedRunner` runs the checks of the CONF0 probe, and the truncate,
-signal and pidfd checks, inside a real runner that serve starts, in a
-one-account layout. It runs them unconfined as a control, confined at the
+signal, pidfd, scheduling, metadata, watch and datagram checks, inside a
+real runner that serve starts, in a one-account layout. It runs them unconfined as a control, confined at the
 kernel's ABI and with the ABI capped at 1, and with Landlock or seccomp
 left out, which must fail named checks. `TestConfinedServeDoesItsWork`
 (`internal/webfront`) runs a whole turn with a fake model through the door

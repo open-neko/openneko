@@ -2,4 +2,4 @@
 
 package confine
 
-var forkCalls []uintptr
+var forkCalls, legacyRefusedCalls []uintptr

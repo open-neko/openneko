@@ -4,11 +4,11 @@ import "fmt"
 
 const runnerMechanism = "landlock+seccomp"
 
-// runnerGaps names what the agent runner keeps on a Landlock ABI below the
-// newest one. Its seccomp filter closes truncate by path, signals, sockets
-// and the reach into other processes on every ABI.
+// runnerGaps names what the agent runner keeps. Its seccomp filter closes,
+// on every ABI: sockets, new processes, the reach into and signals to other
+// processes, truncate and metadata changes by path, and path watches.
 func runnerGaps(abi int) []string {
-	var out []string
+	out := []string{"the metadata (size, times, extended attributes) of a path it names"}
 	if abi < 2 {
 		out = append(out, "a rename or link between folders fails (ABI 2)")
 	}
@@ -38,9 +38,9 @@ func RunnerAvailable() State {
 }
 
 // ApplyRunner confines an agent runner for good: Landlock keeps the paths of
-// spec and refuses TCP, and a seccomp filter refuses sockets, new processes,
-// the reach into other processes, signals to them and truncate by path. On an error the
-// process may hold part of the confinement and must not run agent code.
+// spec and refuses TCP, and the seccomp filter of runnerFilter does the rest.
+// On an error the process may hold part of the confinement and must not run
+// agent code.
 func ApplyRunner(spec Spec) (State, error) {
 	if avail := RunnerAvailable(); !avail.Confined {
 		return avail, fmt.Errorf("%w: %s", ErrUnsupported, avail.Reason)
