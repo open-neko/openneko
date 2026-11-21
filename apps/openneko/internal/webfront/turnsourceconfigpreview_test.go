@@ -161,6 +161,19 @@ func TestSourceConfigPreviewDatabase(t *testing.T) {
 		t.Errorf("a stored password with no host: %s", s)
 	}
 	seed(t, db, `update data_source_secret set host = 'crm.internal', port = 3306 where name = 'crm-password'`)
+	before = gj.count()
+	if s := preview(register); !strings.Contains(s, `"message":"The saved password has no database and login.`) || gj.count() != before+1 {
+		t.Errorf("a stored password with no database and login: %s", s)
+	}
+	seed(t, db, `update data_source_secret set dbname = 'crm', login = 'admin' where name = 'crm-password'`)
+	if s := preview(register); !strings.Contains(s, `{"field":"user","message":"The saved password belongs to the database crm and the login admin.`) {
+		t.Errorf("a stored password went with another login: %s", s)
+	}
+	seed(t, db, `update data_source_secret set dbname = 'payroll', login = 'reader' where name = 'crm-password'`)
+	if s := preview(register); !strings.Contains(s, `{"field":"dbname","message":"The saved password belongs to the database payroll and the login reader.`) {
+		t.Errorf("a stored password went to another database: %s", s)
+	}
+	seed(t, db, `update data_source_secret set dbname = 'crm', login = 'reader'`)
 	if s := preview(strings.Replace(register, "crm-password", "blank", 1)); s != `{"source":`+source+`,"problems":[{"field":"secretRef","message":"`+passwordRequiredMessage+`"}],"error":"`+passwordRequiredMessage+`"}` {
 		t.Errorf("blank secret: %s", s)
 	}

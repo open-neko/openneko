@@ -219,8 +219,8 @@ func (p *configPreview) check(ctx context.Context, action string, opts configUpd
 	update, err := buildGraphjinConfigUpdate(p.payload, p.api.sourcePasswordResolver(ctx, p.orgID, p.payload, func(_, password string) {
 		p.secret = password
 	}), opts)
-	if refusal := sourcePasswordRefusal(""); errors.As(err, &refusal) {
-		field := "host"
+	if refusal := (sourcePasswordRefusal{}); errors.As(err, &refusal) {
+		field := refusal.field
 		return p.problems([]configProblem{{Field: &field, Message: refusal.Error()}}, ""), nil
 	}
 	if err != nil {

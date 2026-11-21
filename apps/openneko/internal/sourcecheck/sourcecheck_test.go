@@ -524,6 +524,9 @@ func TestPasswordGoesOnlyToItsTarget(t *testing.T) {
 		{Target{}, PasswordHasNoTarget},
 		{Target{Host: "db.example.com", Port: float64(srv)}, "The saved password belongs to db.example.com on port " + strconv.Itoa(srv) + "."},
 		{Target{Host: "127.0.0.1", Port: 5432}, "The saved password belongs to 127.0.0.1 on port 5432."},
+		{Target{Host: "127.0.0.1", Port: float64(srv)}, PasswordHasNoLogin},
+		{Target{Host: "127.0.0.1", Port: float64(srv), Database: "payroll", User: "u"}, "The saved password belongs to the database payroll and the login u."},
+		{Target{Host: "127.0.0.1", Port: float64(srv), Database: "d", User: "postgres"}, "The saved password belongs to the database d and the login postgres."},
 	} {
 		in := base
 		in.PasswordTarget = &c.target
@@ -538,7 +541,7 @@ func TestPasswordGoesOnlyToItsTarget(t *testing.T) {
 	}
 	mu.Unlock()
 	in := base
-	in.PasswordTarget = &Target{Host: "127.0.0.1", Port: float64(srv)}
+	in.PasswordTarget = &Target{Host: "127.0.0.1", Port: float64(srv), Database: "d", User: "u"}
 	if f := finding(t, Check(context.Background(), in), "resolve"); f.Status != "ok" {
 		t.Fatalf("its own target: %+v", f)
 	}

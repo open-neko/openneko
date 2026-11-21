@@ -80,10 +80,10 @@ func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (so
 	ref := answer(body, "secretRef")
 	if in.Password == "" && ref != "" {
 		var enc string
-		var host *string
+		var host, dbname, login *string
 		var port *int
-		err := a.DB.QueryRow(ctx, `select value_enc, host, port, allow_unverified_tls from data_source_secret
-			where org_id = $1 and name = $2 limit 1`, orgID, ref).Scan(&enc, &host, &port, &in.AllowUnverifiedTLS)
+		err := a.DB.QueryRow(ctx, `select value_enc, host, port, dbname, login, allow_unverified_tls from data_source_secret
+			where org_id = $1 and name = $2 limit 1`, orgID, ref).Scan(&enc, &host, &port, &dbname, &login, &in.AllowUnverifiedTLS)
 		if errors.Is(err, pgx.ErrNoRows) {
 			check := sourcecheck.Check(ctx, in)
 			for i, f := range check.Findings {
@@ -99,7 +99,7 @@ func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (so
 		if in.Password, err = config.MaybeDecryptValue(a.SecretsDir, enc); err != nil {
 			return sourcecheck.Result{}, err
 		}
-		in.PasswordTarget = &sourcecheck.Target{Host: deref(host)}
+		in.PasswordTarget = &sourcecheck.Target{Host: deref(host), Database: deref(dbname), User: deref(login)}
 		if port != nil {
 			in.PasswordTarget.Port = float64(*port)
 		}
@@ -107,30 +107,30 @@ func (a *API) checkSourceForOrg(ctx context.Context, orgID string, body any) (so
 	return sourcecheck.Check(ctx, in), nil
 }
 
-type sourcePasswordRefusal string
+type sourcePasswordRefusal struct{ field, message string }
 
-func (e sourcePasswordRefusal) Error() string { return string(e) }
+func (e sourcePasswordRefusal) Error() string { return e.message }
 
 // storedSourcePassword is the stored password named ref, for a source
-// at host and port only.
-func (a *API) storedSourcePassword(ctx context.Context, orgID, ref, kind, host string, port *float64) (string, error) {
+// at host and port, with the database and login it was saved with, only.
+func (a *API) storedSourcePassword(ctx context.Context, orgID, ref, kind, host string, port *float64, database, user string) (string, error) {
 	var enc string
-	var storedHost *string
+	var storedHost, storedDB, storedLogin *string
 	var storedPort *int
-	err := a.DB.QueryRow(ctx, `select value_enc, host, port from data_source_secret where org_id = $1 and name = $2 limit 1`,
-		orgID, ref).Scan(&enc, &storedHost, &storedPort)
+	err := a.DB.QueryRow(ctx, `select value_enc, host, port, dbname, login from data_source_secret where org_id = $1 and name = $2 limit 1`,
+		orgID, ref).Scan(&enc, &storedHost, &storedPort, &storedDB, &storedLogin)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", fmt.Errorf("no stored source secret named \"%s\"; add it in GraphJin Config first", ref)
 	}
 	if err != nil {
 		return "", err
 	}
-	target := sourcecheck.Target{Host: deref(storedHost)}
+	target := sourcecheck.Target{Host: deref(storedHost), Database: deref(storedDB), User: deref(storedLogin)}
 	if storedPort != nil {
 		target.Port = float64(*storedPort)
 	}
-	if message := target.Refusal(kind, host, port); message != "" {
-		return "", sourcePasswordRefusal(message)
+	if field, message := target.Refusal(kind, host, port, database, user); message != "" {
+		return "", sourcePasswordRefusal{field, message}
 	}
 	return config.MaybeDecryptValue(a.SecretsDir, enc)
 }
@@ -144,7 +144,8 @@ func (a *API) sourcePasswordResolver(ctx context.Context, orgID string, payload 
 			n := numberOf(v)
 			port = &n
 		}
-		password, err := a.storedSourcePassword(ctx, orgID, ref, selectedText(payload.vals["type"], "postgres"), trimmedText(payload.vals["host"]), port)
+		password, err := a.storedSourcePassword(ctx, orgID, ref, selectedText(payload.vals["type"], "postgres"), trimmedText(payload.vals["host"]), port,
+			trimmedText(payload.vals["dbname"]), trimmedText(payload.vals["user"]))
 		if err == nil && got != nil {
 			got(ref, password)
 		}

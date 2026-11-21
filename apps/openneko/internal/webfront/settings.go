@@ -289,10 +289,12 @@ func (a *API) sourceSecrets(w http.ResponseWriter, r *http.Request) {
 		Description        *string `json:"description"`
 		Host               *string `json:"host"`
 		Port               *int    `json:"port"`
+		Dbname             *string `json:"dbname"`
+		Login              *string `json:"login"`
 		AllowUnverifiedTLS bool    `json:"allowUnverifiedTls"`
 		UpdatedAt          string  `json:"updatedAt"`
 	}
-	rows, err := a.DB.Query(r.Context(), `select name, description, host, port, allow_unverified_tls, updated_at from data_source_secret
+	rows, err := a.DB.Query(r.Context(), `select name, description, host, port, dbname, login, allow_unverified_tls, updated_at from data_source_secret
 		where org_id = $1 order by updated_at desc`, act.OrgID)
 	if err != nil {
 		a.fail(w, r, err)
@@ -301,7 +303,7 @@ func (a *API) sourceSecrets(w http.ResponseWriter, r *http.Request) {
 	secrets, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (secret, error) {
 		var s secret
 		var updated time.Time
-		err := row.Scan(&s.Name, &s.Description, &s.Host, &s.Port, &s.AllowUnverifiedTLS, &updated)
+		err := row.Scan(&s.Name, &s.Description, &s.Host, &s.Port, &s.Dbname, &s.Login, &s.AllowUnverifiedTLS, &updated)
 		s.UpdatedAt = jsTime(updated)
 		return s, err
 	})
@@ -353,6 +355,19 @@ func (a *API) sourceSecretPut(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "host and port go together: the password goes only to that host and port")
 		return
 	}
+	var dbname, login *string
+	if d, _ := fieldString(body, "dbname"); jsTrim(d) != "" {
+		d = jsTrim(d)
+		dbname = &d
+	}
+	if u, _ := fieldString(body, "user"); jsTrim(u) != "" {
+		u = jsTrim(u)
+		login = &u
+	}
+	if host != nil && (dbname == nil || login == nil) {
+		sendError(w, http.StatusBadRequest, "dbname and user go with the host: the password goes only with that database and login")
+		return
+	}
 	allowUnverified, _ := fieldBool(body, "allowUnverifiedTls")
 	enc, err := config.EncryptValue(a.SecretsDir, value)
 	if err != nil {
@@ -361,13 +376,13 @@ func (a *API) sourceSecretPut(w http.ResponseWriter, r *http.Request) {
 	}
 	description := fieldStringOrNil(body, "description")
 	if _, err := a.DB.Exec(r.Context(), `insert into data_source_secret (org_id, name, value_enc, description, host, port,
-		allow_unverified_tls, updated_at)
-		values ($1, $2, $3, $4, $6, $7, $8, now())
+		allow_unverified_tls, dbname, login, updated_at)
+		values ($1, $2, $3, $4, $6, $7, $8, $9, $10, now())
 		on conflict (org_id, name) do update set value_enc = excluded.value_enc,
 		  description = case when $5 then excluded.description else data_source_secret.description end,
 		  host = excluded.host, port = excluded.port, allow_unverified_tls = excluded.allow_unverified_tls,
-		  updated_at = excluded.updated_at`,
-		act.OrgID, name, enc, description, description != nil, host, port, allowUnverified); err != nil {
+		  dbname = excluded.dbname, login = excluded.login, updated_at = excluded.updated_at`,
+		act.OrgID, name, enc, description, description != nil, host, port, allowUnverified, dbname, login); err != nil {
 		a.fail(w, r, err)
 		return
 	}
