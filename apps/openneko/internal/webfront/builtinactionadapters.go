@@ -24,7 +24,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/open-neko/neko/apps/openneko/internal/config"
 	"github.com/open-neko/neko/apps/openneko/internal/gjconfig"
 )
 
@@ -1140,25 +1139,12 @@ func (a *API) runSourceConfigAdminAction(ctx context.Context, req *actionRequest
 	}
 
 	var secretName string
-	update, err := buildGraphjinConfigUpdate(payload, func(ref string) (string, error) {
+	update, err := buildGraphjinConfigUpdate(payload, a.sourcePasswordResolver(ctx, orgID, payload, func(ref, password string) {
 		secretName = ref
-		var enc string
-		err := a.DB.QueryRow(ctx, `select value_enc from data_source_secret where org_id = $1 and name = $2 limit 1`, orgID, ref).Scan(&enc)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("register_source: no stored secret named %q — add it in GraphJin Config first", ref)
+		if password != "" {
+			*passwords = append(*passwords, password)
 		}
-		if err != nil {
-			return "", err
-		}
-		decrypted, err := config.MaybeDecryptValue(a.SecretsDir, enc)
-		if err != nil {
-			return "", err
-		}
-		if decrypted != "" {
-			*passwords = append(*passwords, decrypted)
-		}
-		return decrypted, nil
-	}, configUpdateOptions{
+	}), configUpdateOptions{
 		managedOpenAPISpecsDir: managedRuntimeDir,
 		managedLocalFilesRoot:  managedLocalFilesRoot,
 	})
