@@ -120,6 +120,10 @@ for (const width of [400, 360, 1280]) {
         } else {
           await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
         }
+        if (path === "/admin/settings/channels") {
+          await expect(page.getByRole("heading", { name: "Where answers go", exact: true })).toBeVisible();
+          await expect(page.getByLabel("Slack answers")).toHaveValue("listed");
+        }
         if (path.startsWith("/work/c0a7ac70-0000-4000-8000-0000000c")) {
           await expect(page.locator(".work-surface")).toHaveCount(1);
         }

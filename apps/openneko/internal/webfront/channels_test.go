@@ -25,6 +25,7 @@ type fakeChannelServer struct {
 	requests []channelRequest
 	status   int
 	reply    func(path string, n int) string
+	statusOf func(path string, n int) int
 }
 
 func newFakeChannelServer(t *testing.T) *fakeChannelServer {
@@ -37,7 +38,11 @@ func newFakeChannelServer(t *testing.T) *fakeChannelServer {
 			req.Headers = map[string]string{"x-openneko-hud-delivery-id": id, "x-openneko-hud-signature": r.Header.Get("x-openneko-hud-signature")}
 		}
 		f.requests = append(f.requests, req)
-		w.WriteHeader(f.status)
+		if f.statusOf != nil {
+			w.WriteHeader(f.statusOf(r.URL.Path, len(f.requests)))
+		} else {
+			w.WriteHeader(f.status)
+		}
 		if f.reply != nil {
 			_, _ = w.Write([]byte(f.reply(r.URL.Path, len(f.requests))))
 		}
