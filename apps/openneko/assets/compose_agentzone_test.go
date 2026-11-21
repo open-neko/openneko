@@ -120,8 +120,8 @@ func TestAgentZoneContainersHoldNoControlZoneSecret(t *testing.T) {
 				continue
 			}
 			checked++
-			if s.EnvFile != nil || len(s.Secrets) > 0 || len(s.Configs) > 0 {
-				t.Errorf("%s: %s reads an env_file, a secret or a config", name, service)
+			if s.EnvFile != nil || !onlySandboxKey(s.Secrets) || len(s.Configs) > 0 {
+				t.Errorf("%s: %s reads an env_file, a secret other than the sandbox key, or a config", name, service)
 			}
 			for key, value := range s.env(t, name, service) {
 				if controlZoneName(key) || controlZoneValue.MatchString(value) {
@@ -145,4 +145,16 @@ func TestAgentZoneContainersHoldNoControlZoneSecret(t *testing.T) {
 	if checked < 4 {
 		t.Fatalf("checked %d agent-zone services, want serve in compose.yml, core.yml and demo.yml and the sandbox", checked)
 	}
+}
+
+// onlySandboxKey reports whether secrets holds no secret but sandbox-key,
+// which serve needs to open a sandbox session.
+func onlySandboxKey(secrets []any) bool {
+	for _, s := range secrets {
+		m, ok := s.(map[string]any)
+		if !ok || m["source"] != "sandbox-key" {
+			return false
+		}
+	}
+	return true
 }

@@ -81,7 +81,7 @@ func TestProdComposeHasNoPostgres(t *testing.T) {
 				t.Fatalf("%s %s does not mount the database-url secret", label, name)
 			}
 		}
-		if mappingValue(mappingValue(services, "openneko-serve"), "secrets") != nil {
+		if secrets := mappingValue(mappingValue(services, "openneko-serve"), "secrets"); secrets != nil && strings.Contains(nodeText(t, secrets), "database-url") {
 			t.Fatalf("%s openneko-serve mounts the main database URL", label)
 		}
 	}
@@ -100,7 +100,7 @@ func TestBundledDatabaseOverlaysAgree(t *testing.T) {
 		services := mappingValue(composeNode(t, raw), "services")
 		for _, name := range databaseURLConsumers {
 			service := mappingValue(services, name)
-			if secrets := mappingValue(service, "secrets"); secrets == nil || secrets.Tag != "!reset" {
+			if secrets := mappingValue(service, "secrets"); secrets == nil || (secrets.Tag != "!reset" && (secrets.Tag != "!override" || strings.Contains(nodeText(t, secrets), "database-url"))) {
 				t.Fatalf("%s %s must reset the database-url secret", label, name)
 			}
 			if file := mappingValue(mappingValue(service, "environment"), "OPENNEKO_DATABASE_URL_FILE"); file == nil || file.Tag != "!reset" {
@@ -140,4 +140,13 @@ func TestBundledDatabaseOverlaysAgree(t *testing.T) {
 	if len(source.Services) != len(packaged.Services) {
 		t.Fatalf("compose.db.yml has %d services, bundled-db.yml has %d", len(source.Services), len(packaged.Services))
 	}
+}
+
+func nodeText(t *testing.T, node *yaml.Node) string {
+	t.Helper()
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }

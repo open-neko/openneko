@@ -376,8 +376,10 @@ func TestBundledDatabaseSurvivesTheComposeMerge(t *testing.T) {
 			if _, set := service.Environment["OPENNEKO_DATABASE_URL_FILE"]; set {
 				t.Errorf("%s: %s reads the database URL secret, which a bundled database does not write", tc.mode, name)
 			}
-			if len(service.Secrets) > 0 {
-				t.Errorf("%s: %s mounts secrets %v", tc.mode, name, service.Secrets)
+			for _, secret := range service.Secrets {
+				if m, ok := secret.(map[string]any); !ok || m["source"] == "database-url" {
+					t.Errorf("%s: %s mounts secrets %v", tc.mode, name, service.Secrets)
+				}
 			}
 		}
 	}

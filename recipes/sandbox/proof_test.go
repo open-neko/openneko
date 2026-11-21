@@ -186,7 +186,7 @@ func newProofStack(t *testing.T, tag string) (*proofStack, string) {
 		t.Fatal(err)
 	}
 	s := &proofStack{project: "openneko-egress-" + tag + "-" + proofSuffix(), tag: tag, socket: filepath.Join(socketDir, "sandbox.sock"), key: newEgressToken()}
-	s.env = []string{"OPENNEKO_VERSION=proof", "OPENNEKO_SANDBOX_KEY=" + s.key, "OPENNEKO_SANDBOX_DIR=" + socketDir,
+	s.env = []string{"OPENNEKO_VERSION=proof", "OPENNEKO_SANDBOX_KEY=" + s.key, "NEKO_EMBEDDING_API_KEY=", "OPENNEKO_SANDBOX_DIR=" + socketDir,
 		"OPENNEKO_SANDBOX_GID=" + strconv.Itoa(os.Getgid()), "OPENNEKO_DATABASE_URL=postgres://neko:secret@neko-db:5432/neko"}
 	return s, dir
 }
