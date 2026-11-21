@@ -351,6 +351,7 @@ func TestSlackPackMessageFetchesNoURL(t *testing.T) {
 	}
 	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority)
 		values ('org', 'Post', '{slack.message}', '{external}', 'auto_approve', 1)`)
+	putReplies(t, f, `{"channel":"slack","mode":"listed","places":["C0123ABCD"]}`)
 	execute := func(body string) (string, int) {
 		t.Helper()
 		in, _ := jsParse([]byte(`{"orgId":"org","scope":"external","kind":"slack.message","status":"approved","workRunId":"` + runMine +
@@ -402,6 +403,30 @@ func TestSlackPackMessageFetchesNoURL(t *testing.T) {
 	plain := `{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*Revenue* is down 4%"}}]}`
 	if status, sent := execute(plain); status != "executed|" || sent != 1 {
 		t.Fatalf("blocks with no URL: %s, %d calls", status, sent)
+	}
+
+	refused(`{"channel":"C0999OTHER","text":"Revenue is down 4%"}`, "answer rule keeps data out of the channel C0999OTHER")
+	if status, sent := execute(`{"channel":"U0123ABCD","text":"Revenue is down 4%"}`); status != "executed|" || sent != 1 {
+		t.Fatalf("a message to one person: %s, %d calls", status, sent)
+	}
+	in, _ := jsParse([]byte(`{"orgId":"org","scope":"external","kind":"slack.message","workRunId":"` + runMine +
+		`","payload":{"operation":"post_message","body":{"channel":"C0123ABCD","text":"Revenue is down 4%"}}}`))
+	waiting, err := a.createActionRequestInGo(ctx, in.(*jsObj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	putReplies(t, f, `{"channel":"slack","mode":"direct"}`)
+	id, _ := waiting.vals["id"].(string)
+	seed(t, db, `update action_request set status = 'approved' where id = $1::uuid`, id)
+	mu.Lock()
+	before := len(bodies)
+	mu.Unlock()
+	_ = a.ActionExecute(ctx, "org", id)
+	mu.Lock()
+	sentAfter := len(bodies) - before
+	mu.Unlock()
+	if got := rowText(t, db, `select status || '|' || coalesce(failure_reason, '') from action_request where id = $1::uuid`, id); !strings.Contains(got, "answer rule") || sentAfter != 0 {
+		t.Fatalf("a post approved before the rule changed went out: %s, %d calls", got, sentAfter)
 	}
 }
 
