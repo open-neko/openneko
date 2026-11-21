@@ -639,7 +639,7 @@ ${application}${usage}
 Tables visible to the service role (deeper detail via gj_catalog):
 ================================================================================
 
-${tables_digest}
+${tables_digest}${date_ranges}
 
 ================================================================================
 API operations visible to the service role (load details via query_catalog):
@@ -664,6 +664,17 @@ GraphJin DSL essentials:
 ================================================================================
 
 ${syntax}
+@@ date_ranges
+================================================================================
+Date ranges, read at ${at} UTC (oldest to newest value of each date column):
+================================================================================
+
+${ranges}
+
+The newest value of a column is its anchor for the house rule on relative
+periods. Use it and skip the max_<date_col> query. Data written after the
+time above can be newer.
+
 @@ knowledge_legacy
 ================================================================================
 Tables — prefetched schema summary:

@@ -89,6 +89,9 @@ func (a *API) loadTurnContext(ctx context.Context, o turnOptions) (*turnContext,
 		log.Printf("[work-run] org=%s knowledge refresh failed (%s); proceeding with on-disk pack", o.OrgID, r.Error)
 	}
 	knowledge := readKnowledgePack(ws.KnowledgeRoot)
+	if knowledge.Mode == "agentic" {
+		knowledge.DateRanges = a.dateRangesText(ctx, o.OrgID)
+	}
 	act, err := a.runActor(ctx, o.RunID)
 	if err != nil {
 		return nil, err

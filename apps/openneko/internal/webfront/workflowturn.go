@@ -162,9 +162,13 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 	if err != nil {
 		return workflowTurnResult{}, err
 	}
+	knowledge := readKnowledgePack(ws.KnowledgeRoot)
+	if knowledge.Mode == "agentic" {
+		knowledge.DateRanges = a.dateRangesText(ctx, wf.OrgID)
+	}
 	prompt := buildWorkflowPrompt(workflowPromptInput{Backend: "ax", Name: wf.Name, Description: wf.Description, Goal: wf.Goal,
 		SystemPromptOverlay: wf.SystemPromptOverlay, Steps: jsArray(steps), Mode: o.Mode, IncludeUxMetadata: o.IncludeUxMetadata,
-		MemoryContext: memory, Workspace: ws, Knowledge: readKnowledgePack(ws.KnowledgeRoot), FilesEnabled: files, ScriptData: terminal})
+		MemoryContext: memory, Workspace: ws, Knowledge: knowledge, FilesEnabled: files, ScriptData: terminal})
 	now := time.Now
 	if o.now != nil {
 		now = o.now

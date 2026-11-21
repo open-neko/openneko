@@ -81,6 +81,8 @@ type knowledgePack struct {
 	Namespaces string `json:"namespaces"`
 	Insights   string `json:"insights"`
 	Syntax     string `json:"syntax"`
+	// DateRanges is read live, not from the pack files.
+	DateRanges string `json:"dateRanges,omitempty"`
 }
 
 type promptMessage struct {
@@ -296,7 +298,7 @@ func dataAccessSectionAs(k knowledgePack, readOnly, scripts bool, credential str
 	agentic := k.Mode == "agentic"
 	var block string
 	if agentic {
-		block = section("knowledge_agentic", "tables_digest", compactTableDigest(k.Tables),
+		block = section("knowledge_agentic", "tables_digest", compactTableDigest(k.Tables), "date_ranges", dateRangesBlock(k.DateRanges),
 			"api_digest", compactAPIOperationDigest(k.Insights), "insights_digest", compactInsightsDigest(k.Insights),
 			"help_index", compactHelpCardIndex(k.Insights), "syntax", k.Syntax)
 	} else {
