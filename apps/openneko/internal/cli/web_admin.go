@@ -40,10 +40,13 @@ func webAdminToken(socket string) string { return socket + ".token" }
 // (and root) can call it, with the token from webAdminToken. Every caller
 // acts as an admin.
 func serveWebAdmin(path string, handler http.Handler) (func(), error) {
-	if err := ownonly.Mkdir(filepath.Dir(path)); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Dir(path)), 0o700); err != nil {
 		return nil, err
 	}
 	if err := ownacl.SocketFolder(path); err != nil {
+		return nil, err
+	}
+	if err := ownonly.Mkdir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	raw := make([]byte, 32)

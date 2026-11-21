@@ -698,7 +698,7 @@ another host: use an `https://` URL and a key. The compose recipe
 (`recipes/sandbox/compose.yml`) runs it beside the stack. The sandbox shares
 one volume with web and serve, `openneko-sandbox-socket`, which holds only
 `sandbox.sock`. It does not mount `openneko-run`, the folder of serve's
-sockets (`serve.sock`, `config-check.sock`). It never gets a model key,
+sockets (`serve.sock`, `check/check.sock`). It never gets a model key,
 the broker token, the run's job file or a database password. The first
 sandbox service is `recipes/sandbox`; see `recipes/sandbox/README.md`.
 
@@ -1348,10 +1348,11 @@ Windows has no file modes, so OpenNeko gives
 these two folders, the secret key, `secrets.json`, the backup key and each
 backup a protected access list: only your account and SYSTEM can open them.
 A Windows socket takes the access list of its folder. Before serve, web,
-the key door and GraphJin listen on a socket, each one gives the socket's
-folder the same list, also when an `OPENNEKO_*_SOCKET` variable points
-outside the data folder. When it cannot, it does not listen and names the
-folder. OpenNeko reads each list back after it sets it. Keep the data and
+the key door and GraphJin listen on a socket, each one checks the socket's
+folder, also when an `OPENNEKO_*_SOCKET` variable points outside the data
+folder. A missing folder gets the same list. A folder that exists and
+allows another account is refused with one line that names it, and
+OpenNeko does not change its list: give the socket a folder of its own. OpenNeko reads each list back after it sets it. Keep the data and
 config folders on an NTFS or ReFS volume: a FAT or exFAT volume keeps no
 access list, and OpenNeko refuses it.
 Serve keeps its temp files in the `tmp` folder of the data folder, not in
@@ -1372,7 +1373,7 @@ server that has it, or build pgvector on Windows as its README tells.
 
 A Unix socket path holds at most 103 bytes on macOS and 107 on Linux and
 Windows. The
-longest socket is `run/config-check.sock` in the data folder, and a named
+longest socket is `door/keydoor.sock` in the data folder, and a named
 instance adds `instances/<name>`. When a path is too long, `openneko start`
 stops with one line that names it. Set `XDG_DATA_HOME` to a shorter folder or
 use a shorter instance name.
