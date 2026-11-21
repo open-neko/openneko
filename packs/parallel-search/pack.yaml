@@ -3,7 +3,7 @@ kind: SolutionPack
 metadata:
   id: parallel-search
   name: Parallel web search
-  version: 0.1.0
+  version: 0.2.0
   publisher: openneko
   category: research
 
@@ -18,7 +18,13 @@ compatibility:
       versions: v1beta
   databases: []
 
-inputs: []
+inputs:
+  - key: parallel_search.approval
+    type: enum
+    values: [ask, auto]
+    default: ask
+    required: true
+    description: The search text leaves this install for Parallel (api.parallel.ai). Choose ask to approve each search, or auto to let searches run without approval.
 
 secrets:
   - key: parallel-search.api_key

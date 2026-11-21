@@ -869,6 +869,17 @@ func packPolicyMode(mode any) string {
 	return jsValueString(mode)
 }
 
+// packPolicyChoice takes the mode from the install input that modeInput
+// names, when it holds ask or auto; else the file's mode.
+func packPolicyChoice(policy map[string]any, inputs map[string]any) any {
+	if key := packString(policy["modeInput"]); key != "" {
+		if v, ok := inputs[key].(string); ok && (v == "ask" || v == "auto") {
+			return v
+		}
+	}
+	return policy["mode"]
+}
+
 // packPolicyControlsWrite is packPolicyControlsWrite() of declarative.ts.
 func packPolicyControlsWrite(bundle *packs.Bundle, policy map[string]any) bool {
 	kinds := stringList(policy["appliesToKinds"])
@@ -1036,7 +1047,7 @@ func (p *packApplyRun) writeNative(ctx context.Context, tx pgx.Tx, bundle *packs
 		targets, hasTargets := value["allowedTargets"]
 		limits, hasLimits := value["limits"]
 		args := []any{orgID, name, packString(value["description"]), stringList(value["appliesToKinds"]), stringList(value["appliesToScopes"]),
-			packPolicyMode(value["mode"]), optionalJSON(targets, hasTargets), optionalJSON(limits, hasLimits), int64(jsValueNumber(value["priority"])), enabled}
+			packPolicyMode(packPolicyChoice(value, inputs)), optionalJSON(targets, hasTargets), optionalJSON(limits, hasLimits), int64(jsValueNumber(value["priority"])), enabled}
 		var raw string
 		if id == "" {
 			err = tx.QueryRow(ctx, `insert into action_policy as t (org_id, name, description, applies_to_kinds, applies_to_scopes, mode, allowed_targets,

@@ -107,7 +107,7 @@ var (
 
 	policyRule = strictObj(append(baseFields,
 		req("name", str(1)), req("description", str(0)), req("appliesToKinds", array(targetRef, 1)), req("appliesToScopes", array(targetRef, 1)),
-		req("mode", enum("ask", "auto", "draft", "never")), opt("approverRole", literal("admin")), req("priority", integer(-1e300)),
+		req("mode", enum("ask", "auto", "draft", "never")), opt("modeInput", inputKey), opt("approverRole", literal("admin")), req("priority", integer(-1e300)),
 		req("enabled", boolean), req("allowedTargets", anyRecord), req("limits", anyRecord),
 	)...)
 
