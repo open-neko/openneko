@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // RemovedServices are the services of earlier releases that this release
@@ -58,6 +59,9 @@ func (s *Supervisor) overrideFile(rt string) (string, error) {
 	}
 	dst := filepath.Join(rt, "compose.override.yml")
 	if err := os.WriteFile(dst, kept, 0o600); err != nil {
+		return "", err
+	}
+	if err := ownonly.Set(dst); err != nil {
 		return "", err
 	}
 	if !s.overrideNoticed {

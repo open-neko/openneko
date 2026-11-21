@@ -265,10 +265,7 @@ func TestStageArchiveHashesLikeNode(t *testing.T) {
 		if b.BundleHash != f.Upload.BundleHash || content != f.Upload.ContentHash {
 			t.Errorf("deflate=%v: got %s %s, want %s %s", deflate, b.BundleHash, content, f.Upload.BundleHash, f.Upload.ContentHash)
 		}
-		info, _ := os.Stat(filepath.Join(b.Root, "pack.yaml"))
-		if !testmode.Is(t, info, 0o600) {
-			t.Errorf("pack.yaml mode %o", info.Mode().Perm())
-		}
+		testmode.Private(t, filepath.Join(b.Root, "pack.yaml"), 0o600)
 		cleanup()
 	}
 	emptyDir(t, root)

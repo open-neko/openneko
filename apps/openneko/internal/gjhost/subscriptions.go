@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/open-neko/neko/apps/openneko/internal/db"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 const SubscriptionsConfig = "subscriptions.yml"
@@ -104,6 +105,9 @@ func (s *Subscriptions) Run(ctx context.Context) error {
 		return err
 	}
 	if err := os.Chmod(s.Dir, 0o700); err != nil {
+		return err
+	}
+	if err := ownonly.Set(s.Dir); err != nil {
 		return err
 	}
 	if s.Log == nil {

@@ -1254,9 +1254,12 @@ and `upgrade` act on the native install. `openneko logs` reads the
   can add a folder. After the change, the upgraded executable runs `openneko
   release-check --skills --bundled-packs`; when that fails, the upgrade
   stops and does not start OpenNeko. Skill scripts keep their executable bit.
-  Windows does not let a program replace a running `openneko.exe`, so the
-  upgrade renames it to `openneko.exe.old` first. The next `openneko start`
-  removes that file.
+  On Windows the upgrade replaces the running `openneko.exe` in one step
+  (a POSIX rename, Windows 10 1809 and later). Where Windows refuses that,
+  it renames the running file to `openneko.exe.old` first, and the next
+  `openneko start` removes that file. A crash between those two renames
+  leaves no `openneko.exe`; rename `openneko.exe.old` back, or run the
+  install script again.
 - Use `install-native.sh --upgrade` when the installed `openneko` is older
   than the release that added `share/openneko/skills`: that `openneko
   upgrade` refuses the new archive. The script downloads and checks the
@@ -1293,10 +1296,19 @@ A Windows socket takes the access list of its folder. Before serve, web,
 the key door and GraphJin listen on a socket, each one gives the socket's
 folder the same list, also when an `OPENNEKO_*_SOCKET` variable points
 outside the data folder. When it cannot, it does not listen and names the
-folder.
-The supervisor puts serve, web and GraphJin in a Windows job object, so they
+folder. OpenNeko reads each list back after it sets it. Keep the data and
+config folders on an NTFS or ReFS volume: a FAT or exFAT volume keeps no
+access list, and OpenNeko refuses it.
+Serve keeps its temp files in the `tmp` folder of the data folder, not in
+`%TEMP%`. The database move and restore commands keep the database URL and
+the archive there too.
+The supervisor starts serve and web suspended, puts them in a Windows job
+object and then lets them run, so they and every process that they start
 stop when the supervisor stops. `openneko stop` asks each process to stop
-and ends it when it does not. macOS keeps the Linux folders under your home
+through an event that only your account and SYSTEM can open, and ends it
+when it does not. A process whose event name another program has taken
+says so in its log and is ended at the stop. `openneko status` counts only
+processes of your account. macOS keeps the Linux folders under your home
 folder; there serve and web stop when the supervisor stops, also when it is
 killed.
 

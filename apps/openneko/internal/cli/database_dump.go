@@ -233,7 +233,7 @@ func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader,
 	if err != nil {
 		return err
 	}
-	list, err := os.CreateTemp("", "openneko-restore-*.list")
+	list, err := secretTemp("openneko-restore-*.list")
 	if err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func restoreExternalDatabase(ctx context.Context, dsn string, archive io.Reader,
 	if err := list.Close(); err != nil {
 		return err
 	}
-	grantFile, err := os.CreateTemp("", "openneko-restore-grants-*.list")
+	grantFile, err := secretTemp("openneko-restore-grants-*.list")
 	if err != nil {
 		return err
 	}

@@ -253,7 +253,7 @@ func listForeignObjects(ctx context.Context, dsn string, archive io.Reader) ([]s
 }
 
 func spoolArchive(archive io.Reader) (string, error) {
-	spool, err := os.CreateTemp("", "openneko-restore-*.dump")
+	spool, err := secretTemp("openneko-restore-*.dump")
 	if err != nil {
 		return "", err
 	}
