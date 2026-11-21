@@ -54,6 +54,16 @@ func runHelper(mode, arg string) int {
 			return 1
 		}
 		return 0
+	case "spawner":
+		grandchild := exec.Command(os.Args[0], "-test.run=^$")
+		grandchild.Env = helperEnviron("stubborn", "")
+		if err := grandchild.Start(); err != nil {
+			fmt.Println(err)
+			return 1
+		}
+		_ = os.WriteFile(arg, []byte(fmt.Sprint(grandchild.Process.Pid)), 0o600)
+		time.Sleep(2 * time.Minute)
+		return 0
 	case "detached":
 		_ = os.WriteFile(arg, []byte(detachedState()), 0o600)
 		return 0

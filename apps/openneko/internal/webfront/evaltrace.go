@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // EvalTraceEnv names the file that receives every run's semantic trace with
@@ -58,6 +60,10 @@ func OpenEvalTrace(path string, refused []string, environ []string) (*EvalTrace,
 		return nil, err
 	}
 	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if err := ownonly.Set(abs); err != nil {
 		f.Close()
 		return nil, err
 	}

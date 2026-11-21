@@ -344,13 +344,12 @@ func TestWebAdminSocketIsOwnerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(socket)
-	if err != nil || !testmode.Is(t, info, 0o600) {
-		t.Fatalf("socket mode %v: %v", info.Mode(), err)
+	if runtime.GOOS == "windows" {
+		testmode.Private(t, dir, 0o700)
+	} else {
+		testmode.Private(t, socket, 0o600)
 	}
-	if info, err := os.Stat(webAdminToken(socket)); err != nil || !testmode.Is(t, info, 0o600) {
-		t.Fatalf("token file: %v", err)
-	}
+	testmode.Private(t, webAdminToken(socket), 0o600)
 	if res, err := webAdminClient(socket).Get("http://web/admin/packs"); err != nil || res.StatusCode != http.StatusOK {
 		t.Fatalf("a caller with the token: %v %v", res, err)
 	}

@@ -21,11 +21,18 @@ func HasModes(t testing.TB) bool {
 	return true
 }
 
-// Is reports whether info has the permission bits want. On Windows it
-// reports true.
+// Is reports whether info has the permission bits want. Windows keeps only
+// the owner's write bit, so there Is compares that bit. A private mode needs
+// Private, which reads the access list on Windows.
 func Is(t testing.TB, info fs.FileInfo, want fs.FileMode) bool {
 	t.Helper()
-	return !HasModes(t) || info.Mode().Perm() == want
+	if want&0o077 == 0 {
+		t.Fatalf("mode %v is private: check it with testmode.Private", want)
+	}
+	if runtime.GOOS == "windows" {
+		return info.Mode().Perm()&0o200 == want&0o200
+	}
+	return info.Mode().Perm() == want
 }
 
 // Private fails the test unless path is private to the current user: mode

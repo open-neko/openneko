@@ -92,9 +92,7 @@ func TestOverrideOfRemovedServicesIsIgnoredWithOneLine(t *testing.T) {
 		if _, ok := got.Volumes["extra"]; !ok {
 			t.Fatalf("the copy lost the volumes:\n%s", raw)
 		}
-		if info, err := os.Stat(used); err != nil || !testmode.Is(t, info, 0o600) {
-			t.Fatalf("copy mode %v, %v", info.Mode().Perm(), err)
-		}
+		testmode.Private(t, used, 0o600)
 	}
 	if left, _ := os.ReadFile(path); string(left) != oldOverride {
 		t.Fatalf("the operator's file changed:\n%s", left)
