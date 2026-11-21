@@ -246,7 +246,11 @@ func decisionFromMode(p *jsObj, name string, riskLevel *string) *jsObj {
 			"reason", `policy "`+name+`" mode=approval_required`)
 	case "auto_approve":
 		threshold, _ := p.vals["riskThresholdAutoApprove"].(string)
-		if threshold != "" && riskLevel != nil && *riskLevel != "" {
+		if threshold != "" && (riskLevel == nil || *riskLevel == "") {
+			return jsObjOf("decision", "needs_approval", "policy", p, "mode", "approval_required",
+				"reason", `the action's definition gives no risk level, so policy "`+name+`" auto-approve threshold (`+threshold+`) does not apply`)
+		}
+		if threshold != "" {
 			level, known := riskSeverity[*riskLevel]
 			limit, limitKnown := riskSeverity[threshold]
 			if known && limitKnown && level > limit {
@@ -258,6 +262,18 @@ func decisionFromMode(p *jsObj, name string, riskLevel *string) *jsObj {
 	default:
 		return jsObjOf("decision", "deny", "policy", p, "mode", "never", "reason", `policy "`+name+`" has unknown mode "`+mode+`"`)
 	}
+}
+
+// actionRiskLevel is the risk level that an action kind's definition gives;
+// nil when it gives none. The model's own estimate never decides a rule.
+func (a *API) actionRiskLevel(ctx context.Context, orgID, kind string) (*string, error) {
+	var risk *string
+	err := a.DB.QueryRow(ctx, `select definition->>'riskLevel' from pack_action_definition where org_id = $1 and kind = $2 limit 1`,
+		orgID, kind).Scan(&risk)
+	if errors.Is(err, pgx.ErrNoRows) || risk == nil || !slices.Contains(riskLevels, *risk) {
+		return nil, nil
+	}
+	return risk, err
 }
 
 // evaluatePolicy is InProcessControlPlane.evaluateActionPolicy(): the org's
@@ -277,7 +293,13 @@ func (r *runTools) evaluatePolicy(ctx context.Context, in policyIn) (any, error)
 	for i, p := range found {
 		policies[i] = policyWire(in.OrgID, p)
 	}
-	subject := policySubject{scope: in.Scope, kind: in.Kind, target: in.Target, riskLevel: in.RiskLevel}
+	risk := in.RiskLevel
+	if risk == nil {
+		if risk, err = a.actionRiskLevel(ctx, in.OrgID, in.Kind); err != nil {
+			return nil, err
+		}
+	}
+	subject := policySubject{scope: in.Scope, kind: in.Kind, target: in.Target, riskLevel: risk}
 	spec, err := a.actionTargetSpec(ctx, in.OrgID, in.Kind)
 	if err != nil {
 		return nil, err

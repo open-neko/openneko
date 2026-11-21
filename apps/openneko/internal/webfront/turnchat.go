@@ -520,9 +520,9 @@ func (t *chatTurn) applyFences(ctx context.Context, rt *runTools, source string)
 			"priority", p.vals["priority"], "enabled", p.vals["enabled"], "createdByThreadId", o.ThreadID, "createdByRunId", o.RunID)
 		saved, err := rt.upsertPolicy(ctx, in)
 		if err != nil {
-			return emit(ctx, jsObjOf("type", "error", "message", "policy save failed: "+err.Error()))
+			return emit(ctx, jsObjOf("type", "error", "message", "policy proposal failed: "+err.Error()))
 		}
-		return emit(ctx, surfaceEvent(policySavedCard(jsGet(saved, "policy"), jsGet(saved, "action"))))
+		return emit(ctx, surfaceEvent(policyProposedCard(jsGet(saved, "proposal"))))
 	}
 	if len(rule.Errors) > 0 {
 		return emit(ctx, jsObjOf("type", "error", "message", "policy save fence invalid: "+strings.Join(rule.Errors, "; ")))
@@ -537,7 +537,7 @@ func (t *chatTurn) fenceAction(ctx context.Context, rt *runTools, p *jsObj) erro
 	o := t.o
 	scope, kind, summary := p.vals["scope"].(string), p.vals["kind"].(string), p.vals["summary"].(string)
 	decision, err := rt.evaluatePolicy(ctx, policyIn{OrgID: o.OrgID, Scope: scope, Kind: kind,
-		Target: optionalString(p, "target"), Payload: p.vals["payload"], RiskLevel: optionalString(p, "risk_level")})
+		Target: optionalString(p, "target"), Payload: p.vals["payload"]})
 	if err != nil {
 		return err
 	}

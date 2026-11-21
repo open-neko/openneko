@@ -187,7 +187,7 @@ func TestChatTurnThroughServe(t *testing.T) {
 	for _, want := range []string{
 		`{"type":"artifact","artifact":{"path":"runs/` + runAdmin + `/artifacts/stock.csv","label":"stock.csv"}}`,
 		`"type":"action_request_emit"`, `"kind":"slack_post","scope":"external","decision":"auto_approved","intent":"Post the stock summary","summary":"Post the stock summary"}`,
-		`"surfaceId":"workflow-save-`, `"surfaceId":"policy-save-`,
+		`"surfaceId":"workflow-save-`, `"surfaceId":"policy-proposal-`,
 		`{"type":"followups","items":["By region?"]}`, `{"type":"vitals","items":[{"label":"SKUs low","value":"3"}]}`,
 	} {
 		if log.count(want) != 1 {
@@ -207,7 +207,8 @@ func TestChatTurnThroughServe(t *testing.T) {
 		`select string_agg(content, '|') from work_message where run_id = '` + runAdmin + `' and role = 'assistant'`:                                                 "Stock is fine.",
 		`select kind || ':' || status from action_request where work_run_id = '` + runAdmin + `'`:                                                                    "slack_post:approved",
 		`select name from workflow_definition where org_id = 'org' and name = 'Daily stock'`:                                                                         "Daily stock",
-		`select mode from action_policy where org_id = 'org' and name = 'Ask before email'`:                                                                          "approval_required",
+		`select rule->>'mode' || ':' || status from action_policy_proposal where org_id = 'org' and name = 'Ask before email'`:                                       "approval_required:pending",
+		`select count(*)::text from action_policy where org_id = 'org' and name = 'Ask before email'`:                                                                "0",
 		`select kind || ':' || pinned || ':' || scope from work_memory where text = 'Stock counts come from the ERP'`:                                                "business_rule:true:global",
 		`select string_agg(event, ',') from audit_chain where entity_id = '` + runAdmin + `'`:                                                                        "run:completed",
 	} {

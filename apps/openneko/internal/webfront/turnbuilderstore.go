@@ -472,13 +472,18 @@ type ruleRefusal string
 
 func (e ruleRefusal) Error() string { return string(e) }
 
-// ruleSaveRefusal keeps approval rules out of a steered run's reach: only a
-// run of a current admin saves a rule, and no run rewrites a pack's rule.
+// ruleSaveRefusal keeps approval rules out of a steered run's reach: only an
+// admin's own chat run proposes a rule, and no rule of a pack is rewritten.
 func (a *API) ruleSaveRefusal(ctx context.Context, orgID, runID, name string) error {
 	var userID *string
-	err := a.DB.QueryRow(ctx, `select actor_user_id from work_run where id::text = $1 and org_id = $2`, runID, orgID).Scan(&userID)
+	var scheduled bool
+	err := a.DB.QueryRow(ctx, `select actor_user_id, exists (select 1 from workflow_run w where w.work_run_id = r.id)
+		from work_run r where id::text = $1 and org_id = $2`, runID, orgID).Scan(&userID, &scheduled)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
+	}
+	if scheduled {
+		return ruleRefusal("A workflow run cannot save an approval rule. An admin changes rules in Settings, Approval rules.")
 	}
 	role := ""
 	if deref(userID) != "" {
@@ -489,8 +494,12 @@ func (a *API) ruleSaveRefusal(ctx context.Context, orgID, runID, name string) er
 	if role != "admin" {
 		return ruleRefusal("Only an admin can save an approval rule. Ask an admin to change it in Settings, Approval rules.")
 	}
+	return a.packRuleRefusal(ctx, orgID, name)
+}
+
+func (a *API) packRuleRefusal(ctx context.Context, orgID, name string) error {
 	var pack string
-	err = a.DB.QueryRow(ctx, `select i.pack_id from pack_artifact p join pack_install i on i.id = p.pack_install_id
+	err := a.DB.QueryRow(ctx, `select i.pack_id from pack_artifact p join pack_install i on i.id = p.pack_install_id
 		where p.org_id = $1 and p.artifact_kind = 'policy' and coalesce(p.metadata->'locator'->>'name', p.target_ref) = $2 order by i.pack_id limit 1`, orgID, name).Scan(&pack)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
@@ -501,7 +510,7 @@ func (a *API) ruleSaveRefusal(ctx context.Context, orgID, runID, name string) er
 	return nil
 }
 
-// upsertPolicy is upsertActionPolicyByName() in packages/llm/src/workflows/action-store.ts.
+// upsertPolicy stores a run's rule as a proposal that an admin confirms.
 func (r *runTools) upsertPolicy(ctx context.Context, in *jsObj) (any, error) {
 	a := r.api
 	orgID, _ := in.vals["orgId"].(string)
@@ -509,6 +518,36 @@ func (r *runTools) upsertPolicy(ctx context.Context, in *jsObj) (any, error) {
 	if err := a.ruleSaveRefusal(ctx, orgID, r.binding.RunID, name); err != nil {
 		return nil, err
 	}
+	rule := &jsObj{}
+	for _, k := range in.ordered() {
+		switch k {
+		case "orgId", "createdByThreadId", "createdByRunId":
+		default:
+			rule.set(k, in.vals[k])
+		}
+	}
+	var userID *string
+	if err := a.DB.QueryRow(ctx, `select actor_user_id from work_run where id::text = $1 and org_id = $2`, r.binding.RunID, orgID).
+		Scan(&userID); err != nil {
+		return nil, err
+	}
+	var id string
+	if err := a.DB.QueryRow(ctx, `insert into action_policy_proposal (org_id, name, rule, proposed_by_user_id, proposed_by_run_id)
+		values ($1, $2, $3::jsonb, $4, $5::uuid) returning id::text`, orgID, name, jsStringify(rule, false), userID, r.binding.RunID).Scan(&id); err != nil {
+		return nil, err
+	}
+	a.recordAudit(ctx, auditEvent{OrgID: orgID, EntityKind: "action_policy_proposal", EntityID: id, Event: "policy:proposed",
+		Payload: map[string]any{"name": name, "runId": r.binding.RunID, "userId": deref(userID)}})
+	proposal := jsSpread(rule)
+	proposal.set("id", id)
+	return jsObjOf("action", "proposed", "proposal", proposal), nil
+}
+
+// applyPolicyRule is upsertActionPolicyByName() in
+// packages/llm/src/workflows/action-store.ts, run when an admin confirms a
+// proposal.
+func (a *API) applyPolicyRule(ctx context.Context, orgID string, in *jsObj) (any, error) {
+	name, _ := in.vals["name"].(string)
 	description, _ := in.vals["description"].(string)
 	priority, _ := in.vals["priority"].(float64)
 	enabled, _ := in.vals["enabled"].(bool)

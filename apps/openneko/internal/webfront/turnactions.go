@@ -217,7 +217,7 @@ func actionTools(b turnBinding, be toolBackend) []toolDef {
 			risk, hasRisk := args.vals["risk_level"]
 			target, hasTarget := args.vals["target"]
 			decision, err := b.evaluatePolicy(ctx, be, policyIn{OrgID: b.OrgID, Scope: scope, Kind: kind,
-				Target: optionalString(args, "target"), Payload: jsOr(payload, hasPayload, nil), RiskLevel: optionalString(args, "risk_level")})
+				Target: optionalString(args, "target"), Payload: jsOr(payload, hasPayload, nil)})
 			if err != nil {
 				return toolResult{}, err
 			}
@@ -362,7 +362,7 @@ func (b turnBinding) runPackAction(ctx context.Context, be toolBackend, kind, sc
 		riskLevel = *risk
 	}
 	payload := jsOr(args.vals["payload"], true, &jsObj{})
-	in := policyIn{OrgID: b.OrgID, Scope: scope, Kind: kind, Payload: payload, RiskLevel: risk}
+	in := policyIn{OrgID: b.OrgID, Scope: scope, Kind: kind, Payload: payload}
 	if target != nil {
 		t := target.(string)
 		in.Target = &t
