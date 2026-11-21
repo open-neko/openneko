@@ -11,7 +11,9 @@ import (
 )
 
 // limitRunner sets each limit as both soft and hard. RLIMIT_NPROC counts
-// every task of the account, so the cap is the count now plus l.Threads.
+// every task of the account, so the cap is the count now plus
+// l.AccountTasks: room for this runner and the runners beside it, each held
+// to l.Threads by limitThreads.
 func limitRunner(l RunnerLimits) error {
 	tasks, err := accountTasks(os.Getuid())
 	if err != nil {
@@ -26,7 +28,7 @@ func limitRunner(l RunnerLimits) error {
 		{"address space", unix.RLIMIT_AS, l.AddressSpace},
 		{"file size", unix.RLIMIT_FSIZE, l.FileSize},
 		{"open files", unix.RLIMIT_NOFILE, l.OpenFiles},
-		{"threads", unix.RLIMIT_NPROC, tasks + l.Threads},
+		{"threads", unix.RLIMIT_NPROC, tasks + l.AccountTasks},
 	} {
 		if err := setHardLimit(r.resource, r.value); err != nil {
 			return fmt.Errorf("limit %s: %w", r.name, err)

@@ -11,7 +11,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,9 +25,12 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/serve"
 )
 
-const runnerProbeEnv = "OPENNEKO_TEST_RUNNER_PROBE"
+const (
+	runnerProbeEnv = "OPENNEKO_TEST_RUNNER_PROBE"
+	probeTurnEnv   = "OPENNEKO_TEST_PROBE_TURN"
+)
 
-// floodTarget is above the runner's thread cap of 256 more tasks.
+// floodTarget is above the runner's cap of 256 threads.
 const floodTarget = 400
 
 type runnerProbeIn struct {
@@ -61,7 +67,15 @@ func TestRunnerProbeChild(t *testing.T) {
 			}
 		}
 		var res probeResult
-		if strings.HasPrefix(in.Mode, "flood") {
+		turnMode := in.Mode
+		for _, e := range turn.Environ {
+			if v, ok := strings.CutPrefix(e, probeTurnEnv+"="); ok {
+				turnMode = v
+			}
+		}
+		if hold, ok := strings.CutPrefix(turnMode, "hold:"); ok {
+			res.Threads = holdThreads(hold)
+		} else if strings.HasPrefix(turnMode, "flood") {
 			res.Threads = floodThreads(floodTarget)
 		} else {
 			res = runnerChecks(ctx, in, workspace)
@@ -88,6 +102,17 @@ type runnerTargets struct {
 // error.
 func runRunnerProbe(t *testing.T, tg runnerTargets, mode string) (probeResult, string) {
 	t.Helper()
+	res, msg, err := runnerTurn(startProbeServe(t, tg, mode, 1), tg, mode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res, msg
+}
+
+// startProbeServe starts a serve that runs up to turns runners of the test
+// binary at once, and returns its socket.
+func startProbeServe(t *testing.T, tg runnerTargets, mode string, turns int) string {
+	t.Helper()
 	in := tg.in
 	in.Mode = mode
 	raw, _ := json.Marshal(in)
@@ -96,7 +121,7 @@ func runRunnerProbe(t *testing.T, tg runnerTargets, mode string) (probeResult, s
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: 1, ConfineRunner: mode != "control" && !strings.HasPrefix(mode, "flood"),
+	srv := &serve.Server{Getenv: os.Getenv, MaxTurns: turns, ConfineRunner: mode != "control" && !strings.HasPrefix(mode, "flood"),
 		Runner:    []string{os.Args[0], "-test.run=^TestRunnerProbeChild$", "-test.count=1"},
 		RunnerEnv: []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + tg.tmp, runnerProbeEnv + "=" + string(raw)}}
 	if !srv.ConfineRunner {
@@ -105,25 +130,34 @@ func runRunnerProbe(t *testing.T, tg runnerTargets, mode string) (probeResult, s
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ctx, ln) }()
-	defer func() { stop(); <-done }()
+	t.Cleanup(func() { stop(); <-done })
+	return sock
+}
 
+// runnerTurn sends one turn and returns what the runner's checks found, or
+// the turn's error. turnMode, when given, chooses the work of this turn.
+func runnerTurn(sock string, tg runnerTargets, mode string, turnMode ...string) (probeResult, string, error) {
+	in := tg.in
 	conn, err := net.Dial("unix", sock)
 	if err != nil {
-		t.Fatal(err)
+		return probeResult{}, "", err
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(90 * time.Second))
-	start := serve.Frame{Type: "start", Spec: json.RawMessage(`{}`), Environ: []string{"OPENNEKO_HARNESS_WORKSPACE_DIR=" + tg.workspace,
-		"OPENNEKO_MCP_ORG_ID=org-1", "OPENNEKO_MCP_THREAD_ID=thread-1"}}
+	environ := []string{"OPENNEKO_HARNESS_WORKSPACE_DIR=" + tg.workspace, "OPENNEKO_MCP_ORG_ID=org-1", "OPENNEKO_MCP_THREAD_ID=thread-1"}
+	for _, m := range turnMode {
+		environ = append(environ, probeTurnEnv+"="+m)
+	}
+	start := serve.Frame{Type: "start", Spec: json.RawMessage(`{}`), Environ: environ}
 	if err := json.NewEncoder(conn).Encode(start); err != nil {
-		t.Fatal(err)
+		return probeResult{}, "", err
 	}
 	var res probeResult
 	dec := json.NewDecoder(conn)
 	for {
 		var f serve.Frame
 		if err := dec.Decode(&f); err != nil {
-			t.Fatalf("%s: the turn ended with no exit frame: %v", mode, err)
+			return res, "", fmt.Errorf("%s: the turn ended with no exit frame: %w", mode, err)
 		}
 		switch f.Type {
 		case "event":
@@ -133,7 +167,7 @@ func runRunnerProbe(t *testing.T, tg runnerTargets, mode string) (probeResult, s
 			_ = os.Remove(in.Outside)
 			_ = os.Remove(filepath.Join(tg.workspace, "tool"))
 			_ = os.WriteFile(in.Victim, []byte("keep me"), 0o600)
-			return res, f.Error
+			return res, f.Error, nil
 		}
 	}
 }
@@ -259,4 +293,116 @@ func keyDoorAnswers(out *probeResult) bool {
 		out.Notes = append(out.Notes, "key door: "+err.Error())
 	}
 	return err == nil
+}
+
+// floodThreads pins goroutines to threads until the process has n threads,
+// as native code that floods threads would. It returns the count reached.
+// Each goroutine holds its own thread once it counts itself.
+func floodThreads(n int) int {
+	block := make(chan struct{})
+	var pinned atomic.Int64
+	for range n {
+		go func() {
+			runtime.LockOSThread()
+			pinned.Add(1)
+			<-block
+		}()
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for int(pinned.Load()) < n && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	return int(pinned.Load())
+}
+
+const threadLine = "could not start another thread"
+
+// TestRunnerThreadFloodStaysInTheRunner floods threads in a runner: the
+// runner stops at its cap, the turn ends with one clear line, and the
+// account can still start threads. The runner sets its limits with or
+// without confinement.
+func TestRunnerThreadFloodStaysInTheRunner(t *testing.T) {
+	tg := newRunnerTargets(t)
+	open, msg := runRunnerProbe(t, tg, "flood-nolimits")
+	if open.Threads < floodTarget {
+		t.Fatalf("with no limits the runner reached %d threads of %d (%s), so the check proves nothing", open.Threads, floodTarget, msg)
+	}
+	capped, msg := runRunnerProbe(t, tg, "flood")
+	if capped.Threads != 0 || !strings.Contains(msg, threadLine) {
+		t.Fatalf("the limited runner reached %d threads, turn error %q", capped.Threads, msg)
+	}
+	if got := floodThreads(64); got < 64 {
+		t.Fatalf("after the flood this account started too few threads: %d", got)
+	}
+}
+
+// holdThreads runs "wait:before:after": it pins before threads, says it is
+// ready, waits for the file wait, pins after threads more and returns the
+// count it pinned.
+func holdThreads(spec string) int {
+	f := strings.Split(spec, ":")
+	if len(f) != 3 {
+		return -1
+	}
+	before, _ := strconv.Atoi(f[1])
+	after, _ := strconv.Atoi(f[2])
+	n := floodThreads(before)
+	_ = os.WriteFile(f[0]+".ready", nil, 0o600)
+	for deadline := time.Now().Add(60 * time.Second); !fileExists(f[0]) && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+	}
+	return n + floodThreads(after)
+}
+
+type turnResult struct {
+	res probeResult
+	msg string
+	err error
+}
+
+func heldTurn(t *testing.T, sock string, tg runnerTargets, wait string, before, after int) <-chan turnResult {
+	t.Helper()
+	out := make(chan turnResult, 1)
+	go func() {
+		res, msg, err := runnerTurn(sock, tg, "flood", fmt.Sprintf("hold:%s:%d:%d", wait, before, after))
+		out <- turnResult{res, msg, err}
+	}()
+	for deadline := time.Now().Add(60 * time.Second); !fileExists(wait + ".ready"); {
+		select {
+		case got := <-out:
+			t.Fatalf("the runner that holds %d threads ended before it was ready: %d threads, turn error %q, %v", before, got.res.Threads, got.msg, got.err)
+		case <-time.After(20 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the runner that holds %d threads did not get ready", before)
+		}
+	}
+	return out
+}
+
+// TestAThreadFloodEndsOnlyItsOwnTurn: three runners at once. The first
+// starts and waits; the second holds 200 threads; the third floods and ends
+// with the thread line. The first can then start its threads and both end
+// well: each runner leaves room in the account's task limit for every
+// runner beside it.
+func TestAThreadFloodEndsOnlyItsOwnTurn(t *testing.T) {
+	tg := newRunnerTargets(t)
+	sock := startProbeServe(t, tg, "flood", 3)
+	dir := t.TempDir()
+	firstGo, heldGo := filepath.Join(dir, "first"), filepath.Join(dir, "held")
+	first := heldTurn(t, sock, tg, firstGo, 0, 64)
+	held := heldTurn(t, sock, tg, heldGo, 200, 0)
+	flood, msg, err := runnerTurn(sock, tg, "flood", "flood")
+	if err != nil || flood.Threads != 0 || !strings.Contains(msg, threadLine) {
+		t.Fatalf("the flooding runner: %d threads, turn error %q, %v", flood.Threads, msg, err)
+	}
+	for path, ch := range map[string]<-chan turnResult{firstGo: first, heldGo: held} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]int{firstGo: 64, heldGo: 200}[path]
+		if got := <-ch; got.err != nil || got.msg != "" || got.res.Threads != want {
+			t.Errorf("%s runner: %d threads of %d, turn error %q, %v", filepath.Base(path), got.res.Threads, want, got.msg, got.err)
+		}
+	}
 }

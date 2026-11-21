@@ -24,6 +24,18 @@ type runnerLog struct {
 	partial []byte
 	written int
 	cut     bool
+	threads bool
+}
+
+// threadFailures are the Go runtime's lines when it cannot start a thread.
+var threadFailures = []string{"fatal error: thread exhaustion", "runtime: failed to create new OS thread", "fatal error: newosproc"}
+
+// outOfThreads tells whether the runner wrote that it could not start a
+// thread.
+func (l *runnerLog) outOfThreads() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.threads
 }
 
 func newRunnerLog(out io.Writer, label string) *runnerLog {
@@ -75,6 +87,11 @@ func (l *runnerLog) emit() {
 		return r
 	}, string(l.partial))
 	l.partial = l.partial[:0]
+	for _, f := range threadFailures {
+		if strings.Contains(line, f) {
+			l.threads = true
+		}
+	}
 	if l.written+len(line) > maxRunnerLog {
 		l.cut = true
 		fmt.Fprintf(l.out, "%s: stderr cut at %d bytes\n", l.label, maxRunnerLog)

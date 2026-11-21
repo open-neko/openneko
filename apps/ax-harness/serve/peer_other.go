@@ -4,5 +4,5 @@ package serve
 
 import "net"
 
-// peerPID names no process here: only Linux serve sets RefusePeer.
-func peerPID(net.Conn) (int, bool) { return 0, false }
+// peer names no process here: only Linux serve sets RefusePeer.
+func peer(net.Conn) (int, func() bool, bool) { return 0, nil, false }

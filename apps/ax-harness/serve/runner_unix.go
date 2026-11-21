@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -157,7 +158,7 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	go s.serveBroker(ctx, broker, gate)
 
 	enc := json.NewEncoder(link)
-	setup := RunnerSetup{RequireDoor: s.RequireDoor, Path: s.Getenv("PATH"), Confine: s.ConfineRunner}
+	setup := RunnerSetup{RequireDoor: s.RequireDoor, Path: s.Getenv("PATH"), Confine: s.ConfineRunner, Turns: s.MaxTurns}
 	if gate != nil {
 		setup.SandboxURL, setup.SandboxRun = gateURL, gate.Run()
 	}
@@ -193,7 +194,9 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	} else {
 		code := 2
 		frame := Frame{Type: "exit", Code: &code, Error: "the agent runner stopped before the turn ended"}
-		if runErr != nil {
+		if stderr.outOfThreads() {
+			frame.Error = fmt.Sprintf("the agent runner could not start another thread (each runner may have %d, and the runners of this account share one task limit), so this turn ended", runnerThreads)
+		} else if runErr != nil {
 			frame.Error += ": " + runErr.Error()
 		}
 		_ = json.NewEncoder(conn).Encode(frame)
@@ -369,8 +372,11 @@ type RunnerLimits struct {
 	AddressSpace uint64
 	FileSize     uint64
 	OpenFiles    uint64
-	// Threads is how many more tasks of this account the runner may start.
+	// Threads caps the threads of the runner's own process.
 	Threads uint64
+	// AccountTasks is how many more tasks of this account the runner lets
+	// the account start, for itself and the runners beside it.
+	AccountTasks uint64
 }
 
 const (
@@ -381,14 +387,22 @@ const (
 
 // runnerLimitsFor bounds CPU time by the turn's deadline and a file by what
 // one sandbox command may return.
-func runnerLimitsFor(spec json.RawMessage) RunnerLimits {
+func runnerLimitsFor(spec json.RawMessage, turns int) RunnerLimits {
 	return RunnerLimits{
 		CPUSeconds:   uint64(runnerDeadline(spec) / time.Second),
 		AddressSpace: runnerAddressSpace,
 		FileSize:     sandbox.MaxTransfer,
 		OpenFiles:    runnerOpenFiles,
 		Threads:      runnerThreads,
+		AccountTasks: runnerThreads * uint64(max(turns, 1)),
 	}
+}
+
+// limitThreads caps the runner's threads in the Go runtime, which ends the
+// runner with "thread exhaustion" past the cap. macOS has no kernel cap for
+// one process's threads.
+func limitThreads(l RunnerLimits) {
+	debug.SetMaxThreads(int(l.Threads))
 }
 
 var runnerLimitsOff bool
@@ -462,7 +476,11 @@ func RunRunner(ctx context.Context, confine func(folders []string) error) error 
 		srv.testOnly = true
 	}
 	if !runnerLimitsOff {
-		srv.limit = func(spec json.RawMessage) error { return limitRunner(runnerLimitsFor(spec)) }
+		srv.limit = func(spec json.RawMessage) error {
+			l := runnerLimitsFor(spec, setup.Turns)
+			limitThreads(l)
+			return limitRunner(l)
+		}
 	}
 	srv.defaults()
 	srv.handleStream(ctx, link, reader)
