@@ -35,21 +35,22 @@ var runnerControlFree = map[string]bool{
 // the rule must open. Each check that the control can do is in one of them,
 // so each refusal is proved to come from the profile.
 var runnerLoosened = map[string][]string{
-	"(allow network*)": {"TCP to web's loopback listener", "UDP to loopback",
-		"connect to a Unix socket outside its folders", "send to a datagram socket outside its folders"},
+	"(allow network*)": {"TCP to web's loopback listener", "UDP to loopback", "TCP to 1.1.1.1:443", "UDP to 1.1.1.1:53", "TCP over IPv6 loopback",
+		"connect to a Unix socket outside its folders", "send to a datagram socket outside its folders", "send to the system log socket"},
+	"(allow network*) (allow mach-lookup) (allow ipc-posix-shm*) (allow file-read*)": {"resolve a name", "TCP to example.com:443"},
 	"(allow file-read*)":  {"read the planted secret key", "list the config folder", "list the home folder"},
 	"(allow file-write*)": {"write outside its folders", "truncate a file outside its folders"},
 	"(allow process-fork) (allow process-exec) (allow file-read*)": {"run another program", "run a file it wrote"},
 	"(allow signal)": {"signal web (kill 0)"},
-	"(allow sysctl-read) (allow process-info*)": {"read web's arguments and environment"},
+	"(allow sysctl-read) (allow process-info*)": {"read web's arguments and environment", "read web's arguments", "read web's process record"},
 }
 
 func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probeResult {
-	out := probeResult{Refused: map[string]bool{}, Allowed: map[string]bool{}}
+	out := probeResult{Refused: map[string]bool{}, Allowed: map[string]bool{}, Errors: map[string]string{}}
 	refused := func(what string, err error) {
 		out.Refused[what] = err != nil
-		if err != nil && os.Getenv("OPENNEKO_TEST_VERBOSE") != "" {
-			out.Notes = append(out.Notes, fmt.Sprintf("%s: %v", what, err))
+		if err != nil {
+			out.Errors[what] = err.Error()
 		}
 	}
 	_, err := os.ReadFile(in.Secret)
@@ -76,11 +77,7 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 	}
 	refused("run another program", err)
 	refused("signal web (kill 0)", unix.Kill(in.Parent, 0))
-	args, err := unix.SysctlRaw("kern.procargs2", in.Parent)
-	if err == nil && !strings.Contains(string(args), "PATH=") {
-		err = fmt.Errorf("read no variable")
-	}
-	refused("read web's arguments and environment", err)
+	readWebProcess(in.Web, refused)
 	refused("truncate a file outside its folders", unix.Truncate(in.Victim, 0))
 	refused("write outside its folders", os.WriteFile(in.Outside, []byte("x"), 0o600))
 	refused("connect to a Unix socket outside its folders", dial("unix", in.Stream))
@@ -94,7 +91,7 @@ func runnerChecks(ctx context.Context, in runnerProbeIn, workspace string) probe
 	tool := filepath.Join(workspace, "tool")
 	err = copyFile("/usr/bin/true", tool)
 	if err == nil {
-		err = exec.Command(tool).Run()
+		err = runOutput(exec.Command(tool))
 	}
 	refused("run a file it wrote", err)
 
@@ -127,7 +124,7 @@ func newRunnerTargets(t *testing.T) runnerTargets {
 		}
 	}
 	in := runnerProbeIn{Secret: filepath.Join(config, "secret-key"), Home: home, Outside: filepath.Join(other, "planted-by-runner"),
-		Victim: filepath.Join(other, "victim"), Parent: os.Getpid()}
+		Victim: filepath.Join(other, "victim"), Parent: os.Getpid(), Web: startWebStandIn(t)}
 	for p, body := range map[string]string{in.Secret: "planted-secret-key", filepath.Join(home, ".zsh_history"): "planted", in.Victim: "keep me"} {
 		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -192,7 +189,7 @@ func TestConfinedRunner(t *testing.T) {
 	}
 	for what, ok := range got.Allowed {
 		if !ok {
-			t.Errorf("the confined runner could not %s %v", what, got.Notes)
+			t.Errorf("the confined runner could not %s: %s %v", what, got.Errors[what], got.Notes)
 		}
 	}
 	if fileExists(tg.in.Outside) {
@@ -211,7 +208,7 @@ func TestConfinedRunner(t *testing.T) {
 		for _, what := range opens {
 			proved[what] = true
 			if res.Refused[what] {
-				t.Errorf("with %s the runner still could not %s: the check does not prove that rule", rule, what)
+				t.Errorf("with %s the runner still could not %s: the check does not prove that rule: %s", rule, what, res.Errors[what])
 			}
 		}
 	}
