@@ -619,6 +619,9 @@ Windows 10 1809, Windows Server 2019 or later is needed. On an older
 Windows, serve starts and refuses every agent turn with one line: "agent
 confinement: off. Windows <version> has no Unix sockets for app
 containers". `openneko doctor` and the status page show the same line.
+The Windows Firewall service (MpsSvc) must run: its filters keep the app
+container off the network. When it does not run, serve refuses every agent
+turn with one line that names it. Start it with `sc start MpsSvc`.
 The runner can still read what Windows opens to every app container, such
 as the system folders. The network part of serve (files and GraphJin) is
 not confined on Windows.

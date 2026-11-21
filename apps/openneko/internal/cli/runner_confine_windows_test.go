@@ -756,6 +756,53 @@ func TestWindowsTurnsAreOffWithNoAppContainer(t *testing.T) {
 	}
 }
 
+// TestWindowsTurnsAreOffWithoutTheFirewallService: the Windows Firewall
+// service installs the filters that keep an app container off the network.
+// When it does not run, or its state cannot be read, the start line, doctor
+// and release-check say that agent turns are off, and no runner starts.
+func TestWindowsTurnsAreOffWithoutTheFirewallService(t *testing.T) {
+	requireWinRunnerConfinement(t)
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"stopped", nil, "the Windows Firewall service (MpsSvc) does not run"},
+		{"unreadable", windows.ERROR_ACCESS_DENIED, "cannot read the state of the Windows Firewall service (MpsSvc)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			confine.SetFirewallForTest(t, false, tc.err)
+			st, off := runnerConfinement(io.Discard)
+			if st.Confined || !strings.HasPrefix(off, "agent confinement: off. ") || !strings.Contains(off, tc.want) || !strings.HasSuffix(off, "so agent turns are off (INSTALL.md, \"Agent confinement\").") {
+				t.Fatalf("start: %v, off = %q", st, off)
+			}
+			t.Setenv("OPENNEKO_SERVE_SOCKET", filepath.Join(testsock.Dir(t), "no-serve.sock"))
+			var doctor strings.Builder
+			if !confinementDoctorLines(context.Background(), &doctor) || !strings.Contains(doctor.String(), off) {
+				t.Fatalf("doctor: %q", doctor.String())
+			}
+			t.Setenv("OPENNEKO_ENV", "production")
+			cleanServeEnv(t)
+			sock := filepath.Join(testsock.Dir(t), "serve.sock")
+			ctx, stop := context.WithCancel(context.Background())
+			done, err := serveAgentTurns(ctx, io.Discard, sock, 1, turnHostStart{}, confine.Available(), confine.Available())
+			if err != nil {
+				stop()
+				t.Fatal(err)
+			}
+			_, _, runner, err := checkServeSocket(context.Background(), sock)
+			stop()
+			<-done
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("release-check passed a serve that cannot keep its runners off the network: runner %v, %v", runner, err)
+			}
+			if _, err := confine.StartRunner(confine.Spec{}, []string{os.Args[0]}, nil, os.Stderr, confine.Limits{}); !errors.Is(err, confine.ErrUnsupported) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("StartRunner without the firewall service: %v", err)
+			}
+		})
+	}
+}
+
 // TestStaleRunnerContainersGo: a profile whose serve has ended goes at the
 // next start; one whose serve runs stays.
 func TestStaleRunnerContainersGo(t *testing.T) {

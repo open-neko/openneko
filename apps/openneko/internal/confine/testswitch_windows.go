@@ -19,6 +19,18 @@ func SetForTest(noContainers bool) {
 	noAppContainer = noContainers
 }
 
+// SetFirewallForTest makes this process see the Windows Firewall service as
+// running or not, or fail to read it, until the test ends. It panics outside
+// a test binary.
+func SetFirewallForTest(t testing.TB, running bool, err error) {
+	if !testing.Testing() {
+		panic("confine.SetFirewallForTest works only in a test binary")
+	}
+	old := firewallRunning
+	firewallRunning = func() (bool, error) { return running, err }
+	t.Cleanup(func() { firewallRunning = old })
+}
+
 // StaleProfileForTest makes a runner profile that names serve process pid
 // and deletes it when the test ends.
 func StaleProfileForTest(t testing.TB, pid int) string {

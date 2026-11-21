@@ -73,6 +73,41 @@ func LSMList() (string, error) { return "", ErrUnsupported }
 // RunnerAvailable tells whether this system can start an agent runner in an
 // app container, with no change to the system.
 func RunnerAvailable() State {
+	st := appContainers()
+	if !st.Confined {
+		return st
+	}
+	if running, err := firewallRunning(); err != nil {
+		return State{Mechanism: runnerMechanism, Reason: fmt.Sprintf("OpenNeko cannot read the state of the Windows Firewall service (MpsSvc), which keeps app containers off the network: %v", err)}
+	} else if !running {
+		return State{Mechanism: runnerMechanism, Reason: "the Windows Firewall service (MpsSvc) does not run, and it keeps app containers off the network; start it with: sc start MpsSvc"}
+	}
+	return st
+}
+
+// firewallRunning tells whether the Windows Firewall service runs. Its
+// filters, not the app container token, block the network of a runner.
+var firewallRunning = func() (bool, error) {
+	m, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		return false, err
+	}
+	defer windows.CloseServiceHandle(m)
+	s, err := windows.OpenService(m, windows.StringToUTF16Ptr("MpsSvc"), windows.SERVICE_QUERY_STATUS)
+	if err != nil {
+		return false, err
+	}
+	defer windows.CloseServiceHandle(s)
+	var status windows.SERVICE_STATUS
+	if err := windows.QueryServiceStatus(s, &status); err != nil {
+		return false, err
+	}
+	return status.CurrentState == windows.SERVICE_RUNNING, nil
+}
+
+// appContainers tells whether this Windows has the app containers and the
+// Unix sockets that a runner needs.
+func appContainers() State {
 	st := State{Mechanism: runnerMechanism}
 	if noAppContainer {
 		st.Reason = Kernel() + " has no app containers"
@@ -96,7 +131,7 @@ func RunnerAvailable() State {
 // container with no capabilities. On an error the runner must not run
 // agent code.
 func ApplyRunner(Spec) (State, error) {
-	st := RunnerAvailable()
+	st := appContainers()
 	if !st.Confined {
 		return st, fmt.Errorf("%w: %s", ErrUnsupported, st.Reason)
 	}

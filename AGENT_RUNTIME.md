@@ -784,7 +784,10 @@ token is not an app container, or holds a capability, the runner refuses
 the turn. A serve that must confine and has no way to start a confined
 runner refuses every turn. On a Windows older than 10 1809 or Server
 2019, which has no Unix sockets for app containers, serve refuses every
-agent turn with one line.
+agent turn with one line. Serve also refuses each turn when the Windows
+Firewall service (MpsSvc) does not run or its state cannot be read: that
+service installs the filters that keep an app container off the network
+(test `TestWindowsTurnsAreOffWithoutTheFirewallService`).
 
 The app container refuses TCP and UDP to loopback and to other hosts, and
 name lookup. The proof sends a UDP packet to a receiver on loopback that
