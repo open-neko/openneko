@@ -38,8 +38,8 @@ func RunnerAvailable() State {
 }
 
 // ApplyRunner confines an agent runner for good: Landlock keeps the paths of
-// spec and refuses TCP, and a seccomp filter refuses sockets, the reach into
-// other processes, signals to them and truncate by path. On an error the
+// spec and refuses TCP, and a seccomp filter refuses sockets, new processes,
+// the reach into other processes, signals to them and truncate by path. On an error the
 // process may hold part of the confinement and must not run agent code.
 func ApplyRunner(spec Spec) (State, error) {
 	if avail := RunnerAvailable(); !avail.Confined {

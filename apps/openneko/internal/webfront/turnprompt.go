@@ -71,6 +71,8 @@ type agentWorkspace struct {
 	RunRoot           string `json:"runRoot"`
 	ArtifactRoot      string `json:"artifactRoot"`
 	BinRoot           string `json:"binRoot"`
+
+	runners *runnerGuard
 }
 
 type knowledgePack struct {

@@ -4,7 +4,6 @@ package serve
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,7 +38,13 @@ const (
 	brokerSandbox = "sandbox"
 	brokerDial    = 10 * time.Second
 	runnerStop    = 5 * time.Second
+	// Web stops a turn at its timeout_ms, at most 30 minutes.
+	maxRunnerTurn     = 30 * time.Minute
+	maxBrokerRequests = 1024
 )
+
+// runnerTurnGrace lets web's own stop come first.
+var runnerTurnGrace = time.Minute
 
 func socketPair() (parent, child *os.File, err error) {
 	syscall.ForkLock.RLock()
@@ -110,13 +115,14 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 		defer gate.Close()
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, runnerDeadline(start.Spec))
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.Runner[0], s.Runner[1:]...)
 	cmd.Env = append([]string{}, s.RunnerEnv...)
 	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = []*os.File{linkChild, brokerChild}
-	cmd.Cancel = func() error { return link.Close() }
+	cmd.SysProcAttr = runnerAttr()
+	cmd.Cancel = func() error { return killGroup(cmd.Process.Pid) }
 	cmd.WaitDelay = runnerStop
 	err = cmd.Start()
 	_ = linkChild.Close()
@@ -127,8 +133,17 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	if s.runnerStarted != nil {
 		s.runnerStarted(cmd.Process)
 	}
+	pid := cmd.Process.Pid
+	stopGroup := context.AfterFunc(ctx, func() {
+		_ = killGroup(pid)
+		_ = link.Close()
+	})
+	defer stopGroup()
 	waited := make(chan error, 1)
-	go func() { waited <- cmd.Wait() }()
+	go func() {
+		waited <- cmd.Wait()
+		cancel()
+	}()
 	go s.serveBroker(ctx, broker, gate)
 
 	enc := json.NewEncoder(link)
@@ -139,24 +154,33 @@ func (s *Server) runInRunner(ctx context.Context, conn io.Writer, reader *bufio.
 	if enc.Encode(Frame{Type: "runner", Runner: &setup}) == nil && enc.Encode(start) == nil {
 		go func() {
 			_, _ = io.Copy(link, reader)
-			_ = link.CloseWrite()
+			cancel()
 		}()
 	}
-	exited := false
+	var exitLine []byte
 	from := bufio.NewReaderSize(link, 64<<10)
 	for {
 		line, err := readLine(from)
 		if err != nil {
 			break
 		}
-		exited = bytes.HasPrefix(line, []byte(`{"type":"exit"`))
+		var frame struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(line, &frame) == nil && frame.Type == "exit" {
+			exitLine = line
+			break
+		}
 		if _, err := conn.Write(append(line, '\n')); err != nil {
 			break
 		}
 	}
 	cancel()
 	runErr := <-waited
-	if !exited {
+	_ = killGroup(pid)
+	if exitLine != nil {
+		_, _ = conn.Write(append(exitLine, '\n'))
+	} else {
 		code := 2
 		frame := Frame{Type: "exit", Code: &code, Error: "the agent runner stopped before the turn ended"}
 		if runErr != nil {
@@ -186,13 +210,36 @@ func (s *Server) turnGate(environ []string) (*sandbox.Gate, error) {
 	return sandbox.NewGate(s.Sandbox, egress)
 }
 
+// runnerDeadline is the turn's timeout_ms, at most maxRunnerTurn, and a
+// grace.
+func runnerDeadline(spec json.RawMessage) time.Duration {
+	var limits struct {
+		TimeoutMs float64 `json:"timeout_ms"`
+	}
+	turn := maxRunnerTurn
+	if json.Unmarshal(spec, &limits) == nil && limits.TimeoutMs > 0 {
+		turn = min(turn, time.Duration(limits.TimeoutMs)*time.Millisecond)
+	}
+	return turn + runnerTurnGrace
+}
+
+// killGroup kills the runner and every process in its group.
+func killGroup(pid int) error {
+	return syscall.Kill(-pid, syscall.SIGKILL)
+}
+
 // serveBroker answers the runner's requests for a connection with a
 // connected descriptor.
 func (s *Server) serveBroker(ctx context.Context, broker *net.UnixConn, gate *sandbox.Gate) {
 	requests := bufio.NewReader(broker)
-	for {
+	for n := 1; ; n++ {
 		line, err := requests.ReadString('\n')
 		if err != nil {
+			return
+		}
+		if n > maxBrokerRequests {
+			_, _ = broker.Write([]byte(fmt.Sprintf("-the turn asked for more than %d connections\n", maxBrokerRequests)))
+			_ = broker.Close()
 			return
 		}
 		conn, err := s.brokerDial(ctx, strings.TrimSpace(line), gate)
