@@ -3924,7 +3924,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: The item changed after the change was proposed; nothing is applied and the change is marked stale
+          description: The item changed after the change was proposed, or another admin decided the change first; nothing is applied
           content:
             application/json:
               schema:

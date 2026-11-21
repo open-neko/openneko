@@ -13,6 +13,7 @@ export type TeamProposal = {
   kind: "memory" | "skill" | "skill_lesson";
   target: string;
   title: string;
+  details: string[];
   files: Array<{
     path: string;
     change: "added" | "changed" | "removed";
@@ -79,6 +80,13 @@ function ProposalRow({ proposal, onDecided }: { proposal: TeamProposal; onDecide
         <Badge variant="watch">{kindLabel[proposal.kind]}</Badge>
       </div>
       <p className="m-0 text-ui-body-sm text-text2">Proposed by {proposal.proposedBy ?? "the skill-learning job"}</p>
+      {proposal.details.length > 0 ? (
+        <ul className="m-0 grid list-none gap-1 p-0 text-ui-body-sm text-text2">
+          {proposal.details.map((detail) => (
+            <li key={detail}>{detail}</li>
+          ))}
+        </ul>
+      ) : null}
       {proposal.files.map((file) => (
         <div key={file.path} className="grid gap-1">
           <p className="m-0 text-ui-caption font-semibold text-text3">
