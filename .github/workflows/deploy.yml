@@ -67,9 +67,10 @@ jobs:
           DEPLOY_IMAGE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
+          # Read the whole script first, so a command that reads stdin cannot eat the rest.
           ssh -i ~/.ssh/id_ed25519 \
               "$SSH_USER@$SSH_HOST" \
-              "DEPLOY_IMAGE_TAG=$DEPLOY_IMAGE_TAG bash -se" <<'EOF' | tee "$RUNNER_TEMP/openneko-deploy.log"
+              "DEPLOY_IMAGE_TAG=$DEPLOY_IMAGE_TAG bash -c \"\$(cat)\"" <<'EOF' | tee "$RUNNER_TEMP/openneko-deploy.log"
             set -euo pipefail
             ARCH=$(uname -m)
             case "$ARCH" in x86_64) GOARCH=amd64 ;; aarch64|arm64) GOARCH=arm64 ;; *) GOARCH=amd64 ;; esac
