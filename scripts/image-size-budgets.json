@@ -1,7 +1,7 @@
 {
   "neko-web": 225,
-  "neko-cli": 10,
-  "neko-serve": 50,
+  "neko-cli": 60,
+  "neko-serve": 90,
   "neko-db": 165,
   "neko-sandbox": 132,
   "uniqueStack": 2500
