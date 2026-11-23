@@ -3095,7 +3095,9 @@ export function createOpenNekoBackendDriver(
           const from = events.length;
           const next = repeatScenario && workflowId
             ? await startEpisodeTurn({ episode, actorUserId, question: "", workflowId })
-            : await startEpisodeTurn({ episode, actorUserId, question: followUp, threadId: run.threadId });
+            : input.separate_threads === true
+              ? await startEpisodeTurn({ episode, actorUserId, question: followUp })
+              : await startEpisodeTurn({ episode, actorUserId, question: followUp, threadId: run.threadId });
           activeRunId = next.runId;
           const nextDone = next.workflowRunId
             ? await episode.followStoredRun(next.runId, onEvent, signal)

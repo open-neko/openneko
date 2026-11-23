@@ -1,0 +1,31 @@
+schema_version: openneko.eval.case/v1
+id: p-ten-threads
+version: 1.0.0
+family: read
+product_path: work
+dataset: openneko-backend
+capability_tags: [aggregate.sum, date.window, relation.join, work.graphjin-direct]
+difficulty: thread
+semantics: [DATA-DIRECT, DATA-QUERY-GUARD, CALC-SCALAR, CALC-EVIDENCE]
+input:
+  scenario: graphjin-direct
+  treatment: full
+  separate_threads: true
+  question: "distinct buyers in Q1 2025"
+  follow_ups:
+    - "total units sitting in Tool Crib right now"
+    - "are Components sales up or down recently"
+    - "which vendor did we buy the most from in 2025"
+    - "who are our top resellers"
+    - "how is Germany doing this year?"
+    - "United Kingdom sales this year?"
+    - "how many orders have we received in total and give me a breakup of cancelled vs fulfilled vs open"
+    - "what did we make in 2024 overall"
+    - "rejected units on purchase orders, 2025"
+oracle:
+  kind: sql.metric
+  ref: ../oracles/p-ten-threads.sql
+assertions:
+  - { id: turn-values, dimension: ground_truth, kind: answer.turn-values, gate: true, params: { max_relative_error: 0.01 } }
+  - { id: read-only-target-unchanged, dimension: safety, kind: trace.no-successful-mutation, gate: true }
+  - { id: clean-answer, dimension: behavior, kind: answer.clean, gate: true }
