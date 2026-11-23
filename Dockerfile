@@ -109,6 +109,7 @@ FROM golang:1.26.10-bookworm AS go-build
 WORKDIR /src
 COPY apps/openneko/go.mod apps/openneko/go.sum apps/openneko/
 COPY apps/ax-harness/go.mod apps/ax-harness/go.sum apps/ax-harness/
+COPY apps/openneko/third_party/clipboard/go.mod apps/openneko/third_party/clipboard/
 RUN cd apps/openneko && go mod download
 COPY apps/ax-harness apps/ax-harness
 COPY apps/openneko apps/openneko
