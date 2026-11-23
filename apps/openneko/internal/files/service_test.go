@@ -236,3 +236,38 @@ func TestSigningSecretMatchesTheNodeDerivation(t *testing.T) {
 		t.Fatalf("SigningSecret = %s", got)
 	}
 }
+
+func TestContentReturnsTheCallersOwnBytes(t *testing.T) {
+	srv, _ := newServer(t)
+	alice := mint(testKey, "org1", "alice", time.Now().Add(time.Minute))
+	bob := mint(testKey, "org1", "bob", time.Now().Add(time.Minute))
+	sheet := []byte("PK\x03\x04 alternates sheet\x00\xff")
+	put(t, srv, alice, "library/abc/alternates.xlsx", sheet)
+
+	get := func(token, p string) (int, []byte) {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/files/content?path="+url.QueryEscape(p), nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var buf bytes.Buffer
+		buf.ReadFrom(res.Body) //nolint:errcheck
+		return res.StatusCode, buf.Bytes()
+	}
+	if code, body := get(alice, "library/abc/alternates.xlsx"); code != 200 || !bytes.Equal(body, sheet) {
+		t.Fatalf("alice reads her file = %d %q", code, body)
+	}
+	if code, _ := get(bob, "library/abc/alternates.xlsx"); code != http.StatusNotFound {
+		t.Fatalf("bob reads alice's path in his folder = %d, want 404", code)
+	}
+	if code, _ := get(bob, "../alice/library/abc/alternates.xlsx"); code != http.StatusBadRequest {
+		t.Fatalf("bob climbs to alice's folder = %d, want 400", code)
+	}
+	if code, _ := get("", "library/abc/alternates.xlsx"); code != http.StatusUnauthorized {
+		t.Fatalf("no token = %d, want 401", code)
+	}
+}

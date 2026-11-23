@@ -195,7 +195,10 @@ func (a *API) runChatTurn(ctx context.Context, o chatTurnOptions) (chatTurnResul
 	if err := st.wrapped(ctx, statusEvent("Preparing secure agent workspace…")); err != nil {
 		return t.fail(ctx, err)
 	}
-	stage, err := stageTurn(tc.Workspace, stageOptions{Allowed: tc.AllowedSkills, Own: tc.OwnSkills, Terminal: tc.Terminal, Actor: tc.Actor})
+	stage, err := stageTurn(tc.Workspace, stageOptions{Allowed: tc.AllowedSkills, Own: tc.OwnSkills, Terminal: tc.Terminal, Actor: tc.Actor,
+		Library: func(stageOrg string) error {
+			return a.stageRunLibrary(ctx, o.OrgID, o.RunID, tc.Actor.UserID, stageOrg)
+		}})
 	if err != nil {
 		return t.fail(ctx, err)
 	}
