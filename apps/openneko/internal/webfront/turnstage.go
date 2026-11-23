@@ -145,6 +145,7 @@ type turnStage struct {
 	Workspace agentWorkspace
 	host      agentWorkspace
 	baseline  skillFileHashes
+	staged    skillFileHashes
 	actor     runActorRow
 	own       map[string]bool
 
@@ -251,6 +252,7 @@ func stageTurn(host agentWorkspace, o stageOptions) (st *turnStage, err error) {
 	if err != nil {
 		return nil, err
 	}
+	staged := hashSkillTree(ws.SkillsRoot)
 	if o.Library != nil {
 		if err := o.Library(stageOrg); err != nil {
 			return nil, err
@@ -262,7 +264,7 @@ func stageTurn(host agentWorkspace, o stageOptions) (st *turnStage, err error) {
 	if err := lockRunLibrary(stageOrg); err != nil {
 		return nil, err
 	}
-	return &turnStage{Dir: dir, Workspace: ws, host: host, baseline: baseline, actor: o.Actor, own: own}, nil
+	return &turnStage{Dir: dir, Workspace: ws, host: host, baseline: baseline, staged: staged, actor: o.Actor, own: own}, nil
 }
 
 // stageOwnSkills copies each own skill in the run's scope over the staged
@@ -574,7 +576,7 @@ func (s *turnStage) finish(ctx context.Context, a *API, orgID, runID string, abo
 		log.Printf("[agent-run] run %s skill capture skipped: %s", runID, reason)
 		return nil
 	}
-	saved, err := a.captureSkillEdits(ctx, orgID, runID, s.actor, s.baseline, s.own, s.Workspace.SkillsRoot)
+	saved, err := a.captureSkillEdits(ctx, orgID, runID, s.actor, s.baseline, s.staged, s.own, s.Workspace.SkillsRoot)
 	if err != nil {
 		log.Printf("[agent-run] skill capture failed: %v", err)
 		return nil

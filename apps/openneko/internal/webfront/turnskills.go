@@ -291,7 +291,7 @@ func skillEditMessage(runID string, skills []string) string {
 // member's edit becomes a private copy and the team skill stays as it is.
 // A new skill from a member is their own skill. A file another writer
 // changed on the host during the turn stays as it is.
-func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runActorRow, baseline skillFileHashes,
+func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runActorRow, baseline, staged skillFileHashes,
 	own map[string]bool, changed []stagedSkillFile, removed []string, stagedSkills string) savedSkillEdits {
 	orgRoot := orgAgentRoot(orgID)
 	teamRoot := filepath.Join(orgRoot, "skills")
@@ -305,6 +305,19 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 			mode = teamWriteRefused
 		}
 	}
+	out := savedSkillEdits{Copies: map[string]string{}, Skipped: []string{}}
+	if !member {
+		notFromTeam := func(p string) bool {
+			if own[skillOf(p)] && act.UserID != "" || staged[p] == baseline[p] {
+				return false
+			}
+			log.Printf("[agent-run] run %s skill file %s skipped: the run got it from the image, not from the team skill", runID, p)
+			out.Skipped = append(out.Skipped, p)
+			return true
+		}
+		changed = slices.DeleteFunc(slices.Clone(changed), func(f stagedSkillFile) bool { return notFromTeam(f.Path) })
+		removed = slices.DeleteFunc(slices.Clone(removed), notFromTeam)
+	}
 	names := map[string]bool{}
 	for _, f := range changed {
 		names[skillOf(f.Path)] = true
@@ -312,7 +325,6 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 	for _, p := range removed {
 		names[skillOf(p)] = true
 	}
-	out := savedSkillEdits{Copies: map[string]string{}, Skipped: []string{}}
 	var proposed, refused, mine, copies []string
 	for n := range names {
 		switch {
@@ -334,6 +346,25 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 	slices.Sort(refused)
 	slices.Sort(mine)
 	slices.Sort(copies)
+	pathsOf := func(skills []string) string {
+		var paths []string
+		for _, f := range changed {
+			if slices.Contains(skills, skillOf(f.Path)) {
+				paths = append(paths, f.Path)
+			}
+		}
+		for _, p := range removed {
+			if slices.Contains(skills, skillOf(p)) {
+				paths = append(paths, "-"+p)
+			}
+		}
+		slices.Sort(paths)
+		return strings.Join(paths, ", ")
+	}
+	if len(proposed)+len(refused)+len(copies) > 0 {
+		log.Printf("[agent-run] run %s changed skill files: proposed %s; refused %s; copied %s", runID,
+			pathsOf(proposed), pathsOf(refused), pathsOf(copies))
+	}
 
 	save := func(root string, skills []string) {
 		current := hashSkillTree(root)
@@ -443,9 +474,9 @@ func copyStagedSkill(stagedSkills, skill, ownRoot, name string) error {
 // captureSkillEdits is captureSandboxSkillEdits() for a stage on this host:
 // it compares the run's skills folder with the tree the run received and
 // saves what changed. It returns nil when nothing changed.
-func (a *API) captureSkillEdits(ctx context.Context, orgID, runID string, act runActorRow, baseline skillFileHashes,
+func (a *API) captureSkillEdits(ctx context.Context, orgID, runID string, act runActorRow, baseline, staged skillFileHashes,
 	own map[string]bool, stagedSkills string) (*savedSkillEdits, error) {
-	changed, removed := diffSkillTrees(baseline, hashSkillTree(stagedSkills))
+	changed, removed := diffSkillTrees(staged, hashSkillTree(stagedSkills))
 	if len(changed) == 0 && len(removed) == 0 {
 		return nil, nil
 	}
@@ -467,6 +498,6 @@ func (a *API) captureSkillEdits(ctx context.Context, orgID, runID string, act ru
 		}
 		files = append(files, stagedSkillFile{Path: p, Content: data})
 	}
-	saved := a.saveSkillEdits(ctx, orgID, runID, act, baseline, own, files, removed, stagedSkills)
+	saved := a.saveSkillEdits(ctx, orgID, runID, act, baseline, staged, own, files, removed, stagedSkills)
 	return &saved, nil
 }

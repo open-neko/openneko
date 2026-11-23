@@ -230,7 +230,7 @@ func TestRunSkillCapture(t *testing.T) {
 		}
 		defer os.RemoveAll(st.Dir)
 		edit(st.Workspace.SkillsRoot)
-		saved, err := a.captureSkillEdits(ctx, "org", runID, act, st.baseline, st.own, st.Workspace.SkillsRoot)
+		saved, err := a.captureSkillEdits(ctx, "org", runID, act, st.baseline, st.staged, st.own, st.Workspace.SkillsRoot)
 		if err != nil || saved == nil {
 			t.Fatalf("capture: %v %v", saved, err)
 		}
