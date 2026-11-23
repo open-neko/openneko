@@ -1,13 +1,146 @@
 package webfront
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"errors"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/dosco/graphjin/core/v3/fstable"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
+	"github.com/open-neko/neko/apps/openneko/internal/files"
 )
+
+// recordingServe is openneko serve's real files service. It keeps each PUT
+// body, and with cut set it stops each file it sends after 512 bytes, as the
+// macOS confined network part did when sendfile failed.
+type recordingServe struct {
+	next http.Handler
+	mu   sync.Mutex
+	puts []string
+	cut  bool
+}
+
+func realServe(t *testing.T, a *API, db *pgxpool.Pool) *recordingServe {
+	t.Helper()
+	store, err := fstable.NewLocal(fstable.LocalConfig{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix, err := filecontent.Open(db, t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := config.SigningSecret(a.SecretsDir, files.TokenLabel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &recordingServe{next: files.New(store, ix, key, files.Options{Refresh: time.Millisecond}).Handler()}
+}
+
+func (s *recordingServe) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	cut := s.cut
+	if r.Method == http.MethodPut {
+		body, _ := io.ReadAll(r.Body)
+		s.puts = append(s.puts, string(body))
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	s.mu.Unlock()
+	if cut && r.Method == http.MethodGet {
+		w = &cutWriter{ResponseWriter: w, left: 512}
+	}
+	s.next.ServeHTTP(w, r)
+}
+
+type cutWriter struct {
+	http.ResponseWriter
+	left int
+}
+
+func (c *cutWriter) Write(p []byte) (int, error) {
+	if len(p) > c.left {
+		n, _ := c.ResponseWriter.Write(p[:c.left])
+		c.left = 0
+		return n, errors.New("sendfile: operation not permitted")
+	}
+	c.left -= len(p)
+	return c.ResponseWriter.Write(p)
+}
+
+// TestLibraryMoveKeepsTheOriginalWhenServeSendsLess: serve stores the file
+// but sends back only part of it. The move keeps the original and the row,
+// and a later move with a whole read-back finishes the job.
+func TestLibraryMoveKeepsTheOriginalWhenServeSendsLess(t *testing.T) {
+	f, db := filesFront(t)
+	ctx := context.Background()
+	if err := os.WriteFile(filepath.Join(f.API.SecretsDir, "secret-key"), []byte("library-test-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, 24705)
+	_, _ = rand.Read(data)
+	original := filepath.Join(orgAgentRoot("org"), "library", "uploads", "member", "h1", "alternates.xlsx")
+	if err := os.MkdirAll(filepath.Dir(original), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(original, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, db, `insert into library_document (org_id, user_id, filename, relative_path, content_hash, size_bytes, status, error) values
+		('org', 'member', 'alternates.xlsx', 'library/uploads/member/h1/alternates.xlsx', 'h1', 24705, 'ready', null)`)
+	row := func() string {
+		var s string
+		if err := db.QueryRow(ctx, `select relative_path || ' ' || status from library_document where filename = 'alternates.xlsx'`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	serve := realServe(t, f.API, db)
+	serve.cut = true
+	srv := httptest.NewServer(serve)
+	t.Cleanup(srv.Close)
+	t.Setenv("OPENNEKO_SERVE_URL", srv.URL)
+
+	moved, _, err := f.API.MoveLibraryDocuments(ctx)
+	if err == nil || moved != 0 || !strings.Contains(err.Error(), "read back") {
+		t.Fatalf("a cut read-back: moved %d, %v", moved, err)
+	}
+	if got, err := os.ReadFile(original); err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("the original is gone or changed after a cut read-back: %v", err)
+	}
+	if got := row(); got != "library/uploads/member/h1/alternates.xlsx ready" {
+		t.Fatalf("row after a cut read-back: %s", got)
+	}
+
+	serve.mu.Lock()
+	serve.cut = false
+	serve.mu.Unlock()
+	moved, _, err = f.API.MoveLibraryDocuments(ctx)
+	if err != nil || moved != 1 {
+		t.Fatalf("move: %d %v", moved, err)
+	}
+	if _, err := os.Stat(original); !os.IsNotExist(err) {
+		t.Fatalf("the original stays after a whole read-back: %v", err)
+	}
+	path := strings.TrimPrefix(strings.TrimSuffix(row(), " ready"), "files/")
+	got, err := f.API.getServeFile(ctx, actor{OrgID: "org", UserID: "member"}, path, int64(len(data)))
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("serve holds %d of %d bytes: %v", len(got), len(data), err)
+	}
+}
 
 func TestMoveLibraryDocuments(t *testing.T) {
 	f, db := filesFront(t)
@@ -52,7 +185,7 @@ func TestMoveLibraryDocuments(t *testing.T) {
 		return out
 	}
 
-	serve := &fakeServe{}
+	serve := realServe(t, f.API, db)
 	srv := httptest.NewServer(serve)
 	t.Setenv("OPENNEKO_SERVE_URL", srv.URL)
 	srv.Close()
@@ -84,8 +217,8 @@ func TestMoveLibraryDocuments(t *testing.T) {
 	if got := state(); !slices.Equal(got, want) {
 		t.Errorf("rows:\n%q\nwant\n%q", got, want)
 	}
-	if bodies := []string{string(serve.bodies[0]), string(serve.bodies[1])}; len(serve.puts) != 2 || !slices.Contains(bodies, "a,b\n") || !slices.Contains(bodies, "# N\n") {
-		t.Errorf("serve calls: %v", serve.puts)
+	if len(serve.puts) != 2 || !slices.Contains(serve.puts, "a,b\n") || !slices.Contains(serve.puts, "# N\n") {
+		t.Errorf("serve got: %q", serve.puts)
 	}
 	if _, err := os.Stat(filepath.Join(root, "library/uploads/q3.csv")); !os.IsNotExist(err) {
 		t.Errorf("library upload kept: %v", err)

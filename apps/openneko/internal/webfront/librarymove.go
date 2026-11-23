@@ -2,7 +2,9 @@ package webfront
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +12,9 @@ import (
 
 // MoveLibraryDocuments moves the Library documents that still sit in the org
 // workspace into each owner's folder in openneko serve. Thread attachments
-// keep their thread copy. It stops at the first serve error, so a later run
-// takes the rest.
+// keep their thread copy. An original goes only after serve gives back the
+// same bytes. It stops at the first serve error, so a later run takes the
+// rest.
 func (a *API) MoveLibraryDocuments(ctx context.Context) (moved, missing int, err error) {
 	rows, err := a.DB.Query(ctx, `select org_id, id::text, coalesce(user_id, ''), filename, relative_path
 		from library_document where relative_path not like 'files/%' and status = 'ready'`)
@@ -53,8 +56,16 @@ func (a *API) MoveLibraryDocuments(ctx context.Context) (moved, missing int, err
 			continue
 		}
 		_, path := libraryPath(d.filename, data)
-		if err := a.putServeFile(ctx, actor{OrgID: d.orgID, UserID: d.userID}, path, data, ""); err != nil {
+		act := actor{OrgID: d.orgID, UserID: d.userID}
+		if err := a.putServeFile(ctx, act, path, data, ""); err != nil {
 			return moved, missing, err
+		}
+		back, err := a.getServeFile(ctx, act, path, int64(len(data)))
+		if err != nil {
+			return moved, missing, fmt.Errorf("read back %s from openneko serve: %w", path, err)
+		}
+		if sha256.Sum256(back) != sha256.Sum256(data) {
+			return moved, missing, fmt.Errorf("the copy of %s in openneko serve differs from the original", path)
 		}
 		if _, err := a.DB.Exec(ctx, `update library_document set relative_path = $3, status = 'ready', error = null, updated_at = now()
 			where org_id = $1 and id = $2::uuid`, d.orgID, d.id, "files/"+path); err != nil {
