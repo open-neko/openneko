@@ -39,6 +39,7 @@ var actionLabels = map[string]string{
 	"source_config_admin":    "Change the GraphJin config",
 	"code_create_issue":      "File an issue",
 	"code_draft_patch":       "Draft a code patch",
+	graphjinAPIMutationKind:  "Change data through an API",
 }
 
 func actionLabel(kind string) string {
@@ -174,6 +175,11 @@ func rawRecipients(raw string) ([]factRecipient, string, bool) {
 // executed actions reached before, to name what is unusual.
 func buildApprovalFacts(kind string, payload any, orgDomains []string, knownHost func(string) bool) approvalFacts {
 	f := approvalFacts{Headline: actionLabel(kind), Lines: []string{}, Flags: []string{}}
+	if kind == graphjinAPIMutationKind {
+		operation, _ := jsGet(payload, "operation").(string)
+		source, _ := jsGet(payload, "source").(string)
+		f.Headline += ": " + factValue(operation+" on "+source)
+	}
 	var leaves []factLeaf
 	factLeaves(payload, "", 0, &leaves)
 	flag := func(s string) {

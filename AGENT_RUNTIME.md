@@ -341,6 +341,20 @@ org's data source, signs the run's GraphJin token with the user's group
 roles, refuses the internal GraphJin, applies the config's write guard
 and calls GraphJin's MCP or GraphQL route.
 
+A run sends no mutation to GraphJin itself, raw or saved. `openneko web`
+reads the GraphJin config (`OPENNEKO_GRAPHJIN_CONFIG`). When every database
+source is `read_only` and the mutation's one root field is an operation of
+an API source, the call becomes a `graphjin.api_mutation` action request.
+The approval card shows the source, the operation, the method and path
+from the OpenAPI file, and the body. The approval rules cover it like any
+other external action. After the approval, the action job checks the
+mutation again and sends it once with the identity of the run that asked
+for it; a saved query that changed after the approval does not run. Any
+other mutation is refused, and so is every mutation when the config does
+not prove the database sources read-only
+(`apps/openneko/internal/webfront/graphjinapimutation.go`). The tools that
+change GraphJin's schema, config or workflows stay closed to a run.
+
 ## Two zones
 
 The stack has two zones. The control zone is `openneko web`. It holds

@@ -169,6 +169,9 @@ func (f *fakeTools) listGraphjinTools(_ context.Context, in graphjinCaller) (any
 func (f *fakeTools) callGraphjinTool(_ context.Context, in graphjinToolCall) (any, error) {
 	return f.record("callGraphjinTool", in)
 }
+func (f *fakeTools) planGraphjinMutation(context.Context, graphjinToolCall) (*graphjinMutationPlan, error) {
+	return nil, nil
+}
 func (f *fakeTools) emitEvent(_ context.Context, event any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

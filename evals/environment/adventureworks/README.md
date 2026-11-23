@@ -15,7 +15,9 @@ fixture and is separate from the interactive product demo:
   `default_transaction_read_only=on`
 - GraphJin database policy: immutable `read_only: true`
 - GraphJin API policy: only the checked-in `selectFulfillmentRoute` POST is
-  exposed as a mutation; its fixture response is deterministic and stateless
+  exposed as a mutation; its fixture response is deterministic and stateless.
+  A run's call of it becomes an approval request; the harness approves it,
+  and the one execution must hold the fixture's receipt
 - GraphJin's built-in Ax agent: disabled; only primitive GraphJin tools are in
   the backend track
 

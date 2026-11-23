@@ -116,6 +116,7 @@ type toolBackend interface {
 	queryFiles(ctx context.Context, in fileSQLIn) (any, error)
 	listGraphjinTools(ctx context.Context, in graphjinCaller) (any, error)
 	callGraphjinTool(ctx context.Context, in graphjinToolCall) (any, error)
+	planGraphjinMutation(ctx context.Context, in graphjinToolCall) (*graphjinMutationPlan, error)
 	emitEvent(ctx context.Context, event any) error
 	evaluatePolicy(ctx context.Context, in policyIn) (any, error)
 	createActionRequest(ctx context.Context, in *jsObj) (any, error)

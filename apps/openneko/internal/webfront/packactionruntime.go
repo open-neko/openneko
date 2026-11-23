@@ -882,6 +882,8 @@ func (a *API) goActionAdapter(ctx context.Context, orgID, actionRequestID string
 		return a.executeMagentoChangeset, nil
 	case kind == "send_webhook":
 		return a.executeSendWebhook, nil
+	case kind == graphjinAPIMutationKind:
+		return a.executeGraphjinAPIMutation, nil
 	case kind == "code_create_issue":
 		return a.executeCodeCreateIssue, nil
 	case kind == "code_draft_patch":

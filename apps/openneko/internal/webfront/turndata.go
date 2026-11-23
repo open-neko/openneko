@@ -106,7 +106,16 @@ func graphjinTools(b turnBinding, be toolBackend) toolGroup {
 			}
 			be.audit(ctx, "/v1/graphjin/tools/call")
 			in := graphjinToolCall{OrgID: caller.OrgID, RunID: caller.RunID, Name: name, Arguments: args}
-			return traceGraphjinToolCall(b.trace(), name, args, func() (any, error) { return be.callGraphjinTool(ctx, in) })
+			return traceGraphjinToolCall(b.trace(), name, args, func() (any, error) {
+				plan, err := be.planGraphjinMutation(ctx, in)
+				if err != nil {
+					return nil, err
+				}
+				if plan != nil {
+					return b.requestGraphjinMutation(ctx, be, plan)
+				}
+				return be.callGraphjinTool(ctx, in)
+			})
 		},
 	}}
 }
@@ -529,14 +538,15 @@ func (a *API) savedQueryRefusal(ctx context.Context, in graphjinToolCall) (*jsOb
 
 var graphqlMutationWord = regexp.MustCompile(`(?i)\bmutation\b`)
 
-const runMutationRefusal = "A run does not change data through GraphJin. A change goes through an action that the approval rules cover; ask an admin to add the operation to a pack action."
+const runMutationRefusal = "A run sends no mutation to GraphJin itself. A mutation on an API source becomes an approval request; a database source takes no mutation."
 
 // graphjinRunBlockedTools change GraphJin's schema, config or saved
 // workflows, or dial a host the caller names.
 var graphjinRunBlockedTools = []string{graphjinAgentTool, "update_current_config", "apply_schema_changes", "apply_database_setup",
 	"save_workflow", "test_database_connection", "discover_databases"}
 
-// assertGraphjinMutationAllowed refuses every GraphQL mutation from a run.
+// assertGraphjinMutationAllowed refuses every GraphQL mutation that would go
+// to GraphJin straight from a run.
 func assertGraphjinMutationAllowed(query string) error {
 	if graphqlMutationWord.MatchString(query) {
 		return errors.New("GraphJin mutation blocked: " + runMutationRefusal)
@@ -545,34 +555,6 @@ func assertGraphjinMutationAllowed(query string) error {
 }
 
 var leadingMutation = regexp.MustCompile(`^(?:\s|#[^\n]*\n)*mutation\b`)
-
-// savedQueryIsMutation asks GraphJin for the saved query's text. A reply
-// that names no operation and no query counts as a mutation.
-func savedQueryIsMutation(ctx context.Context, ep graphjinEndpoint, args *jsObj) bool {
-	in := jsObjOf("name", jsGet(args, "name"))
-	if ns, ok := jsGet(args, "namespace").(string); ok && ns != "" {
-		in.set("namespace", ns)
-	}
-	result, err := graphjinMCPRequest(ctx, ep, "tools/call", jsObjOf("name", "get_saved_query", "arguments", in))
-	if err != nil {
-		return true
-	}
-	details, _ := jsGet(result, "structuredContent").(*jsObj)
-	if details == nil {
-		if content, ok := jsGet(result, "content").([]any); ok && len(content) > 0 {
-			if text, ok := jsGet(content[0], "text").(string); ok {
-				parsed, _ := jsParse([]byte(text))
-				details, _ = parsed.(*jsObj)
-			}
-		}
-	}
-	operation, _ := jsGet(details, "operation").(string)
-	query, _ := jsGet(details, "query").(string)
-	if operation == "" && query == "" {
-		return true
-	}
-	return strings.EqualFold(operation, "mutation") || leadingMutation.MatchString(query)
-}
 
 func yamlField(m *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(m.Content); i += 2 {
@@ -764,8 +746,11 @@ func (r *runTools) callGraphjinTool(ctx context.Context, in graphjinToolCall) (a
 	if err != nil {
 		return nil, err
 	}
-	if in.Name == "execute_saved_query" && savedQueryIsMutation(ctx, ep, in.Arguments) {
-		return nil, errors.New("GraphJin saved mutation blocked: " + runMutationRefusal)
+	if in.Name == "execute_saved_query" {
+		namespace, _ := jsGet(in.Arguments, "namespace").(string)
+		if operation, text, ok := savedQueryText(ctx, ep, jsStringOrEmpty(jsGet(in.Arguments, "name")), namespace); !ok || savedQueryIsMutation(operation, text) {
+			return nil, errors.New("GraphJin saved mutation blocked: " + runMutationRefusal)
+		}
 	}
 	return callGraphjinMCPTool(ctx, ep, in.Name, in.Arguments)
 }
