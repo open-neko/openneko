@@ -167,9 +167,17 @@ func candidateValue(v any) (value, kind string, ok bool) {
 	return "", "", false
 }
 
-// mineAnswer picks, from the last successful call backward, the first value
-// of a call's result that the answer states.
+// mineAnswer finds the one value from the run's query results that the
+// answer states. An answer that states several different values from the
+// results is ambiguous: the test cannot tell which one answers the question.
 func mineAnswer(answer string, calls []compileCall) (call compileCall, path []any, value, kind string, ok bool) {
+	type hit struct {
+		call  compileCall
+		path  []any
+		value string
+		kind  string
+	}
+	var hits []hit
 	for i := len(calls) - 1; i >= 0; i-- {
 		c := calls[i]
 		if !c.OK {
@@ -182,11 +190,19 @@ func mineAnswer(answer string, calls []compileCall) (call compileCall, path []an
 		for _, cand := range mineCandidates(data) {
 			v, k, okValue := candidateValue(cand.Value)
 			if okValue && answerHolds(answer, k, v) {
-				return c, cand.Path, v, k, true
+				hits = append(hits, hit{c, cand.Path, v, k})
 			}
 		}
 	}
-	return compileCall{}, nil, "", "", false
+	if len(hits) == 0 {
+		return compileCall{}, nil, "", "", false
+	}
+	for _, h := range hits[1:] {
+		if h.value != hits[0].value {
+			return compileCall{}, nil, "", "", false
+		}
+	}
+	return hits[0].call, hits[0].path, hits[0].value, hits[0].kind, true
 }
 
 // valueAt reads the value at a mined path from fresh data.
@@ -330,7 +346,7 @@ func (a *API) mineRun(ctx context.Context, orgID string, r mineRun) (string, err
 	}
 	call, path, value, kind, ok := mineAnswer(r.answer, calls)
 	if !ok {
-		return skip("no single figure or top row of a query in the answer")
+		return skip("no single figure or top row of a query in the answer, or several")
 	}
 	question, context, correction := r.question, turns[:at], ""
 	if at >= 2 && correctionMsg.MatchString(r.question) && turns[at-1].Role == "assistant" {

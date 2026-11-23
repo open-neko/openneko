@@ -12,12 +12,19 @@ func TestMineAnswerFindsTheValueTheAnswerStates(t *testing.T) {
 		{Ref: "c2", OK: false, Result: `{"errors":[{"message":"x"}]}`},
 		{Ref: "c3", OK: true, Query: "q3", Result: `{"data":{"top":[{"productid":389,"name":"Hex Nut 2","sum_quantity":657},{"name":"Thin-Jam Hex Nut 3"}]}}`},
 	}
-	call, path, value, kind, ok := mineAnswer("In the Tool Crib, **Hex Nut 2** has the most units: 657.", calls)
+	call, path, value, kind, ok := mineAnswer("In the Tool Crib, **Hex Nut 2** has the most units.", calls)
 	if !ok || call.Query != "q3" || kind != "name" || value != "Hex Nut 2" {
 		t.Fatalf("got %v %v %q %q %v", call.Ref, path, value, kind, ok)
 	}
 	if raw, _ := json.Marshal(path); string(raw) != `["top",0,"name"]` {
 		t.Fatalf("path %s", raw)
+	}
+	if _, _, _, _, ok := mineAnswer("In the Tool Crib, Hex Nut 2 has the most units: 657.", calls); ok {
+		t.Fatal("an answer that states two values from the results is ambiguous")
+	}
+	buyers := []compileCall{{Ref: "c1", OK: true, Result: `{"data":{"buyers":{"count_customerid":5901},"orders":{"count_salesorderid":6297}}}`}}
+	if _, _, _, _, ok := mineAnswer("Q1 2025 had 5,901 distinct buyers across 6,297 orders.", buyers); ok {
+		t.Fatal("buyers and orders in one answer must not give a test")
 	}
 	_, _, value, kind, ok = mineAnswer("The Tool Crib holds 657 units of its top item.", calls)
 	if !ok || kind != "number" || value != "657" {
