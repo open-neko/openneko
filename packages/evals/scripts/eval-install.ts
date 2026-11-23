@@ -624,7 +624,7 @@ export class EvalEpisode {
   private async playbookLearn(log: string): Promise<void> {
     const [run] = await this.query<{ org_id: string }>(`select org_id from work_run order by created_at desc limit 1`, []);
     if (!run) return;
-    const line = await this.jobsRun("playbook_learn", run.org_id, undefined, 30 * 60_000)
+    const line = await this.jobsRun("playbook_learn", run.org_id, undefined, 180 * 60_000)
       .then((result) => ({ database: this.database, result }))
       .catch((cause) => ({ database: this.database, error: String(cause) }));
     await writeFile(log, `${JSON.stringify(line)}\n`, { flag: "a" });

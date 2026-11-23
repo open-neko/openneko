@@ -1,0 +1,8 @@
+schema_version: openneko.eval.suite/v1
+id: playbook-sixty
+version: 1.0.0
+description: Sixty questions in sixty threads of one install, then the playbook pass over all of them.
+cases:
+  - { ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml }
+  - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }
+  - { ref: ../datasets/openneko-backend/playbook/cases/p-sixty-threads.yaml }
