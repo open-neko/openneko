@@ -50,7 +50,7 @@ func TestConfinedNetworkPartServesAWholeFile(t *testing.T) {
 	}
 	key := bytes.Repeat([]byte{7}, 32)
 	start, _ := json.Marshal(map[string]any{"token_key": key, "database_url": "postgres://openneko@127.0.0.1:1/none?sslmode=disable",
-		"addr": "127.0.0.1:0", "files_dir": filesDir, "index_dir": filepath.Join(base, "index"), "temp_dir": filepath.Join(base, "tmp")})
+		"addr": "127.0.0.1:0", "files_dir": filesDir, "index_dir": filepath.Join(base, "index"), "subscriptions_dir": filepath.Join(base, "subscriptions"), "temp_dir": filepath.Join(base, "tmp")})
 
 	cmd := exec.Command(bin, "serve-network")
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(base, "home"), "OPENNEKO_ENV=production"}
