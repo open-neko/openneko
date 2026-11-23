@@ -49,7 +49,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 
 * **Breaking:** a workflow belongs to the user whose run saved it. Its runs, watchers, data triggers, schedules, API calls and webhooks act with that user's access. In 5.0.0, a workflow saved outside a bot chat had no owner and ran as `service`, with admin access.
 * A workflow with no owner runs only when a pack installed it or an admin adopted it for the team. Any other workflow from 5.0.0 with no owner does not run after the upgrade, and its API and webhook callers get `409 workflow_not_runnable`.
-* **Breaking:** an admin approves one version of a workflow for API and webhook runs. When the workflow, its owner's skills or the team skills that it runs change, its API and webhook runs wait with `409 workflow_not_runnable` until an admin approves the new version at Admin, Settings, Workflow API. A workflow that has API access at the upgrade takes its current version as approved.
+* **Breaking:** an admin approves one version of a workflow for API and webhook runs. When the workflow, its owner's skills or a team skill that one of its script steps runs changes, its API and webhook runs wait with `409 workflow_not_runnable` until an admin approves the new version at Admin, Settings, Workflow API. A workflow that has API access at the upgrade takes its current version as approved.
 
 #### Team items and rules are proposals
 
