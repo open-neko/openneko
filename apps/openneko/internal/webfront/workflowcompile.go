@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	compileResultMax = 1500
-	compileCallsMax  = 40
+	compileResultMax  = 1500
+	compileCallsMax   = 40
+	compileRetryAfter = 7 * 24 * time.Hour
 )
 
 // compiledVar is one date of a compiled query. Its value is the start of the
@@ -546,6 +547,18 @@ func (a *API) compileWorkflowRun(ctx context.Context, o workflowTurnOptions, ans
 	if err != nil || existing != nil {
 		return err
 	}
+	var waiting bool
+	if err := a.DB.QueryRow(ctx, `select exists (select 1 from workflow_compile_declined where org_id = $1 and workflow_id = $2::uuid
+		and goal_hash = $3 and declined_at > now() - $4 * interval '1 second')`,
+		o.Workflow.OrgID, o.Workflow.ID, workflowGoalHash(o.Workflow), int(compileRetryAfter/time.Second)).Scan(&waiting); err != nil || waiting {
+		return err
+	}
+	decline := func(reason string) error {
+		_, err := a.DB.Exec(ctx, `insert into workflow_compile_declined (workflow_id, org_id, goal_hash, reason) values ($1::uuid, $2, $3, $4)
+			on conflict (workflow_id) do update set goal_hash = excluded.goal_hash, reason = excluded.reason, declined_at = now()`,
+			o.Workflow.ID, o.Workflow.OrgID, workflowGoalHash(o.Workflow), jsSlice(reason, 600))
+		return err
+	}
 	var startedAt time.Time
 	if err := a.DB.QueryRow(ctx, `select created_at from work_run where org_id = $1 and id = $2::uuid`,
 		o.Workflow.OrgID, o.RunID).Scan(&startedAt); err != nil {
@@ -562,17 +575,21 @@ func (a *API) compileWorkflowRun(ctx context.Context, o workflowTurnOptions, ans
 	p, ok := parseCompileProposal(raw)
 	if !ok {
 		log.Printf("[workflow-compile] org=%s workflow=%s not compiled: the model step proposed no query: %s", o.Workflow.OrgID, o.Workflow.ID, jsSlice(raw, 600))
-		return nil
+		return decline("the model step proposed no query")
 	}
 	c, err := verifyCompiled(ctx, p, calls, workflowToday(o.Workflow.CronTimezone, startedAt), call)
 	if err != nil {
 		log.Printf("[workflow-compile] org=%s workflow=%s not compiled: %v", o.Workflow.OrgID, o.Workflow.ID, err)
-		return nil
+		return decline(err.Error())
 	}
 	vars, _ := json.Marshal(c.Vars)
 	_, err = a.DB.Exec(ctx, `insert into workflow_compiled_query (workflow_id, org_id, anchor_query, query, variables, source_run_id, goal_hash)
 		values ($1::uuid, $2, nullif($3, ''), $4, $5::jsonb, $6::uuid, $7)
 		on conflict (workflow_id) do nothing`, o.Workflow.ID, o.Workflow.OrgID, c.AnchorQuery, c.Query, string(vars), o.RunID, workflowGoalHash(o.Workflow))
+	if err != nil {
+		return err
+	}
+	_, err = a.DB.Exec(ctx, `delete from workflow_compile_declined where org_id = $1 and workflow_id = $2::uuid`, o.Workflow.OrgID, o.Workflow.ID)
 	return err
 }
 

@@ -223,3 +223,34 @@ func TestVerifyCompiledJoinsSeveralAnswerCallsUnderAliases(t *testing.T) {
 		t.Fatal("a single answer_call is still read")
 	}
 }
+
+func TestCompileWorkflowRunWaitsAfterADecline(t *testing.T) {
+	f, db, _ := hostFront(t)
+	ctx := t.Context()
+	const wfID, thread, run = "c7000000-0000-4000-8000-000000000001", "c7000000-0000-4000-8000-000000000002", "c7000000-0000-4000-8000-000000000003"
+	seed(t, db, `insert into workflow_definition (id, org_id, name, goal) values ($1, 'org', 'Slow ship', 'count pending')`, wfID)
+	seed(t, db, `insert into work_thread (id, org_id) values ($1, 'org')`, thread)
+	seed(t, db, `insert into work_run (id, org_id, thread_id, backend, status) values ($1, 'org', $2, 'ax', 'completed')`, run, thread)
+	seed(t, db, `insert into work_run_event (org_id, thread_id, run_id, kind, payload) values
+		('org', $1, $2, 'tool_start', '{"type":"tool_start","id":"x1","name":"execute_graphql","input":{"query":"{ a { n } }"}}'),
+		('org', $1, $2, 'tool_end', '{"type":"tool_end","id":"x1","result":{"content":[{"type":"text","text":"{\"data\":{\"a\":{\"n\":0}}}"}]}}')`, thread, run)
+	o := workflowTurnOptions{TriggerKind: "cron", RunID: run, Workflow: workflowRecord{ID: wfID, OrgID: "org", Goal: "count pending"}}
+	asked := 0
+	propose := func(string) (string, error) { asked++; return `{}`, nil }
+	call, _ := fakeCompileCall(nil)
+	for range 2 {
+		if err := f.API.compileWorkflowRun(ctx, o, "There are 0 pending orders.", propose, call); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if asked != 1 {
+		t.Fatalf("the model step ran %d times; a decline must wait", asked)
+	}
+	o.Workflow.Goal = "count pending orders older than five days"
+	if err := f.API.compileWorkflowRun(ctx, o, "There are 0 pending orders.", propose, call); err != nil {
+		t.Fatal(err)
+	}
+	if asked != 2 {
+		t.Fatalf("a changed goal must try again: %d", asked)
+	}
+}

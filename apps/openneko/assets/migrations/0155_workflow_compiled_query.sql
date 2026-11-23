@@ -16,6 +16,15 @@ create table if not exists workflow_compiled_query (
   last_used_at timestamptz
 );
 
+-- A workflow whose run gave no compiled query waits before the next try.
+create table if not exists workflow_compile_declined (
+  workflow_id uuid primary key references workflow_definition(id) on delete cascade,
+  org_id text not null references organization(id) on delete cascade,
+  goal_hash text not null,
+  reason text not null,
+  declined_at timestamptz not null default now()
+);
+
 alter table llm_task_route drop constraint if exists llm_task_route_task_check;
 alter table llm_task_route add constraint llm_task_route_task_check check (task in (
   'default', 'turn', 'classify', 'briefing_summary', 'compact',
