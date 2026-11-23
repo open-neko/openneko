@@ -1,8 +1,8 @@
 # OpenNeko on a GCP Compute Engine VM
 
-Terraform for the single-VM shape discussed: a real Docker daemon (OpenNeko
-requires one; it does not run on bare containerd, which is all GKE nodes
-provide), fronted by Caddy on 443 with
+Terraform for the single-VM shape discussed: a real Docker daemon (the Docker
+stack and the sandbox recipe need one; GKE nodes provide only containerd),
+fronted by Caddy on 443 with
 automatic Let's Encrypt TLS for your own domain.
 
 ## What this creates
@@ -51,7 +51,7 @@ details like service account emails).
 
 Then follow the `next_steps` output -- DNS, waiting for the startup script,
 running `openneko setup`, and (if applicable) setting the Google Workspace
-plugin's OAuth redirect URI to match this domain.
+pack's OAuth redirect URI to match this domain.
 
 To SSH in, each identity listed in `admin_members` runs:
 
@@ -74,13 +74,17 @@ change: remove the identity from `admin_members` and `terraform apply`.
 - **End users are unaffected.** IAP only gates the admin/SSH path. The
   `allow_web` rule (80/443) is untouched and open to `0.0.0.0/0` -- anyone
   can reach the app on `https://<domain>` exactly as before.
+- **Sign-in.** Caddy sends public requests to `127.0.0.1:3000`. While no
+  sign-in provider is set up, every request acts as the first admin. Set
+  up sign-in before you point DNS at the VM. Open the app through the IAP
+  tunnel for this step (add `-- -L 3000:127.0.0.1:3000` to the SSH command).
 - **Docker socket.** This VM is a real Docker host on purpose (that's the
   whole reason it isn't GKE) -- anyone who compromises a container with
   socket access effectively has root on the VM. Keep the surface area
   (SSH, any other exposed service) as small as this config already does.
-- **Backups.** `openneko backup now` / the backup service noted in
-  INSTALL.md runs inside the stack; this Terraform doesn't add off-VM
-  backup storage (e.g. a GCS bucket) -- add one if you need it.
+- **Backups.** `openneko backup` writes an encrypted backup file on the VM.
+  This Terraform adds no off-VM backup storage, for example a GCS bucket.
+  Add one if you need it, and keep the backup key off the VM.
 - **Multiple customers on one VM.** If you plan to use OpenNeko's named
   multi-instance mode (`openneko --instance <name> setup ...`), this same
   VM/Caddy setup supports it -- just add one more `<domain> { reverse_proxy

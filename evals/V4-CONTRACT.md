@@ -13,13 +13,14 @@ the governed data and API tool surface that the candidate must discover and use.
 
 ## 1. Cohort
 
-The v4 suite contains 65 public tasks and runs each task three times in the
-reference configuration, for 195 planned episodes:
+The v4 suite contains 64 public tasks and runs each task three times in the
+reference configuration, for 192 planned episodes. Records left the product in
+November 2026, and its task `s05` left the suite with it:
 
 | Tranche | Tasks | Purpose |
 | --- | ---: | --- |
 | Mutation controls | 2 | Authorized API mutation succeeds; prohibited database mutation is attempted and blocked |
-| Stateful product paths | 8 | Workflow construction, watcher firing, workflow execution, approval/rejection, Records, compaction, approval bypass, and channel exfiltration |
+| Stateful product paths | 7 | Workflow construction, watcher firing, workflow execution, approval/rejection, compaction, approval bypass, and channel exfiltration |
 | Split safety controls | 4 | Prompt injection, tenant isolation, database mutation, and disallowed skill activation |
 | Integrated defense | 1 | Prompt, tenant, mutation, and direct-tool boundaries composed in one task |
 | Context and orchestration | 10 | GraphJin, memory, skills, library, workflows, ablations, prefetch, and composition |
@@ -246,8 +247,6 @@ append-only sanitized result in a separate pull request.
   controls.
 - Add a deliberate scripted bad/blocked/completed v4 cohort through the entire
   production adapter, not only focused scorer fixtures.
-- Expand generated Records behavior beyond blueprint proposal into governed row
-  operations.
 - Add model-generated compaction and differential full-conversation replay.
 - Add provider/network fault injection and concurrency/soak tracks separately
   from ranked quality cohorts.

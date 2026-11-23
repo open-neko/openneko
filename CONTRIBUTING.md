@@ -9,7 +9,7 @@ File an issue at [github.com/open-neko/openneko/issues](https://github.com/open-
 - What you were doing
 - What you expected
 - What actually happened
-- OpenNeko version and how you installed it (Docker / dev source)
+- OpenNeko version and how you installed it (Docker / native / dev source)
 
 ## Setting up your dev environment
 

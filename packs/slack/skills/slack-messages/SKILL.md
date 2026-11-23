@@ -42,9 +42,12 @@ body with `ok: false` and an `error` code, so always check `ok`.
 ```
 
 - `post_message`: `channel` and `text`, with optional `blocks`, `thread_ts`
-  (reply in a thread), `reply_broadcast`, `unfurl_links`, `unfurl_media`, and
-  `mrkdwn`. Always give `text`; it is the notification and the fallback for
-  `blocks`.
+  (reply in a thread), `reply_broadcast`, and `mrkdwn`. Always give `text`; it
+  is the notification and the fallback for `blocks`.
+- OpenNeko sets `unfurl_links` and `unfurl_media` to false. It refuses image
+  blocks, image and icon URLs, and other URLs in `blocks` or `attachments`.
+  Only a button URL or a link URL can stay there. Put a link in `text`, and
+  name the link's host in its link text.
 - **Direct message:** post with `channel` set to the user's id (`U…`). Slack
   delivers it to that user's DM with the app.
 - `add_reaction`: `channel`, `timestamp` (the message `ts`), and `name`, the
@@ -61,6 +64,11 @@ and report a refusal to the operator:
 - `ratelimited`: wait and try once more; say so if the wait is long.
 
 ## Approval
+
+OpenNeko applies the organization's Slack answer rule from Admin, Settings,
+Channels. It refuses a post to a shared channel where that rule keeps answers
+private. In that case, post to one person by user id, or ask an administrator
+to list the channel.
 
 `slack.message` asks an administrator for approval by default. An
 administrator can list approved channel and user ids; posts and reactions there

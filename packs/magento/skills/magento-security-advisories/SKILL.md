@@ -34,9 +34,12 @@ database.
    the connected pack status or approved Magento health evidence. If it cannot
    be verified, report the result as `unknown`.
 2. Fetch the Adobe bulletin index and inspect new or changed Magento bulletins.
-   Use Python 3's standard-library HTTPS client from the terminal. This is an
-   external read-only request. If the request fails, or you have no
-   terminal, report that live advisory data was unavailable.
+   Use the `web_fetch` tool. The scheduled workflow gets this tool for the
+   Adobe hosts. In a chat run without `web_fetch`, use Python 3's
+   standard-library HTTPS client from the terminal. The terminal reaches the
+   Adobe hosts only when an administrator lists them at Admin, Settings,
+   Agent. This is an external read-only request. If the request fails, or you
+   have neither tool, report that live advisory data was unavailable.
 3. Compare the installed version with every applicable affected-version range.
    Give priority to bulletins marked critical or exploited in the wild.
 4. Report `affected`, `patched`, `unsupported`, or `unknown`. Include the

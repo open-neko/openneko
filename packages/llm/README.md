@@ -1,7 +1,14 @@
 # OpenNeko agent MCP runtime
 
-This package owns the runtime contract between the Ax agent, OpenNeko's sandbox
-bridge, the trusted control plane (`openneko web`), GraphJin, and the A2UI renderer.
+No OpenNeko process runs this package. `openneko web` runs the agent's tools in
+Go (`apps/openneko/internal/webfront`), and `openneko serve` runs each turn in a
+confined runner. The web app imports shared helpers and types from this package
+when Vite builds it. The eval scripts in `packages/evals` and the tests use the
+rest.
+
+The sections below describe that TypeScript runtime. The Go code differs in one important way: a run sends no GraphQL
+mutation to GraphJin, and a run gets no GraphJin tool that changes the schema
+or the config.
 
 ## GraphJin MCP
 

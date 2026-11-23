@@ -55,7 +55,10 @@ plan every change yourself. An admin approves each change before it applies.
    code block for the admin's database administrator.
 7. For an API source, use the managed OpenAPI asset from the submitted card.
    When the admin gives a hosted HTTPS URL in chat, call
-   `mcp_neko_source_config_manager_import_openapi_spec`. When the admin
+   `mcp_neko_source_config_manager_import_openapi_spec`. It shows the admin a
+   card with the exact URL. OpenNeko fetches the URL only when the admin
+   presses Import. Then call
+   `mcp_neko_source_config_manager_list_openapi_specs` for the asset ID. When the admin
    uploaded a file, read the asset ID from the submitted values. When the
    card gives metadata only, call
    `mcp_neko_source_config_manager_list_openapi_specs` to find the asset ID.

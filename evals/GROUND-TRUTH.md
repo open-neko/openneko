@@ -70,7 +70,7 @@ collateral-state subset.
 This mirrors GraphJin's `agent/eval` task/oracle/episode structure: construct
 trusted pre-state, establish readiness, let the model act, observe semantic
 post-state, compare collateral, and reset. OpenNeko adds product-specific
-workflow, watcher, approval, output, Records, and compaction state to that
+workflow, watcher, approval, output, and compaction state to that
 same lifecycle rather than treating the final answer as the state oracle.
 
 ### 1.4 Artifact and method oracles — memory, skills, complex work
@@ -158,7 +158,7 @@ score gates; the conditional score is diagnostic.
 
 ### 2.4 Harness capabilities: the second axis
 
-Memory, skills, workflows, watchers, actions/policy, channels, records,
+Memory, skills, workflows, watchers, actions/policy, channels,
 delegation, and compaction are not phases — they are **capabilities any
 phase can engage**. A case is therefore scenario × depth tier × capability
 configuration, and each engaged capability contributes oracles through the
@@ -171,7 +171,6 @@ same four families:
 | workflows + watchers | pre-built or NL-built definitions; deterministic clock and injected changes | state-machine (build validity via behavioral equivalence, fire/dedupe/debounce, run post-state, output dedupe/mute/TTL) | decide, act |
 | actions + policy | fake adapters, receipts, seeded approval rules | state-machine (propose/approve/execute/idempotency), safety (policy precedence, no bypass), audit chain | decide, act |
 | channels | fake channel transcripts | contract (delivery/degradation projection), method (single delivery) | act |
-| records | seeded app/object registry | value + state (reads/writes honor schema and policy) | understand, act |
 | compaction / resume | long-thread fixture replayed with and without compaction | differential (phase outcomes must not change), method (retained decisions/figures) | all |
 
 Reading or invoking a skill outside the case's allowed set is a contextual
@@ -211,10 +210,9 @@ variants.
 | `openneko-work-memory-smoke` (shipped) | deterministic seeded-memory retrieval/isolation, memory ablation twin, skill install round-trip | none — first phase-keyed bundle consumer | inline.expected per phase |
 | `openneko-backend-v1` (shipped harness; initial live cohort recorded) | model-driven `/work` retrieval, ablations, composition, direct GraphJin, and safety across memory, skills, library, and workflows | backend-neutral `/work` adapter with private semantic evidence | SQL value, fixture sentinel, method, safety |
 | `openneko-backend-v2` (shipped) | all v1 capability cases plus q01–q40 through the same `/work` backend path, with capability-specific gates so GraphJin breadth cannot hide failures elsewhere | existing backend adapter and SQL oracle bank | current value, baseline, window, dimension, method, safety |
-| `openneko-backend-v3` (shipped seed) | model-driven workflow build, watcher fire/debounce, workflow output delivery, action approval/rejection/execution/idempotency, Records blueprint proposal, and compaction resume | scenario lifecycle inside the backend adapter; real product stores/runners with captured delivery and mock external action effects | state-machine sequence + terminal + collateral, plus labelled answer extraction |
+| `openneko-backend-v3` (shipped seed) | model-driven workflow build, watcher fire/debounce, workflow output delivery, action approval/rejection/execution/idempotency, and compaction resume | scenario lifecycle inside the backend adapter; real product stores/runners with captured delivery and mock external action effects | state-machine sequence + terminal + collateral, plus labelled answer extraction |
 | `flow-build-exec-expanded` | broader NL workflow/watcher/rule construction and matching/non-matching source changes | expand v3 lifecycle cases and generated definition families | state-machine |
 | `event-driven-actions-expanded` | watcher→workflow→action chains with policy precedence, audit-chain checks, and channel projection variants | compose lifecycle scenarios; fake adapters and receipts | state-machine + audit + contract |
-| `records-crud` | installed Records app/object/row lifecycle, schema policy, and grounded reads/writes | provision isolated Records runtime and execute approved schema/data actions | value + state-machine |
 | `compaction-differential` | actual model-generated folding and repeated turns with/without compaction | scenario-owned multi-turn replay and compactor usage attribution | state-machine + differential |
 | `ouda-tiers` | one scenario at depths O / O+U / O+U+D / O+U+D+A with paired tier deltas | phase-keyed oracle bundles in the case schema | all four |
 | `ouda-e2e` | full loop on one business scenario, engaging memory + skills + workflow + action, with ablation twins | orchestration of the above | all four |

@@ -1,8 +1,6 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# This app does not use Next.js
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+The web app is a static single-page app. Vite builds it, and React Router routes it (`src/spa/routes.tsx`). The `next/link`, `next/image` and `next/navigation` imports resolve to small shims in `src/spa/next`. There is no server rendering. `openneko web` serves the built files and answers `/api/v1/*` in Go.
 
 # Mandatory UI design-system workflow
 
@@ -14,7 +12,7 @@ Before editing UI:
 
 1. Read `src/components/ui/README.md`, `src/app/styles/_tokens.css`, and the adjacent rendered surface.
 2. Record a reuse map in the PR: each interaction or visual role, the shared component/token used, and the verification evidence.
-3. Prefer the shared primitives in `src/components/ui`: `Button`, `ActionGroup`, `Field` and its controls, `Checkbox`, `Tabs`, `Pill`, `Disclosure`, `Card`, `EmptyState`, and `OverflowMenu`.
+3. Prefer the shared primitives in `src/components/ui`: `Button`, `ActionGroup`, `Field` and its controls, `Checkbox`, `Tabs`, `Badge`, `Disclosure`, `Card`, `EmptyState`, and `OverflowMenu`.
 
 While editing:
 

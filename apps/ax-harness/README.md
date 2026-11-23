@@ -21,6 +21,11 @@ history, approvals, the sandbox and scheduling.
 | `harness` | One turn in-process (`Run`, `RunTurn`). It is the only OpenNeko-aware code. |
 | `embedding` | The gateway to an OpenAI-compatible embedding service at a URL. |
 | `serve` | Turns, host model calls and embedding calls over a Unix socket for `openneko serve`. The socket protocol is in `serve/serve.go`. |
+| `keydoor` | The serve side of the key door. Serve gets a token in place of each model key and sends model calls through the door in `openneko web`. |
+| `inference` | The one gateway to model providers, for agent turns and the host's own calls. |
+| `catalog` | Model call prices from the model catalog of the pinned Ax module. |
+| `webfetch` | The `web_fetch` tool. It runs in `openneko web`, and the runner reaches it over the tool bridge. |
+| `ownacl` | Limits files and folders to the account that runs OpenNeko. |
 | `cmd/ax-harness` | The binary: the model catalog, and host generate and embed calls. It refuses a turn. |
 | `compat` | Checks of the pinned Ax behavior that the harness uses. |
 

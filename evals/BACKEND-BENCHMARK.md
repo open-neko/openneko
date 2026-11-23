@@ -39,9 +39,9 @@ The backend is the only intended independent variable. Every candidate uses:
 - a fresh member actor, thread, run, session, and workspace per episode;
 - a plain-text response contract with product-card rendering out of scope;
 - direct GraphJin tools only; delegated GraphJin-agent tools and native
-  sub-agent delegation are disabled. OpenNeko does not blanket-block GraphQL
-  mutations: GraphJin remains authoritative for explicitly exposed OpenAPI
-  `call` mutations and all source/operation authorization.
+  sub-agent delegation are disabled. OpenNeko refuses every GraphQL mutation
+  from a run. A change to an API source goes through a pack action. GraphJin
+  stays authoritative for source and operation authorization.
 
 Runs use concurrency `1` until provider/model configuration is isolated per
 run. A candidate is rankable only when its configured and observed identity
@@ -124,7 +124,7 @@ KEY, TOKEN, SECRET or PASSWORD and of URL passwords. The file has mode 600.
 Web refuses a path inside the agent, stage or files folders, and logs one line
 at start that the trace is on. Without the variable, web stores no trace.
 
-`apps/worker/test/eval-trace-parity.test.ts` runs `b11-composition` through
+`packages/evals/test/eval-trace-parity.test.ts` runs `b11-composition` through
 the trace file and compares the records with the record of the old Node sink
 (`test/fixtures/eval-trace-parity`). Three differences are allowed: Go records
 tool calls as `trusted-broker`, Go lists the GraphJin tools when the turn
@@ -409,7 +409,7 @@ declared `env:NAME` credential must already be exported.
 
 ### Episode install
 
-`apps/worker/scripts/eval-install.ts` runs each episode on the code that
+`packages/evals/scripts/eval-install.ts` runs each episode on the code that
 ships. One eval run at a time may use a Postgres server: the driver holds
 an advisory lock on it, and a second run stops with a message. At start it
 builds `openneko`, drops the episode databases and folders of a dead run and
@@ -420,8 +420,8 @@ episode it then:
 - makes a private folder (mode 700) for the home, agents, stage and files
   folders, the serve socket and the trace file (mode 600);
 - starts `openneko serve` and `openneko web` on free ports, with the trace on;
-- serves the worker admin routes in the driver process: action preflight,
-  action execution and output delivery run the worker's own code;
+- binds an eval Telegram channel, so that `openneko web` queues a
+  `channel_deliver` job for each workflow output;
 - signs the member in with a session cookie for the episode's own secret.
 
 At the end of an episode, also after a failure, it stops both processes and
@@ -432,11 +432,12 @@ stays free, at an estimate of 1 GB for each episode. Set
 episode cannot start, the install checks the free memory each 15 s for up to
 15 min, logs one line when the wait starts, and fails after that limit.
 
-`apps/worker/scripts/eval-scripted-model.ts` is the provider-free model for
+`packages/evals/scripts/eval-scripted-model.ts` is the provider-free model for
 the scripted variants. It answers the Ax distiller, executor and responder
 calls on 127.0.0.2, and reads each tool result from the run's event stream.
-The template database also holds the `pgboss` schema, which the Node worker
-creates at start in production; the Go watcher sweep sends its fires there.
+The template database also holds an empty `pgboss` schema. River runs every
+job in 6.0.0, and `openneko migrate` reads `pgboss` only to move the jobs of
+an install from before River.
 
 The backend driver runs every episode on this install:
 

@@ -84,8 +84,8 @@ Capabilities:
 
 Constraints:
 
-- This is a fork of Next.js with breaking changes. Read the guide in
-  `node_modules/next/dist/docs/` before writing Next.js code.
+- The web app is a static single-page app built with Vite and React Router.
+  `openneko web` serves it. There is no Next.js and no server rendering.
 - The theme is light only. Do not add dark mode.
 - CI enforces the design system through `scripts/check-web-design-system.mjs`.
   New and changed TSX must use the shared primitives in `src/components/ui`, the

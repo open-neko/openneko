@@ -1,18 +1,29 @@
 # openneko
 
-The OpenNeko CLI and server — a single Go binary that runs `openneko web`
-(the static web app server, `/api/v1/*` routes, River background jobs,
-channels, solution packs, and Ax agent turns), `openneko serve` (the Ax
-harness socket, customer and subscriptions GraphJin supervisors, and file
-search/SQL), and the operator CLI (native Linux supervisor, Docker Compose
-stack supervisor, migrations, backups, and solution pack commands).
+The OpenNeko CLI and server, in one Go executable. It has three parts:
+
+- `openneko web` serves the static web app and the `/api/v1/*` routes. It runs
+  the River background jobs, the channels and the solution packs. It keeps the
+  model keys in its key door.
+- `openneko serve` takes the agent turns. It starts each turn in its own
+  confined `openneko agent-runner` process. Its child process
+  `openneko serve-network` runs the user files service, file search and SQL,
+  and the customer and subscriptions GraphJins.
+- The operator CLI runs native installs (Linux, macOS and Windows) and the
+  Docker Compose stack, migrations, backups and solution pack commands.
 
 ## Install
 
-On Linux without Docker (native install):
+On Linux or macOS without Docker (native install):
 
 ```bash
 curl --proto '=https' -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.sh | sh
+```
+
+On Windows (native install, PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.ps1 | iex
 ```
 
 With Docker (macOS or Linux):
@@ -23,7 +34,7 @@ curl -fsSL https://openneko.app/install.sh | sh
 
 The installer detects your OS/arch and installs via Homebrew on macOS or a
 checksum-verified release tarball on Linux (amd64 / arm64). Then run the guided
-`openneko setup` (Docker) or `openneko start --native` (Linux native).
+`openneko setup` (Docker) or `openneko start --native` (native install).
 
 Manual:
 
@@ -32,7 +43,8 @@ Manual:
   [github.com/open-neko/openneko/releases](https://github.com/open-neko/openneko/releases),
   verify it against `checksums.txt`, and put `openneko` on your `PATH`.
 
-You also need Docker (Docker Desktop on macOS, Docker Engine on Linux).
+The Docker install needs Docker (Docker Desktop on macOS, Docker Engine on
+Linux). The Docker stack does not run on Windows.
 
 ## Usage
 

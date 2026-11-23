@@ -1086,8 +1086,8 @@
       "dir": "google-workspace",
       "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/gmail.yaml\",\"graphjin/specs/drive.yaml\",\"graphjin/specs/calendar.yaml\",\"graphjin/specs/sheets.yaml\",\"graphjin/specs/docs.yaml\",\"graphjin/specs/slides.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/google-workspace-read\",\"skills/google-workspace-cross-app-research\",\"skills/google-workspace-gmail\",\"skills/google-workspace-calendar\",\"skills/google-workspace-drive\",\"skills/google-workspace-sheets\"],\"workflows\":\"workflows\"},\"compatibility\":{\"applications\":[{\"editions\":[\"workspace\"],\"id\":\"google-workspace\",\"versions\":\">=1.0.0\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.20.77 <4.0.0\",\"operator\":\">=3.20.77 <4.0.0\"},\"openneko\":\">=2.40.0 <3.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"workspace\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"description\":\"OAuth client ID from the customer's Google Cloud project.\",\"key\":\"google-workspace.oauth_client_id\",\"required\":false,\"type\":\"string\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"productivity\",\"id\":\"google-workspace\",\"name\":\"Google Workspace\",\"publisher\":\"openneko\",\"version\":\"0.2.0\"},\"oauth\":[{\"accessToken\":\"google-workspace.access_token\",\"accountIdField\":\"sub\",\"accountLabelField\":\"email\",\"authorizationParams\":{\"access_type\":\"offline\",\"prompt\":\"select_account consent\"},\"authorizationUrl\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"clientIdInput\":\"google-workspace.oauth_client_id\",\"clientSecret\":\"google-workspace.oauth_client_secret\",\"experience\":{\"description\":\"Connect Gmail, Drive, Calendar, Sheets, Docs, and Slides for your work and automations.\",\"helpUrl\":\"https://developers.google.com/identity/protocols/oauth2/web-server\",\"setupInstructions\":\"Create a Web application OAuth client in your Google Cloud project. Enable the APIs used by this pack and configure the consent screen. Add the redirect URI below, then save the client ID and client secret. Each user connects their own Google account on Integrations.\"},\"key\":\"workspace\",\"providerLabel\":\"Google Workspace\",\"refreshToken\":\"google-workspace.refresh_token\",\"scope\":\"user\",\"scopes\":[\"openid\",\"https://www.googleapis.com/auth/userinfo.email\",\"https://www.googleapis.com/auth/gmail.modify\",\"https://www.googleapis.com/auth/gmail.compose\",\"https://www.googleapis.com/auth/drive\",\"https://www.googleapis.com/auth/calendar.readonly\",\"https://www.googleapis.com/auth/calendar.events\",\"https://www.googleapis.com/auth/spreadsheets\",\"https://www.googleapis.com/auth/documents.readonly\",\"https://www.googleapis.com/auth/presentations.readonly\"],\"tokenUrl\":\"https://oauth2.googleapis.com/token\",\"userInfoUrl\":\"https://openidconnect.googleapis.com/v1/userinfo\"}],\"permissions\":{\"network\":[\"accounts.google.com\",\"oauth2.googleapis.com\",\"openidconnect.googleapis.com\",\"gmail.googleapis.com\",\"www.googleapis.com\",\"sheets.googleapis.com\",\"docs.googleapis.com\",\"slides.googleapis.com\"]},\"secrets\":[{\"key\":\"google-workspace.oauth_client_secret\",\"purpose\":\"pack_oauth_client\",\"required\":false},{\"key\":\"google-workspace.access_token\",\"purpose\":\"pack_oauth_token\",\"required\":false},{\"key\":\"google-workspace.refresh_token\",\"purpose\":\"pack_oauth_token\",\"required\":false}]}",
       "manifestHash": "1a5ed11899ed5ee3fbd744615b4965e6302f870c66ddb5620169634e1ca71240",
-      "bundleHash": "01a7df55aecfebd51dce30e47b4ae3cf32442727331af42fe709c5afc7386ab9",
-      "filesHash": "5e1f002a26ed8d5b5d986e5978530993ac1efbde779a81e4d6035c6e8f8a3427",
+      "bundleHash": "cef9fed6a1a3cae96b328f977b073c0a57d114312e89842577315e2d098e9a9a",
+      "filesHash": "41b0563eae9531feaaae256f7c82e169cc5d6fd64b0b100786069e253bf861c0",
       "artifacts": [
         {
           "kind": "action",
@@ -1164,7 +1164,7 @@
           "key": "skill.google-workspace-gmail",
           "targetRef": "google-workspace-gmail",
           "path": "skills/google-workspace-gmail/SKILL.md",
-          "hash": "24660a74f1ab56fdd62d4d49847654d5c2b23662e3b76526523db2f372a20000"
+          "hash": "528e5f1e48de49e8fa182f147ed40b497d1da22020aa78de6ef14fa0dd8d8d45"
         },
         {
           "kind": "skill",
@@ -1284,8 +1284,8 @@
       "dir": "magento",
       "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/magento-operator-v1.yaml\",\"graphjin/specs/magento-operator-v2.yaml\"]},\"metrics\":\"metrics\",\"policies\":\"policies\",\"skills\":[\"skills/magento-review-performance\",\"skills/magento-investigate-order\",\"skills/magento-triage-fulfillment\",\"skills/magento-investigate-refunds\",\"skills/magento-check-inventory\",\"skills/magento-diagnose-platform-health\",\"skills/magento-manage-catalog\",\"skills/magento-run-promotions\",\"skills/magento-security-advisories\"],\"watchers\":\"watchers\",\"workflows\":\"workflows\"},\"compatibility\":{\"applications\":[{\"editions\":[\"open-source\",\"adobe-commerce\"],\"id\":\"magento\",\"versions\":\">=2.4.6 <2.5.0\"}],\"databases\":[{\"engine\":\"mariadb\",\"versions\":\">=10.6\"},{\"engine\":\"mysql\",\"versions\":\">=8.0\"}],\"graphjin\":{\"analytics\":\">=3.18.42 <4.0.0\",\"operator\":\">=3.20.77 <4.0.0\"},\"openneko\":\">=2.27.0 <3.0.0\"},\"health\":{\"postInstall\":[\"graphjin-restart-if-required\",\"analytics-smoke\",\"operator-catalog-smoke\"],\"postWriteCanary\":[\"domain-reconciled\",\"indexer-state-recorded\"],\"readiness\":{\"analytics\":[\"analytics-smoke\"],\"catalog\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-catalog-acl\"],\"content\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-content-acl\"],\"customers\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-customers-acl\",\"magento-customers-enabled\"],\"inventory\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-inventory-acl\",\"magento-bulk-consumers\"],\"orders\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-orders-acl\"],\"promotions\":[\"graphjin-mutations\",\"magento-api-token\",\"magento-promotions-acl\"]},\"requiredPreflight\":[\"mariadb-connect\",\"mariadb-read-only\",\"magento-version\",\"magento-scopes\"]},\"inputs\":[{\"key\":\"magento.base_url\",\"required\":true,\"type\":\"url\"},{\"default\":\"all\",\"key\":\"magento.store_code\",\"type\":\"string\"},{\"default\":\"\",\"key\":\"magento.table_prefix\",\"type\":\"string\"},{\"discover\":true,\"key\":\"magento.base_currency\",\"type\":\"string\"},{\"discover\":true,\"key\":\"magento.timezone\",\"type\":\"timezone\"},{\"default\":\"external_network\",\"key\":\"database.connectivity_mode\",\"type\":\"enum\",\"values\":[\"external_network\",\"host_gateway\",\"remote\"]},{\"key\":\"database.host\",\"required\":true,\"type\":\"string\"},{\"default\":3306,\"key\":\"database.port\",\"type\":\"integer\"},{\"key\":\"database.name\",\"required\":true,\"type\":\"string\"},{\"discover\":true,\"key\":\"database.type\",\"type\":\"enum\",\"values\":[\"mariadb\",\"mysql\"]},{\"default\":500,\"key\":\"magento.max_rows_per_changeset\",\"type\":\"integer\"},{\"default\":10,\"key\":\"magento.max_price_delta_percent\",\"type\":\"integer\"},{\"default\":30,\"key\":\"magento.max_discount_percent\",\"type\":\"integer\"},{\"default\":500,\"key\":\"magento.max_coupon_count\",\"type\":\"integer\"},{\"default\":5000,\"key\":\"magento.max_projected_exposure\",\"type\":\"integer\"},{\"default\":25,\"key\":\"magento.max_daily_auto_actions\",\"type\":\"integer\"},{\"default\":3600,\"key\":\"magento.sku_cooldown_seconds\",\"type\":\"integer\"},{\"default\":false,\"key\":\"magento.customers_enabled\",\"type\":\"boolean\"}],\"kind\":\"SolutionPack\",\"management\":{\"label\":\"Manage store operations\",\"path\":\"/admin/settings/packs/magento/operations\"},\"metadata\":{\"category\":\"commerce\",\"id\":\"magento\",\"name\":\"Magento\",\"publisher\":\"openneko\",\"version\":\"0.3.1\"},\"oauth\":[],\"permissions\":{\"network\":[]},\"secrets\":[{\"key\":\"database.analytics_username\",\"purpose\":\"graphjin_source\",\"required\":true},{\"key\":\"database.analytics_password\",\"purpose\":\"graphjin_source\",\"required\":true},{\"key\":\"magento.integration_token\",\"purpose\":\"graphjin_api_auth\",\"required\":false}]}",
       "manifestHash": "93063f8cd4f89f65db49bb9af2e833e5c9049823af112d7f98ad040fcf9e6375",
-      "bundleHash": "12ba870e63dc2ad6671a15f056b48aaa78ac8f8c2f7c22dd94d1bed70e773962",
-      "filesHash": "8db387f30f5e9d300d69fe95f4c96f66006c12f775833cb134662d02183484e8",
+      "bundleHash": "4536661f52128b359ea0922114ee6792fb180d4c8797700a8e4b556c2b36bfcc",
+      "filesHash": "485ef684e80a5c43fa9aaa53c476ac774e0412b3f786b578dfa1ffdb30a384ec",
       "artifacts": [
         {
           "kind": "action",
@@ -1600,7 +1600,7 @@
           "key": "skill.magento-diagnose-platform-health",
           "targetRef": "magento-diagnose-platform-health",
           "path": "skills/magento-diagnose-platform-health/SKILL.md",
-          "hash": "4c119471ce416d6fef87eee1efdfb38a708eb488ad14cae857bf690e30e8462b"
+          "hash": "cf72b598c2e0e3484dc65a320179709e289887f64d4ccd86d297299b058ff162"
         },
         {
           "kind": "skill",
@@ -1621,7 +1621,7 @@
           "key": "skill.magento-manage-catalog",
           "targetRef": "magento-manage-catalog",
           "path": "skills/magento-manage-catalog/SKILL.md",
-          "hash": "eb567a849d8dbae4a4affd78bc8f0bb717b9c77931383124ba758bc5491bdcdf"
+          "hash": "dfca3232802f196e86631c4f79d1ed63559748aaae43a7a5f39f8860ea10c5ad"
         },
         {
           "kind": "skill",
@@ -1642,7 +1642,7 @@
           "key": "skill.magento-security-advisories",
           "targetRef": "magento-security-advisories",
           "path": "skills/magento-security-advisories/SKILL.md",
-          "hash": "77530ceb2bb2644d9e38d2d77eafea907486419346cd9903f70c757ece0fc141"
+          "hash": "20cee5ee9632cc09f448f5ba5ae97a131db3a74a2a00f10902497789d3ae5a28"
         },
         {
           "kind": "skill",
@@ -1777,7 +1777,7 @@
       "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/parallel.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/parallel-web-search\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"parallel\",\"versions\":\"v1beta\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"search\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"default\":\"ask\",\"description\":\"The search text leaves this install for Parallel (api.parallel.ai). Choose ask to approve each search, or auto to let searches run without approval.\",\"key\":\"parallel_search.approval\",\"required\":true,\"type\":\"enum\",\"values\":[\"ask\",\"auto\"]}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"research\",\"id\":\"parallel-search\",\"name\":\"Parallel web search\",\"publisher\":\"openneko\",\"version\":\"0.2.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"api.parallel.ai\"]},\"secrets\":[{\"key\":\"parallel-search.api_key\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
       "manifestHash": "5f1ae2928334d51dda07f64da3380760ac83d502081d75b86e44ea382111931d",
       "bundleHash": "8816ba8069934b7b62e39818a05d316008b486fefc78a5cf5fef14e33c08c0e0",
-      "filesHash": "b09a27ff22063e4d5b685b6f4bee16128db0ae1f43b93c8e9d389263bf710e38",
+      "filesHash": "60c8723b88afbb252c6b82e8ed625aedc7aae2d763e61c9f45aaff3b17620129",
       "artifacts": [
         {
           "kind": "action",
@@ -1827,8 +1827,8 @@
       "dir": "resend",
       "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/resend.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/resend-email\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"resend\",\"versions\":\">=1.0.0\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"email\":[]},\"requiredPreflight\":[]},\"inputs\":[{\"description\":\"Sender for every email, for example \\\"Acme Ops <ops@mail.acme.com>\\\". The domain must be verified in Resend. The agent cannot change it.\",\"key\":\"resend.from\",\"required\":true,\"type\":\"string\"}],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"communication\",\"id\":\"resend\",\"name\":\"Resend\",\"publisher\":\"openneko\",\"version\":\"0.1.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"api.resend.com\"]},\"secrets\":[{\"key\":\"resend.api_key\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
       "manifestHash": "348336ca99d0c187a0787470b75c13267a7f00baed6f9246d602628697e649e5",
-      "bundleHash": "5dbf0d00741495539501ffbc7f14be4d7f600f3dab2f62f1384657119d3454c0",
-      "filesHash": "bcc42b63a9be66c45886b3c58ed6dc2ed8f3d76a5e12f4cdd7bf748f2c1deeeb",
+      "bundleHash": "80ed20341e946f86f54d12f456715e23df1cc274a9f027a21a2a2a245d3085b5",
+      "filesHash": "881b160dc1c96549a48df994f8def235a2ec3e4eab4e2b4aa9175f779921b461",
       "artifacts": [
         {
           "kind": "action",
@@ -1870,7 +1870,7 @@
           "key": "skill.resend-email",
           "targetRef": "resend-email",
           "path": "skills/resend-email/SKILL.md",
-          "hash": "635f33d07486263db364d924ccd2cd40547e3c06b575fd126be9ee78ff9afa3e"
+          "hash": "41f82ab2fa8a98472f6cd958487c007bdb23a214cdf52630efeeab2f522d7b57"
         },
         {
           "kind": "source",
@@ -1950,8 +1950,8 @@
       "dir": "slack",
       "manifest": "{\"apiVersion\":\"openneko.app/v1\",\"artifacts\":{\"actions\":\"actions\",\"graphjin\":{\"relationships\":\"graphjin/relationships.yaml\",\"savedQueries\":\"graphjin/saved-queries\",\"sources\":\"graphjin/sources.yaml\",\"specs\":[\"graphjin/specs/slack.yaml\"]},\"policies\":\"policies\",\"skills\":[\"skills/slack-messages\"]},\"compatibility\":{\"applications\":[{\"editions\":[\"cloud\"],\"id\":\"slack\",\"versions\":\">=1.0.0\"}],\"databases\":[],\"graphjin\":{\"analytics\":\">=3.21.0 <4.0.0\",\"operator\":\">=3.21.0 <4.0.0\"},\"openneko\":\">=4.9.0 <5.0.0\"},\"health\":{\"postInstall\":[],\"postWriteCanary\":[],\"readiness\":{\"messaging\":[]},\"requiredPreflight\":[]},\"inputs\":[],\"kind\":\"SolutionPack\",\"metadata\":{\"category\":\"communication\",\"id\":\"slack\",\"name\":\"Slack\",\"publisher\":\"openneko\",\"version\":\"0.1.0\"},\"oauth\":[],\"permissions\":{\"network\":[\"slack.com\"]},\"secrets\":[{\"key\":\"slack.bot_token\",\"purpose\":\"graphjin_api_auth\",\"required\":true}]}",
       "manifestHash": "4cc0b504418726e5c8525f973312987c82bfd681015a4f7f968d005554ca96e0",
-      "bundleHash": "87c94a44412f4cda8d0cec68961b50053fe50d3dd8b0e6515bd515be9ce5aaf4",
-      "filesHash": "b9bc391812ee42d72b1231d3d62daecc9e2a73fd503e7e089f0fc1e14bc6a08e",
+      "bundleHash": "76f45ab7736d19b9435851e33b51670c3d855c245bf059e77bdbc8cbf1e901f4",
+      "filesHash": "b44ae17f89d6307728e5c59cbe7bd3305e2778cc17f3cd18016d0d478fd7cd81",
       "artifacts": [
         {
           "kind": "action",
@@ -1993,7 +1993,7 @@
           "key": "skill.slack-messages",
           "targetRef": "slack-messages",
           "path": "skills/slack-messages/SKILL.md",
-          "hash": "ff339571d77f817d662d0d2c7994487e6d30a4f3d1c194ade2dc1fed380d4db0"
+          "hash": "cc08ac82950c3513ed23cb7e2946dea04f3557fb08b19fbcfc50d126bb223298"
         },
         {
           "kind": "source",

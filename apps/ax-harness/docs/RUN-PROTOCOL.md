@@ -7,10 +7,12 @@ across turns, approvals, the sandbox and scheduling.
 A turn runs only in `openneko serve --agent-socket <path>`, one turn per
 connection, each in a confined runner process. The `ax-harness` binary
 refuses a turn; it runs `catalog`, `generate` and `embed` only. The frames
-are in `serve/serve.go`. Serve removes
-`OPENNEKO_MCP_BRIDGE` and every `*_API_KEY` variable from the turn's
-environment. It reads the model key from the start frame or from its own
-environment, so the turn's tools and terminal never see it.
+are in `serve/serve.go`. Serve removes `OPENNEKO_MCP_BRIDGE`, every
+`OPENNEKO_SANDBOX_*` variable and every `*_API_KEY` variable from the turn's
+environment. Serve holds no model key. The start frame carries a key door
+token in place of each model key, and serve refuses a frame with a real key.
+`openneko web` keeps the keys in its key door. The turn's tools and terminal
+never see a key or a token.
 
 ## Input
 
@@ -40,7 +42,8 @@ Send exactly one object, at most 16 MiB. Unknown fields fail the run.
 
 ## Limits
 
-OpenNeko sets the limits from one source, `packages/llm/src/agent-limits.ts`.
+OpenNeko sets the limits in `agentLimitsFor`, in
+`apps/openneko/internal/webfront/turnax.go`.
 The defaults below apply only when the host does not set a value.
 
 | Limit | Ax Harness |
@@ -218,9 +221,7 @@ The `harness` package reads these variables from the turn's environment:
 | Variable | Use |
 | --- | --- |
 | `OPENNEKO_MCP_ORG_ID`, `OPENNEKO_MCP_THREAD_ID` | Required run scope. |
-| `OPENNEKO_MCP_BRIDGE` | Path of the OpenNeko MCP bridge. Starts `node` with it. |
-| `OPENNEKO_MCP_SERVERS` | Comma list of bridge servers to start. |
-| `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | Passed to the bridge only, then removed from the harness process. |
+| `OPENNEKO_MCP_BRIDGE`, `OPENNEKO_MCP_SERVERS`, `OPENNEKO_BROKER_URL`, `OPENNEKO_BROKER_TOKEN` | No effect in a turn. Serve removes `OPENNEKO_MCP_BRIDGE` and carries the OpenNeko tools as MCP over the turn's link. The harness starts no bridge process. |
 | `OPENNEKO_HARNESS_WORKSPACE_DIR` | Adds `file_read`, `file_edit`, `file_write`, `file_search`. |
 | `OPENNEKO_HARNESS_SHELL` | `1` adds `terminal`. Needs the workspace and a sandbox. |
 | `OPENNEKO_SANDBOX_URL`, `OPENNEKO_SANDBOX_KEY` | The sandbox service that runs `terminal` commands: `unix:///path`, `http://` or `https://`. In serve, only serve's own values count. Without a URL there is no `terminal`. |

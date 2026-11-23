@@ -47,7 +47,7 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 1. With the bundled database (`--mode demo` or `--mode dev`), choose an admin database password. In prod mode, setup asks for [OpenNeko's database](#opennekos-database) URL before it starts the stack.
 2. Confirm the pre-filled GraphJin URL, `http://graphjin:8080`. It names the GraphJin that runs inside `openneko-serve`. Change it only when you run a GraphJin of your own.
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). For any other server that speaks the OpenAI chat API, pick **OpenAI-compatible URL** and enter its Base URL, the model name and, when the server needs one, a key. For a model server on this host, give `127.0.0.1` or `localhost`. In a Docker install, OpenNeko then calls `host.docker.internal`. A [native install](#run-without-docker-native) calls `127.0.0.1`. Every model call, the agent's and the app's own, runs in `openneko serve`. The agent (Ax) runs there with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). For any other server that speaks the OpenAI chat API, pick **OpenAI-compatible URL** and enter its Base URL, the model name and, when the server needs one, a key. For a model server on this host, give `127.0.0.1` or `localhost`. In a Docker install, OpenNeko then calls `host.docker.internal`. A [native install](#run-without-docker-native) calls `127.0.0.1`. Every model call, the agent's and the app's own, runs in `openneko serve` and goes out through the key door of `openneko web`. The agent (Ax) runs in a confined runner that serve starts, with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
 4. Add your provider API key. To use other models for some tasks, or a fallback model when a provider is down, add them later at Admin, Settings, Models.
 5. Add an industry research provider, or skip.
 
@@ -837,7 +837,7 @@ services:
 
 Semantic search is off until both the URL and the model are set. When it is
 on, `openneko-serve` sends memory and skill text, and each search query, to that
-service for `openneko web`. The service must answer on the stack's network.
+service through the key door of `openneko web`. The service must answer on the stack's network.
 Each minute, `openneko web` queues the stored rows that have no vector from
 the current model, at most 128 at a time, and embeds them one at a time.
 Until it reaches a row, and whenever the service fails, search uses
@@ -866,8 +866,8 @@ What each process exports:
   GraphJin query or tool call is its own trace. The spans hold names, times,
   roles and status codes. Serve removes error text, exception events, SQL
   text and URL query strings before export.
-- `openneko web` exports no traces in this release. It runs the agent turns,
-  so an agent run is not a trace, and its GraphJin calls do not join one.
+- `openneko web` exports no traces in this release. An agent run is not a
+  trace, and its GraphJin calls do not join one.
   The run's usage, cost and tool steps stay in the run's events in the app.
 
 `OTEL_SDK_DISABLED=true` turns traces off in serve.
@@ -1326,8 +1326,8 @@ and `upgrade` act on the native install. `openneko logs` reads the
   and the processes.
 - `openneko backup` writes one encrypted file. It holds a `pg_dump` of the
   database, the config folder (`installation.json` stays out) and the data
-  folders: files, file index, serve credentials, GraphJin config, agent runs
-  and subscriptions. Logs and `run` stay out. The default folder is
+  folders: files, file index, serve credentials, GraphJin config and
+  subscriptions. Logs, `run` and the agent runs stay out. The default folder is
   `~/.local/share/openneko/backups/<installation>/openneko-native`.
 - `openneko restore <file> --confirm RESTORE` verifies the whole file, stops
   OpenNeko, replaces those folders and the objects that the login owns in

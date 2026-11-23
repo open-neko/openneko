@@ -12,8 +12,8 @@ The doctor verifies database connectivity, SELECT-only grants, Magento/store
 discovery, the GraphJin catalog, and optional operator readiness. Readiness
 reasons have specific remediations:
 
-- `graphjin_version_unsupported`: keep analytics available and upgrade only to
-  the tagged GraphJin release supported by the pack.
+- `graphjin_version_unsupported`: keep analytics available. GraphJin is part
+  of the `openneko` program, so upgrade OpenNeko with `openneko upgrade`.
 - `integration_token_missing`: configure a least-privilege Magento Integration
   token through OpenNeko's encrypted secret flow if governed writes are wanted.
 - `integration_token_invalid`: rotate or replace the Integration token through

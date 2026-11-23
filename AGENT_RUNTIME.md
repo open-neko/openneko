@@ -9,8 +9,9 @@ pieces run it, and each holds only what its job needs:
   builds;
 - **`openneko serve`**, which runs the Ax harness for each agent turn and every
   other model call, the inference and embedding gateways, and the agent's file
-  tools (when `OPENNEKO_SERVE_SOCKET` is not set, `openneko web` runs the Ax
-  harness in-process);
+  tools. Serve runs each agent turn in a confined runner process. When
+  `OPENNEKO_SERVE_SOCKET` is not set, `openneko web` refuses agent turns and
+  runs host and embedding calls in-process;
 - the optional **sandbox service** ([recipes/sandbox](recipes/sandbox/README.md)),
   which runs terminal commands, script skills and workflow script steps.
 
@@ -49,8 +50,8 @@ workflows, metric refreshes, and setup builds in Go:
    person's own skills.
 2. `openneko web` resolves the org's model route and fallback route, gives
    their API keys to the [key door](#the-key-door) for this turn, and sends
-   the turn to `openneko serve` over the Unix socket `OPENNEKO_SERVE_SOCKET`
-   (or runs the Ax harness in-process when no socket is set). The turn
+   the turn to `openneko serve` over the Unix socket `OPENNEKO_SERVE_SOCKET`.
+   With no socket, web refuses the turn. The turn
    carries a door token and door URLs in place of the keys and the provider
    URLs. Serve sends each model call of the turn through the door. The
    agent's MCP tools (GraphJin, memory, files,

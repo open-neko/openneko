@@ -23,6 +23,10 @@ base64url-encoded RFC 2822 message in `raw`. Keep `To`, `Cc`, `Bcc`, `Subject`,
 and the body in that message. To reply in a thread, also supply `threadId` and
 the correct reply headers.
 
+The message can hold only text and HTML parts. OpenNeko refuses an attachment,
+an HTML part that loads an image or other content from a URL, and link text
+that hides the link's host.
+
 Resolve label names to label IDs before modifying a message. Show recipients,
 subject, message purpose, label changes, and target IDs in the approval intent.
 Never send a draft unless the user asked to send it.
