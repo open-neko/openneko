@@ -1,95 +1,58 @@
-# OpenNeko agent MCP runtime
+# @neko/llm
 
-No OpenNeko process runs this package. `openneko web` runs the agent's tools in
-Go (`apps/openneko/internal/webfront`), and `openneko serve` runs each turn in a
-confined runner. The web app imports shared helpers and types from this package
-when Vite builds it. The eval scripts in `packages/evals` and the tests use the
-rest.
+This package holds TypeScript helpers, types and fixtures. No OpenNeko process
+runs it. In 6.0.0, `openneko web` runs the agent's tools and the host model
+calls in Go (`apps/openneko/internal/webfront`, `apps/openneko/internal/llm`).
+`openneko serve` runs each agent turn in a confined runner.
 
-The sections below describe that TypeScript runtime. The Go code differs in one important way: a run sends no GraphQL
-mutation to GraphJin, and a run gets no GraphJin tool that changes the schema
-or the config.
+## Who uses it
 
-## GraphJin MCP
+- **The web app.** Vite builds `apps/web` with the imports below. The release
+  holds the built files, not this package.
+  - `work/answer-expression` and `work/answer-tool-check`: the A2UI answer
+    blocks.
+  - `workflows/fences` and `workflows/fence-schemas`: the rule chat bubble.
+  - `model-tasks`, `model-routes` and `spend`: the Models and Spend settings.
+  - `library/formats` and the types of `work` and
+    `graphjin/pack-user-connections`.
+- **The evals.** The scripts and tests in `packages/evals` use it to seed an
+  install and to read a run (`work`, `workflows`, `secrets`, `files`,
+  `graphjin`).
+- **Repository scripts.** `scripts/skill-doctor.ts` reads the skill
+  dependency list in `src/work/skill-deps.ts`. `scripts/dev-up.sh` reads the
+  GraphJin version from `src/graphjin/version.ts`.
 
-OpenNeko does not maintain a GraphJin tool allow-list or duplicate GraphJin's
-tool schemas. At the start of each agent turn, the sandbox bridge asks the
-trusted control plane for the configured GraphJin server's live `tools/list`
-response. Every returned tool and its native JSON schema is exposed through the
-higher-level `neko_graphjin` MCP. Calls route back as native `tools/call`
-requests and their MCP results are returned unchanged.
+## Files that ship
 
-GraphJin's current Streamable HTTP contract is stateless, so OpenNeko sends
-`tools/list` and `tools/call` directly without `initialize`. Every request
-carries GraphJin 3.20's `2026-07-28` protocol header, method header, and
-per-request client metadata so it cannot fall into the legacy session path. The
-client follows list cursors and accepts JSON or SSE responses.
+`assets/builtin-skills` holds the built-in skills. The Dockerfile and
+`scripts/build-native-release.sh` copy that folder into
+`share/openneko/skills/builtin`. A test in `apps/openneko/assets` checks both
+copies.
 
-The sandbox receives neither `data_source.mcp_url` nor a GraphJin credential.
-The broker binds the organization and run, mints the actor or service JWT on the
-trusted host, and treats GraphJin's caller-aware tool list and capability gates
-as authoritative. The physical `neko` multiplexer changes only tool-name
-prefixes; descriptions, annotations, and input/output schemas survive intact.
+## Fixtures that Go tests share
 
-### Write policy
+- `test/fixtures/model-catalog.json`: the provider list and the default
+  models. `apps/openneko/internal/llm` and `test/model-catalog.test.ts` check
+  it.
+- `test/fixtures/host-calls.json`: the Ax route and the price for each host
+  call. `apps/openneko/internal/llm` and `test/host-calls-fixture.test.ts`
+  check it.
+- `src/spend/ax-model-catalog.json`: the model prices from the Ax harness.
+  `apps/ax-harness/catalog` fails when the file is stale. To make it again,
+  run `pnpm --filter @neko/llm catalog:ax`.
 
-Database sources stay read-only by contract. GraphJin enforces `read_only: true`
-per database source in core and pins that flag at startup, so a later config
-patch cannot lift it. Every database source OpenNeko registers through chat
-carries that flag. The trusted host adds a second gate in `callGraphjinTool`:
-it forwards a GraphQL mutation through `execute_graphql` only when the org's
-config at `OPENNEKO_GRAPHJIN_CONFIG` proves every database source is
-`read_only: true`. A missing, unreadable, or mis-edited config fails closed.
+When you change one of these, change the Go code in the same commit.
 
-API sources can take governed writes. The shipped config sets
-`mcp.allow_mutations: true` and `system.capabilities.raw_graphql.mutate: true`
-(in sources mode the capability overwrites the MCP flag at startup) and lists
-the `member` and `service` roles that `openneko web` mints. GraphJin generates a
-source's `access.write` block only for listed roles; an unlisted JWT role gets
-no block. A write against an API source still needs, per source, `read_only`
-unset, `capabilities.api.write: true`, `access.write` set to `authenticated` or
-`admin`, and `expose_mutation: true` plus `allowed_roles` on the operation.
+## Tests
 
-### Governed API writes through the config workflow
+```sh
+pnpm --filter @neko/llm test
+```
 
-Nobody edits the GraphJin file by hand. `openneko serve-init` and
-`reconcileGraphjinWritePolicy` in `openneko web` bring an
-existing sources-mode config up to the shipped policy (`mcp.allow_mutations`,
-`raw_graphql.mutate`, the `member` and `service` roles) before GraphJin starts.
+The tests in `test/integration` skip unless their service answers.
+`ax-serve.integration.test.ts` needs its own environment.
 
-Per-source write enablement goes through `request_source_config_change`
-proposals that an admin approves, then GraphJin's two-phase `gj_config`
-preview and apply, then the durable file. `enable_api_writes { source, spec,
-operation, allowedRoles, write?, exposeAs? }` carries every setting in one
-update: `read_only: false`, `capabilities.api.write`, and the operation's
-`expose_mutation` plus `allowed_roles` in `update_sources`, and `access.write`
-in `source_patches`.
-Verified live on 3.20.47: one preview, one apply, then
-`mutation { shop_create_order(call: { body: { note: "x" } }) { ok status_code } }`
-reached the upstream API for `admin` and was refused at `allowed_roles` for
-`member`. `set_source_capabilities` and `expose_api_operation` adjust one
-setting on a source that already has writes enabled.
-
-`assertDatabaseSourcesStayReadOnly` runs at preview and again at approved
-execution and rejects any write setting on a database source, or on a source
-whose kind GraphJin does not report. Admin > Settings > GraphJin Config has an
-"Enable API writes" launcher.
-
-Known GraphJin 3.20.47 limit: while an `api` source is configured, the first
-`gj_config` update after engine start completes, and the next one blocks
-inside the config pipeline until GraphJin restarts (repro in the PR). One
-combined proposal per API source stays inside that limit; a further change
-needs a GraphJin restart first.
-
-### Lazy catalogs
-
-The sandbox bridge connects every logical server in memory at startup and
-resolves tool catalogs on the agent's first `tools/list`. A logical server whose
-catalog fails (for example `neko_graphjin` for an org with no data source) logs
-the failure and drops out of that listing; the other servers keep working, and
-the next `tools/list` retries it.
-
-### Live rig for the integration tests
+### Live GraphJin tests
 
 `test/integration/graphjin-mcp-live.test.ts` and `agentic-knowledge-live.test.ts`
 skip unless a sources-mode GraphJin answers at `OPENNEKO_TEST_GJ_SOURCES_URL`
@@ -117,81 +80,3 @@ docker rm -f neko-gj-live neko-live-pg && docker network rm neko-live
 A database source needs `access.read: authenticated` for the roles that `openneko web` mints to
 read it; OpenNeko sets that on every source it registers. `query_catalog` is
 absent from the tool list until a source is configured.
-
-## A2UI rendering
-
-A web turn mounts one logical server, `neko_ui`, with one tool,
-`render_cards`. The brokered server validates the call and emits the surface.
-The Ax responder writes the answer without tool access, so it puts the same
-`render_cards` arguments in `neko_cards` fences in its reply. The host
-validates them with the same validator and removes them from the text.
-
-[`src/work/a2ui-contract.ts`](src/work/a2ui-contract.ts) is the source of truth
-for the names, the Zod validator, and the JSON Schema generated from it. Every
-argument is a string, a list of strings, or an enum. The host builds the A2UI
-v1.0 surface, including its version, catalog, surface ID, `Answer` root and
-component IDs. Persisted A2UI v0.9 messages retain reader-only compatibility.
-
-```json
-{
-  "title": "Revenue by quarter",
-  "table": "Quarter | Revenue (USD)\n2026 Q2 | 13848055.85\n2026 Q3 | 13950000",
-  "chart": "line",
-  "chartColumn": "Revenue (USD)",
-  "keyFigures": ["2026 Q3: $13.95M (up 1% on Q2)"],
-  "followUps": ["Break 2026 Q3 down by region"]
-}
-```
-
-`table` is a pipe table. The chart draws the `chartColumn` values from the
-table, so a charted figure is written once. The host reads the text with plain
-string splitting: rows on line breaks (or a literal `\n`), cells on `|`, and
-numbers with `Number()` after removing thousands separators. `keyFigures`
-entries are `Label: value` with an optional trailing `(note)`.
-
-Flat text fields matter because small models fill flat strings reliably and
-nested objects poorly. `normalizeRenderCardsInput` recovers common malformed
-call shapes: a second `{name, arguments}` wrapper, the call sent as JSON text,
-and `null` / `false` / `""` placeholders.
-
-The source configuration form is a separate tool, `present_source_form`, on the
-`neko_source_config_manager` server; the host builds that form from the
-agent's prefill values. Its password field (`SourceSecretInput` in the web
-catalog) posts to the source-secrets API and puts only the stored name in the
-form, so a password never reaches the model. `describe_source_config` on the same server returns
-GraphJin's `gj_config` row with GraphJin's redaction applied again on our
-side (`src/graphjin/config-redact.ts`), and `summary`, the same config in
-plain sentences (`src/graphjin/config-describe.ts`). The server and the `graphjin-config`
-skill reach admin web runs only (`src/work/admin-skills.ts`).
-`check_source` runs the source check (`src/graphjin/source-check.ts`) with the
-stored password named by `secretRef`. The form's `SourceConnectionCheck`
-component runs the Go copy of the check through `POST /api/v1/settings/source-check` and
-writes the tables the admin clears into `/form/blockedTables`.
-`present_pack_setup` shows a pack's setup card (`PackSetup` in the web
-catalog) for a system that has a pack. The card calls the admin pack routes
-itself; the model passes only the pack ID.
-`request_source_config_change` returns `problems` (`{ field, message,
-detail? }`, from `src/graphjin/config-problems.ts`) when a check fails. For a
-`register_source` proposal it shows the form again with each message bound to
-`/problems/<field>`; `TextField`, `ChoicePicker` and `SourceSecretInput` render
-an `error` property beside the input. `src/graphjin/config-file-check.ts`
-asks serve to load the merged file with the pinned loader.
-
-Every tool schema uses the portable JSON Schema subset in
-[`src/tool-schema-portability.ts`](src/tool-schema-portability.ts): declared
-object properties, typed array items and string enums. Providers drop or
-reject open objects, unions and `const`, so a schema that relies on them loses
-its structure on some models. `test/tool-schema-portability.test.ts` checks
-every static tool.
-
-Accepted calls remain visually quiet because the cards carry the evidence.
-Rejected calls emit a correlated `tool_start` containing the exact `rawInput`,
-canonical title, and validation issues, followed by `tool_end`. This preserves
-diagnostic evidence without showing successful render-tool pills.
-
-## Regression invariants
-
-Tests cover future/unknown GraphJin tools across both broker hops, native schema
-and result preservation, the no-`initialize` contract, one canonical render
-server/tool, portable tool schemas, one surface emission for valid calls,
-and exact rejected render input in telemetry.
