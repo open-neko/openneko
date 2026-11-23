@@ -346,9 +346,6 @@ func (c *Client) runDeclared(ctx context.Context, command, dir, skillDir string,
 		key := declaredKey(requests[name])
 		r, done := c.data.records[key]
 		if !done {
-			if note := c.data.stopped(); note != "" {
-				return fmt.Sprintf("%s did not start: %s", rel, strings.Trim(strings.TrimPrefix(note, dataStopLabel), "]")), nil
-			}
 			if r, err = c.data.run(ctx, key, requests[name]); err != nil {
 				return "", err
 			}

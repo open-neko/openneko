@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
@@ -60,33 +61,56 @@ func scriptDataBroker(b turnBinding, be toolBackend) (sandbox.DataBroker, error)
 		if err != nil {
 			return nil, err
 		}
-		text := ""
-		for _, item := range jsArray(jsGet(result, "content")) {
-			if jsGet(item, "type") == "text" {
-				text, _ = jsGet(item, "text").(string)
-				break
-			}
-		}
-		if jsTruthy(jsGet(result, "isError")) {
-			if text == "" {
-				text = "execute_graphql failed"
-			}
-			return nil, errors.New(text)
-		}
-		return sandbox.GraphQLData(json.RawMessage(jsStringify(result, false)))
+		return scriptDataOf(result)
 	}, nil
 }
 
-// scriptDataTool answers sandbox.DataTool on the bridge with the
-// execute_graphql result; the harness reads the data object from it.
-func scriptDataTool(call func(ctx context.Context, q sandbox.DataQuery) (*jsObj, error)) func(ctx context.Context, raw json.RawMessage) (*jsObj, error) {
-	return func(ctx context.Context, raw json.RawMessage) (*jsObj, error) {
+func scriptDataOf(result *jsObj) (json.RawMessage, error) {
+	text := ""
+	for _, item := range jsArray(jsGet(result, "content")) {
+		if jsGet(item, "type") == "text" {
+			text, _ = jsGet(item, "text").(string)
+			break
+		}
+	}
+	if jsTruthy(jsGet(result, "isError")) {
+		if text == "" {
+			text = "execute_graphql failed"
+		}
+		return nil, errors.New(text)
+	}
+	return sandbox.GraphQLData(json.RawMessage(jsStringify(result, false)))
+}
+
+// scriptDataTool answers sandbox.DataTool on the bridge with the data
+// object of the execute_graphql result, or with the error as a tool error.
+func scriptDataTool(call func(ctx context.Context, q sandbox.DataQuery) (*jsObj, error)) func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	return func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 		var q sandbox.DataQuery
 		if err := json.Unmarshal(raw, &q); err != nil || q.Query == "" {
 			return nil, errors.New("the script data request is not valid")
 		}
-		return call(ctx, q)
+		result, err := call(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		data, err := scriptDataOf(result)
+		if err == nil && len(data) > sandbox.MaxDataBytes {
+			err = errors.New(sandbox.DataTooLarge(len(data), sandbox.MaxDataBytes))
+		}
+		if err != nil {
+			return json.RawMessage(`{"content":[{"type":"text","text":` + scriptDataText(err.Error()) + `}],"isError":true}`), nil
+		}
+		return json.RawMessage(`{"content":[{"type":"text","text":` + scriptDataText(`{"data":`+string(data)+`}`) + `}]}`), nil
 	}
+}
+
+func scriptDataText(s string) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s)
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // installDataClient writes neko_data.py and neko-query into binRoot.

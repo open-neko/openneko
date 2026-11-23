@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 const ordersSidecar = `{"queries": {
@@ -168,20 +167,15 @@ func TestDeclaredQueryChecks(t *testing.T) {
 }
 
 func TestDeclaredQueryLimits(t *testing.T) {
-	b := &countingBroker{}
-	c, fake, runRoot := dataClient(t, 0, b.broker, DataLimits{MaxRows: 10, MaxBytes: 1_000, MaxQueries: 1, MaxTime: time.Minute})
+	b := &countingBroker{reply: func(DataQuery) (json.RawMessage, error) {
+		return json.RawMessage(`{"a":"` + strings.Repeat("x", 1_000) + `"}`), nil
+	}}
+	c, fake, runRoot := dataClient(t, 0, b.broker, DataLimits{MaxBytes: 1_000})
 	skill := declaredSkill(t, runRoot, ordersSidecar)
 	res, err := c.Exec(context.Background(), "python3 $SKILL_DIR/report.py --since x", skill, nil, 60, 50_000)
-	if err != nil || res.ExitCode != 1 || fake.execs != 0 || len(b.calls) != 1 ||
-		!strings.Contains(res.Output, "did not start: the run reached its limit of 1 data queries") {
-		t.Fatalf("query count: %+v %v", res, err)
-	}
-
-	c, _, runRoot = dataClient(t, 0, b.broker, DataLimits{MaxRows: 1, MaxBytes: 1_000, MaxQueries: 5, MaxTime: time.Minute})
-	skill = declaredSkill(t, runRoot, ordersSidecar)
-	res, _ = c.Exec(context.Background(), "python3 $SKILL_DIR/report.py --since x", skill, nil, 60, 50_000)
-	if res.ExitCode != 1 || !strings.Contains(res.Output, "its declared query orders failed: the query returned 2 rows, more than the 1 rows") {
-		t.Fatalf("rows: %+v", res)
+	if err != nil || res.ExitCode != 1 || fake.execs != 0 ||
+		!strings.Contains(res.Output, "its declared query orders failed: the query returned 1008 bytes, more than the 1000 bytes a script may read in one query") {
+		t.Fatalf("bytes: %+v %v", res, err)
 	}
 }
 

@@ -103,7 +103,7 @@ func (s *Server) relayTurn(conn io.Writer, reader *bufio.Reader, start Frame, li
 	var exitLine []byte
 	from := bufio.NewReaderSize(link, 64<<10)
 	for {
-		line, err := readLine(from)
+		line, err := readLine(from, maxRunnerFrameBytes)
 		if err != nil {
 			break
 		}

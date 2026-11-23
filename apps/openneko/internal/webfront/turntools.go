@@ -269,7 +269,7 @@ type toolRoute struct {
 // routed by the last tools/list; a name it does not hold lists again first.
 type toolServer struct {
 	groups     []toolGroup
-	scriptData func(ctx context.Context, raw json.RawMessage) (*jsObj, error)
+	scriptData func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error)
 	webFetch   func(ctx context.Context, raw json.RawMessage) json.RawMessage
 	mu         sync.Mutex
 	routes     map[string]toolRoute
@@ -456,7 +456,7 @@ func (s *toolServer) handle(ctx context.Context, method string, params json.RawM
 			if err != nil {
 				return nil, &rpcError{-32603, "MCP error -32603: " + err.Error()}
 			}
-			return json.RawMessage(jsStringify(result, false)), nil
+			return result, nil
 		}
 		if p.Name == webfetch.BridgeTool && s.webFetch != nil {
 			return s.webFetch(ctx, p.Arguments), nil

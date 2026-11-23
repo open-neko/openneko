@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // scriptSandbox plays a script that reads one data key per query: it
@@ -162,60 +161,39 @@ func TestScriptDataGivesTheScriptARefusal(t *testing.T) {
 }
 
 func TestScriptDataLimits(t *testing.T) {
-	rows := func(n int) json.RawMessage {
-		items := make([]string, n)
-		for i := range items {
-			items[i] = `{"id":1}`
-		}
-		return json.RawMessage(`{"orders":[` + strings.Join(items, ",") + `],"total":{"n":1}}`)
-	}
-	limits := DataLimits{MaxRows: 3, MaxBytes: 1_000, MaxQueries: 2, MaxTime: time.Minute}
-
-	b := &countingBroker{reply: func(DataQuery) (json.RawMessage, error) { return rows(2), nil }}
-	c, _, _ := dataClient(t, 1, b.broker, limits)
-	if res, _ := c.Exec(context.Background(), "x", "", nil, 60, 50_000); !strings.HasPrefix(res.Output, `{"data":{"orders"`) {
-		t.Fatalf("two rows and one object are three rows: %+v", res)
-	}
-
-	b = &countingBroker{reply: func(DataQuery) (json.RawMessage, error) { return rows(3), nil }}
-	c, _, _ = dataClient(t, 1, b.broker, limits)
-	if res, _ := c.Exec(context.Background(), "x", "", nil, 60, 50_000); !strings.Contains(res.Output, "returned 4 rows, more than the 3 rows") {
-		t.Fatalf("rows: %+v", res)
-	}
-
-	b = &countingBroker{reply: func(DataQuery) (json.RawMessage, error) {
-		return json.RawMessage(`{"a":"` + strings.Repeat("x", 1_000) + `"}`), nil
-	}}
-	c, _, _ = dataClient(t, 1, b.broker, limits)
-	if res, _ := c.Exec(context.Background(), "x", "", nil, 60, 50_000); !strings.Contains(res.Output, "returned 1008 bytes, more than the 1000 bytes") {
-		t.Fatalf("bytes: %+v", res)
-	}
-
-	b = &countingBroker{}
-	c, fake, _ := dataClient(t, 3, b.broker, limits)
+	b := &countingBroker{}
+	c, fake, _ := dataClient(t, 200, b.broker, DefaultDataLimits)
 	res, err := c.Exec(context.Background(), "x", "", nil, 60, 50_000)
-	if err != nil || res.ExitCode != 75 || !strings.HasSuffix(res.Output, "[script data stopped: the run reached its limit of 2 data queries]") ||
-		len(b.calls) != 2 || fake.execs != 3 {
-		t.Fatalf("query count: %+v %v, calls %d, runs %d", res, err, len(b.calls), fake.execs)
+	if err != nil || res.ExitCode != 0 || len(b.calls) != 200 || fake.execs != 201 || strings.Contains(res.Output, "script data stopped") {
+		t.Fatalf("200 queries: exit %d, calls %d, runs %d, %v", res.ExitCode, len(b.calls), fake.execs, err)
 	}
 
-	slow := DataLimits{MaxRows: 10, MaxBytes: 1_000, MaxQueries: 10, MaxTime: 50 * time.Millisecond}
-	b = &countingBroker{reply: func(DataQuery) (json.RawMessage, error) {
-		time.Sleep(30 * time.Millisecond)
-		return json.RawMessage(`{"a":1}`), nil
-	}}
-	c, _, _ = dataClient(t, 3, b.broker, slow)
-	res, err = c.Exec(context.Background(), "x", "", nil, 60, 50_000)
-	if err != nil || !strings.HasSuffix(res.Output, "[script data stopped: the run reached its script data time limit of 50ms]") || len(b.calls) != 2 {
-		t.Fatalf("time: %+v %v, calls %d", res, err, len(b.calls))
+	rows := `{"orders":[` + strings.TrimSuffix(strings.Repeat(`{"id":1},`, 10_001), ",") + `]}`
+	b = &countingBroker{reply: func(DataQuery) (json.RawMessage, error) { return json.RawMessage(rows), nil }}
+	c, _, _ = dataClient(t, 1, b.broker, DefaultDataLimits)
+	if res, _ := c.Exec(context.Background(), "x", "", nil, 60, 50_000); !strings.HasPrefix(res.Output, `{"data":{"orders"`) {
+		t.Fatalf("10,001 rows: %.200s", res.Output)
 	}
 
-	c, _, _ = dataClient(t, 1, func(ctx context.Context, q DataQuery) (json.RawMessage, error) {
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}, DataLimits{MaxRows: 10, MaxBytes: 1_000, MaxQueries: 10, MaxTime: 20 * time.Millisecond})
-	if res, _ := c.Exec(context.Background(), "x", "", nil, 60, 50_000); !strings.Contains(res.Output, "the script data time limit ran out during this query") {
-		t.Fatalf("a query that outlives the limit: %+v", res)
+	big := json.RawMessage(`{"a":"` + strings.Repeat("x", 65<<20) + `"}`)
+	b = &countingBroker{reply: func(DataQuery) (json.RawMessage, error) { return big, nil }}
+	c, _, runRoot := dataClient(t, 1, b.broker, DefaultDataLimits)
+	res, _ = c.Exec(context.Background(), "x", "", nil, 60, 50_000)
+	want := fmt.Sprintf(`{"error":"the query returned %d bytes, more than the 64 MiB a script may read in one query; select fewer columns, aggregate in the query or add a limit"}`, len(big))
+	if res.Output != want {
+		t.Fatalf("65 MiB: %.300s", res.Output)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(runRoot, ".openneko", "script-data.jsonl")); len(raw) > 1<<20 {
+		t.Fatalf("the record keeps the answer over the cap: %d bytes", len(raw))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	c, _, _ = dataClient(t, 1, func(context.Context, DataQuery) (json.RawMessage, error) {
+		cancel()
+		return nil, errors.New("cut")
+	}, DefaultDataLimits)
+	if _, err := c.Exec(ctx, "x", "", nil, 60, 50_000); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a run that ends during a query: %v", err)
 	}
 }
 

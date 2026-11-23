@@ -64,6 +64,49 @@ func TestScriptDataToolIsHiddenFromTheModel(t *testing.T) {
 	}
 }
 
+func TestScriptDataToolCapsOneAnswerAt64MiB(t *testing.T) {
+	answer := func(n int) *fakeTools {
+		text := `{"data":{"a":"<` + strings.Repeat("x", n) + `"}}`
+		return &fakeTools{reply: jsObjOf("content", []any{jsObjOf("type", "text", "text", text)})}
+	}
+	call := json.RawMessage(`{"name":"script_data_query","arguments":{"query":"{ a }"}}`)
+	for _, c := range []struct {
+		size    int
+		isError bool
+	}{{40 << 20, false}, {65 << 20, true}} {
+		tools := answer(c.size)
+		b := turnBinding{OrgID: "org-1", RunID: "run-1", Kind: "work"}
+		dataCall, err := scriptDataCall(b, tools)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := newToolServer(graphjinTools(b, tools))
+		s.scriptData = scriptDataTool(dataCall)
+		result, rpcErr := s.handle(context.Background(), "tools/call", call)
+		if rpcErr != nil {
+			t.Fatal(rpcErr)
+		}
+		var got struct {
+			Content []struct{ Text string }
+			IsError bool
+		}
+		if err := json.Unmarshal(result.(json.RawMessage), &got); err != nil || len(got.Content) != 1 || got.IsError != c.isError {
+			t.Fatalf("%d bytes: %.300s %v", c.size, result, err)
+		}
+		data := fmt.Sprintf(`{"a":"<%s"}`, strings.Repeat("x", c.size))
+		want := `{"data":` + data + `}`
+		if c.isError {
+			want = fmt.Sprintf("the query returned %d bytes, more than the 64 MiB a script may read in one query; select fewer columns, aggregate in the query or add a limit", len(data))
+		}
+		if got.Content[0].Text != want {
+			t.Fatalf("%d bytes: %.300s", c.size, got.Content[0].Text)
+		}
+		if raw := string(result.(json.RawMessage)); strings.Contains(raw, `\u003c`) {
+			t.Fatal("the answer is HTML-escaped")
+		}
+	}
+}
+
 func TestScriptDataBrokerPolicy(t *testing.T) {
 	tools := &fakeTools{reply: decodeJS(t, `{"content":[{"type":"text","text":"{\"data\":{\"a\":1}}"}]}`)}
 	governed := turnBinding{OrgID: "org-1", RunID: "run-1", Kind: "work", GraphjinToolPolicy: "direct-governed"}
