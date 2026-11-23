@@ -91,4 +91,19 @@ func TestOlderBuiltinCopyIsNotAnEdit(t *testing.T) {
 	if after, _ := os.ReadFile(filepath.Join(older, "SKILL.md")); !bytes.Equal(after, before) {
 		t.Error("the org's demo changed")
 	}
+	service := capture("72000000-0000-4000-8000-000000000002", runActorRow{}, func(skills string) {
+		p := filepath.Join(skills, "demo", "SKILL.md")
+		data, _ := os.ReadFile(p)
+		writeTestFile(t, p, string(data)+"Service line\n")
+	})
+	for name, s := range map[string]*savedSkillEdits{"an admin's chat run": saved, "a run with no user": service} {
+		n := s.notices()
+		if len(n) != 1 || jsGet(n[0], "code") != "skill_edit_not_from_team" {
+			t.Errorf("%s that edited the built-in copy of demo: notices %v", name, n)
+			continue
+		}
+		if msg := jsGet(n[0], "message").(string); !strings.Contains(msg, "skill demo") || !strings.Contains(msg, "did not save") || !strings.Contains(msg, "built-in copy") {
+			t.Errorf("%s: the notice does not name the skill and the reason: %q", name, msg)
+		}
+	}
 }
