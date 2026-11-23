@@ -72,6 +72,7 @@ func buildWorkflowPrompt(in workflowPromptInput) string {
 		"delegation", pick(in.Backend == "ax", section("ax_delegation"), ""),
 		"value", value,
 		"mode", pick(in.Mode == "headless", section("workflow_headless"), section("workflow_live")),
+		"runRoot", in.Workspace.RunRoot,
 		"artifactRoot", in.Workspace.ArtifactRoot,
 		"memory", memorySection(true, in.FilesEnabled, in.MemoryContext))
 }

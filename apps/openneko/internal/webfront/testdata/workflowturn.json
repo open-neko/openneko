@@ -57,8 +57,8 @@
         "filesEnabled": false,
         "scriptData": true
       },
-      "bytes": 13184,
-      "sha256": "3a9d8477f22cc08abd58cca044672bbdc6ca3b4cf18436f4f82ebf512cc44ea3"
+      "bytes": 13388,
+      "sha256": "7ee99c066944ce039a7a2830ae8ad3d90aaa943301fd6605d4d8d04d7f860cea"
     },
     {
       "name": "live with goal, overlay, memory and files",
@@ -117,8 +117,8 @@
         "filesEnabled": true,
         "scriptData": true
       },
-      "bytes": 13751,
-      "sha256": "65a3132643ab2a2ded99e8f613a1efad652a469b4f6da86040524d86c558da88"
+      "bytes": 13955,
+      "sha256": "4ade53598dc5bb252f54e6611ce622950cdfd2bde2b389b6497e7c1a2cef3ced"
     },
     {
       "name": "eval without value block",
@@ -154,8 +154,8 @@
         "filesEnabled": false,
         "scriptData": true
       },
-      "bytes": 11558,
-      "sha256": "000f3da2bf4a230ef7d7b44d57bd00788aabc297814f697c8005640bd7ecb9f6"
+      "bytes": 11762,
+      "sha256": "59f992d855b2c2e8708909fec90a6616db1b8b8b50d263b1187c52bdbc2fc9a2"
     },
     {
       "name": "other backend",
@@ -214,8 +214,8 @@
         "filesEnabled": false,
         "scriptData": true
       },
-      "bytes": 12607,
-      "sha256": "a4431068f11586cecf18d735d3ea097d5943273de587557cd257eda96140fc6a"
+      "bytes": 12811,
+      "sha256": "13e345c4e44e78d9bd5e2af898440dde02f02ae94fa48c9575a08a3332490615"
     },
     {
       "name": "no sandbox, so no script data",
@@ -274,8 +274,8 @@
         "filesEnabled": false,
         "scriptData": false
       },
-      "bytes": 12134,
-      "sha256": "5678dc91574e723e4e329213c1eed77fc8511d5a468b5d7931d410917e1493b5"
+      "bytes": 12338,
+      "sha256": "f1657a481cb64c375acaade78552dee9f5da44c0c39c4e1538bb00ae947f4b40"
     }
   ],
   "seeds": [

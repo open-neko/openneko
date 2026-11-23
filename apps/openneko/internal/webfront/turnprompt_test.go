@@ -107,3 +107,25 @@ func TestEveryPromptCopyHoldsTheFailedStepRule(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryPromptCopyNamesTheRunFolder(t *testing.T) {
+	ws := agentWorkspace{RunRoot: "/w/runs/r-1", ArtifactRoot: "/w/runs/r-1/artifacts"}
+	if chat := buildWorkPrompt(workPromptInput{Workspace: ws}); !strings.Contains(chat, "- Run folder ($RUN_DIR): /w/runs/r-1\n- Artifacts for this run ($ARTIFACT_DIR): /w/runs/r-1/artifacts\n") {
+		t.Error("the chat prompt does not name the run folder")
+	}
+	if flow := buildWorkflowPrompt(workflowPromptInput{Workspace: ws}); !strings.Contains(flow, "The run folder is /w/runs/r-1.\nA path in a file tool or a terminal command may start with $RUN_DIR") {
+		t.Error("the workflow prompt does not name the run folder")
+	}
+	for path, want := range map[string]string{
+		"../../../../packages/llm/src/work/prompt.ts":             "- Run folder ($RUN_DIR): ${workspace.runRoot}\n",
+		"../../../../packages/llm/src/workflows/runner-prompt.ts": "The run folder is ${workspace.runRoot}.\n",
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("%s does not name the run folder", path)
+		}
+	}
+}

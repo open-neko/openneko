@@ -526,7 +526,8 @@ Your cwd is ${workspace.orgRoot}. Shared directories:
 - Memory: ${workspace.memoryRoot}
 - Knowledge: ${workspace.knowledgeRoot}
 - Uploads for this thread: ${workspace.threadUploadsRoot}
-- Artifacts for this run: ${workspace.artifactRoot}
+- Run folder ($RUN_DIR): ${workspace.runRoot}
+- Artifacts for this run ($ARTIFACT_DIR): ${workspace.artifactRoot}
 
 Read and write within those directories when needed. Save generated
 reports or files under the run artifact directory. Regular files saved there

@@ -121,6 +121,7 @@ func RunTurn(ctx context.Context, turn Turn) (int, error) {
 		if err != nil {
 			return failed(fmt.Errorf("file workspace unavailable: %w", err))
 		}
+		files.SetEnviron(environ)
 		tools.Capabilities = append(tools.Capabilities, files.Capabilities()...)
 		closers = append(closers, files.Close)
 	}

@@ -182,7 +182,7 @@ func buildWorkPrompt(in workPromptInput) string {
 		bot,
 		section("workspace", "orgRoot", ws.OrgRoot, "skillsRoot", ws.SkillsRoot, "memoryRoot", ws.MemoryRoot,
 			"knowledgeRoot", ws.KnowledgeRoot, "threadUploadsRoot", ws.ThreadUploadsRoot,
-			"artifactRoot", ws.ArtifactRoot, "shellTool", shellTool),
+			"runRoot", ws.RunRoot, "artifactRoot", ws.ArtifactRoot, "shellTool", shellTool),
 		memorySection(in.SupportsMemoryTool, in.FilesEnabled, in.MemoryContext),
 	}
 	kept := parts[:0]

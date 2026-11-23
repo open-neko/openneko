@@ -190,6 +190,10 @@ ${VALUE_ESTIMATE_INSTRUCTIONS}`}
 ${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}
 
 <files>
+The run folder is ${workspace.runRoot}.
+A path in a file tool or a terminal command may start with $RUN_DIR for
+the run folder or $ARTIFACT_DIR for the artifact folder.
+
 Save every report or file you make under ${workspace.artifactRoot}. Files
 saved there become downloads for the operator. Files saved anywhere else are
 lost when the run ends.

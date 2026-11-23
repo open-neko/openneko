@@ -34,6 +34,7 @@ const (
 
 type Files struct {
 	dir   string
+	vars  map[string]string
 	root  *os.Root
 	gate  sync.RWMutex
 	mu    sync.Mutex
@@ -52,6 +53,37 @@ func OpenFiles(dir string) (*Files, error) {
 }
 
 func (f *Files) Close() error { return f.root.Close() }
+
+// SetEnviron gives the file tools the run's folders, so a path may start with
+// $RUN_DIR or $ARTIFACT_DIR as it may in the terminal.
+func (f *Files) SetEnviron(environ []string) {
+	f.vars = map[string]string{}
+	for _, name := range []string{"RUN_DIR", "ARTIFACT_DIR"} {
+		if value := envValue(environ, name); value != "" {
+			f.vars[name] = value
+		}
+	}
+}
+
+var leadingRunVar = regexp.MustCompile(`^\$(?:\{(RUN_DIR|ARTIFACT_DIR)\}|(RUN_DIR|ARTIFACT_DIR)\b)`)
+
+func (f *Files) expand(path string) (string, bool) {
+	match := leadingRunVar.FindStringSubmatchIndex(path)
+	if match == nil {
+		return path, true
+	}
+	name := ""
+	if match[2] >= 0 {
+		name = path[match[2]:match[3]]
+	} else {
+		name = path[match[4]:match[5]]
+	}
+	value := f.vars[name]
+	if value == "" {
+		return "", false
+	}
+	return value + path[match[1]:], true
+}
 
 func (f *Files) Capabilities() []agent.Capability {
 	return []agent.Capability{
@@ -175,8 +207,13 @@ func validPath(path string) bool {
 	return len(path) <= 1024 && filepath.IsLocal(path) && filepath.Clean(path) == path && path != "."
 }
 
-// local accepts a workspace-relative path, or an absolute path inside the workspace.
+// local accepts a workspace-relative path, or an absolute path inside the
+// workspace, also one that starts with $RUN_DIR or $ARTIFACT_DIR.
 func (f *Files) local(path string) (string, bool) {
+	path, ok := f.expand(path)
+	if !ok {
+		return "", false
+	}
 	path = filepath.FromSlash(path)
 	if filepath.IsAbs(path) {
 		rel, err := filepath.Rel(f.dir, filepath.Clean(path))
