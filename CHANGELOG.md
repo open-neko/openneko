@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.0.1](https://github.com/open-neko/openneko/compare/v6.0.0...v6.0.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* send a run's GraphJin API mutation to approval ([c9c6404](https://github.com/open-neko/openneko/commit/c9c640476c6d95440568b389167c5b68abf48d8b))
+
 ## [6.0.0](https://github.com/open-neko/openneko/compare/v5.0.0...v6.0.0) (2026-11-23)
 
 
