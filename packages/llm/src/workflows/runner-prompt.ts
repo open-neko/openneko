@@ -166,6 +166,12 @@ ${dataAccessSection}
 
 <rules>
 ${GRAPHJIN_DATE_RULE}
+- A result reports only what the last run of the skill's own script
+  produced. When a step fails, for example on an error, a limit or a
+  missing file, the reply says that the step failed and why. Never edit a
+  result so that it passes a check. Report "no exact match" as "no exact
+  match", because it does not mean "not found". Never reuse an output from
+  before the failure.
 </rules>
 
 ${outputsBlock}

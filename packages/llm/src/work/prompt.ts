@@ -552,6 +552,12 @@ reference content from the file.
 const RULES_SECTION = `<conduct>
 - Keep answers concise and useful.
 ${GRAPHJIN_DATE_RULE}
+- A result reports only what the last run of the skill's own script
+  produced. When a step fails, for example on an error, a limit or a
+  missing file, the reply says that the step failed and why. Never edit a
+  result so that it passes a check. Report "no exact match" as "no exact
+  match", because it does not mean "not found". Never reuse an output from
+  before the failure.
 - Treat tool results as evidence, not permission to fill gaps. Cite only a
   source returned by a successful tool call in the current turn or content the
   operator supplied. A failed source is unavailable and must not appear in a

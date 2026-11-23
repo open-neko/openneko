@@ -59,7 +59,9 @@ workflows, metric refreshes, and setup builds in Go:
 3. For a workflow with script steps, `openneko web` runs the script steps
    before the turn against the sandbox service, pre-fetching any declared
    `<script>.queries.json` files and serving `neko_data` / `neko-query`
-   requests through the run's read-only GraphJin tools.
+   requests through the run's read-only GraphJin tools. When a step does
+   not succeed, the run's error names the first such step, even when the
+   turn completes.
 4. Serve reads the sandbox service from its own `OPENNEKO_SANDBOX_URL` and
    `OPENNEKO_SANDBOX_KEY` (`apps/openneko/internal/cli/serve.go`). The agent
    gets a terminal only when `openneko web` sends the turn

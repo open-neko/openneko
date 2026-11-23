@@ -573,6 +573,9 @@ func (a *API) runAPISingle(ctx context.Context, job jobs.WorkflowRunFireArgs, c 
 	if res.Status != "completed" {
 		code := "workflow_" + res.Status
 		errCode = &code
+	} else if res.StepError != "" {
+		code := "script_step_failed"
+		errText, errCode = &res.StepError, &code
 	}
 	var answer *jsObj
 	if surface != nil {

@@ -175,7 +175,7 @@ func buildWorkPrompt(in workPromptInput) string {
 		sourceConfig,
 		delegation,
 		dataAccessSection(in.Knowledge, false, in.ScriptData),
-		section("conduct", "date_rule", section("date_rule")),
+		section("conduct", "date_rule", section("date_rule"), "step_failure_rule", section("step_failure_rule")),
 		closing,
 		in.Business,
 		in.OperatorProfile,

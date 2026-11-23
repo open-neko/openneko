@@ -46,6 +46,7 @@ type workflowTurnOptions struct {
 
 type workflowTurnResult struct {
 	Status, FinalText, Error, ErrorCode string
+	StepError                           string
 	Degraded                            bool
 }
 
@@ -56,6 +57,7 @@ type workflowTurnState struct {
 	assistantText strings.Builder
 	needsInput    bool
 	toolCalls     []skillToolCall
+	stepError     string
 }
 
 func (s *workflowTurnState) wrapped(ctx context.Context, event any) error {
@@ -288,6 +290,9 @@ func (a *API) workflowStagedCore(ctx context.Context, o workflowTurnOptions, st 
 		if block := formatStepResults(results); block != "" {
 			first += "\n\n" + block
 		}
+		st.mu.Lock()
+		st.stepError = stepFailure(results)
+		st.mu.Unlock()
 	}
 	runCore := o.runCore
 	if runCore == nil {
@@ -396,9 +401,14 @@ func (a *API) finishWorkflowTurn(ctx context.Context, o workflowTurnOptions, st 
 	}
 	value := extractFence(text, valueFence, valueEstimateShape, false)
 	text = value.Text
+	st.mu.Lock()
+	stepErr := st.stepError
+	st.mu.Unlock()
 	var runErr *string
 	if res.Error != "" {
 		runErr = &res.Error
+	} else if stepErr != "" {
+		runErr = &stepErr
 	}
 	if err := a.finishWorkRun(ctx, o.RunID, res.Status, runErr); err != nil {
 		return workflowTurnResult{}, err
@@ -429,10 +439,15 @@ func (a *API) finishWorkflowTurn(ctx context.Context, o workflowTurnOptions, st 
 	if minutes == nil {
 		minutes = 0.0
 	}
-	if err := st.wrapped(ctx, jsObjOf("type", "done", "result", jsObjOf("status", res.Status, "minutesSaved", minutes))); err != nil {
+	result := jsObjOf("status", res.Status, "minutesSaved", minutes)
+	if stepErr != "" {
+		result.set("stepError", stepErr)
+	}
+	if err := st.wrapped(ctx, jsObjOf("type", "done", "result", result)); err != nil {
 		return workflowTurnResult{}, err
 	}
-	return workflowTurnResult{Status: res.Status, FinalText: text, Error: res.Error, ErrorCode: res.ErrorCode, Degraded: res.Degraded}, nil
+	return workflowTurnResult{Status: res.Status, FinalText: text, Error: res.Error, ErrorCode: res.ErrorCode, StepError: stepErr,
+		Degraded: res.Degraded}, nil
 }
 
 // failWorkflowTurn is the catch block of runWorkflowTurn(): a question asked
@@ -579,6 +594,9 @@ func (a *API) postRunToBotChat(ctx context.Context, workflowRunID, status, summa
 			parts = []string{heading(orDefault(deref(title), routine)), jsTrim(deref(body))}
 		case jsTrim(summary) != "":
 			parts = []string{heading(routine), jsTrim(summary)}
+		}
+		if len(parts) > 0 {
+			parts = append(parts, jsTrim(runErr))
 		}
 	case "needs_input":
 		parts = []string{heading(routine + " is waiting for input."), jsTrim(summary)}

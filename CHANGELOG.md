@@ -97,6 +97,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 * A web search through the Parallel pack asks for approval, unless an admin chose auto.
 * In a Slack channel or a Telegram group, an answer can come as a private message, with a note in the thread.
 * Each agent run gets a read-only copy of the library uploads of its person, at `library/uploads/<user>/<hash>/<name>` under the org folder, as in 4.9.1. A workflow run gets its owner's uploads. A run gets at most 100 MB, and 25 MB for one file; web logs each file that it leaves out. No run gets another member's uploads.
+* When a workflow script step fails, the run still ends, but its error names the step and the reason. The run page, the bot chat and the done event show it, and an API run reports the error code `script_step_failed`. The agent says in its reply that the step failed, and it does not reuse an output from before the failure.
 * On a Linux host with no Landlock, and on a Windows older than 10 1809 or Server 2019, agent questions are refused. Data reads and the rest of the app work.
 
 ### What to do when you upgrade

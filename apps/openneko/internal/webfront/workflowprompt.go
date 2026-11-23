@@ -66,6 +66,7 @@ func buildWorkflowPrompt(in workflowPromptInput) string {
 		"steps", steps,
 		"data_access", dataAccessSection(in.Knowledge, true, in.ScriptData),
 		"date_rule", section("date_rule"),
+		"step_failure_rule", section("step_failure_rule"),
 		"outputs", section("workflow_outputs"),
 		"actions", section("workflow_actions"),
 		"delegation", pick(in.Backend == "ax", section("ax_delegation"), ""),

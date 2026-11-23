@@ -286,6 +286,22 @@ func formatStepResults(results []scriptStepResult) string {
 	return section("workflow_step_results", "body", strings.Join(blocks, "\n"))
 }
 
+// stepFailure names the first script step that did not succeed, for the
+// run's error.
+func stepFailure(results []scriptStepResult) string {
+	for _, r := range results {
+		if r.Status == "ok" || r.Status == "skipped" {
+			continue
+		}
+		why := r.Error
+		if why == "" && r.ExitCode != nil {
+			why = "exit code " + strconv.Itoa(*r.ExitCode)
+		}
+		return "Script step " + r.ID + " " + r.Status + ": " + why
+	}
+	return ""
+}
+
 // safeStepName replaces each UTF-16 unit, as the JavaScript regular
 // expression does.
 func safeStepName(id string) string {

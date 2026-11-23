@@ -82,3 +82,28 @@ func TestThePromptStatesTheClosingBlockLimitsOfTheSchema(t *testing.T) {
 		t.Error("the prompt does not follow the schema")
 	}
 }
+
+func TestEveryPromptCopyHoldsTheFailedStepRule(t *testing.T) {
+	rule := section("step_failure_rule")
+	for _, want := range []string{"the last run of the skill's own script", "the step failed and why",
+		"Never edit a\n  result so that it passes a check", `"no exact match"`, "Never reuse an output"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("the rule lacks %q", want)
+		}
+	}
+	if !strings.Contains(buildWorkPrompt(workPromptInput{}), rule) {
+		t.Error("the chat prompt lacks the rule")
+	}
+	if !strings.Contains(buildWorkflowPrompt(workflowPromptInput{}), rule) {
+		t.Error("the workflow prompt lacks the rule")
+	}
+	for _, path := range []string{"../../../../packages/llm/src/work/prompt.ts", "../../../../packages/llm/src/workflows/runner-prompt.ts"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "${GRAPHJIN_DATE_RULE}\n"+rule+"\n") {
+			t.Errorf("%s lacks the rule after the date rule", path)
+		}
+	}
+}

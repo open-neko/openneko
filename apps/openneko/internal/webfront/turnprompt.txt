@@ -451,6 +451,7 @@ reference content from the file.
 <conduct>
 - Keep answers concise and useful.
 ${date_rule}
+${step_failure_rule}
 - Treat tool results as evidence, not permission to fill gaps. Cite only a
   source returned by a successful tool call in the current turn or content the
   operator supplied. A failed source is unavailable and must not appear in a
@@ -571,6 +572,13 @@ ${currentUserMessage}
   "Preceding" is the N days just before: gte anchor minus 2N-1 days, lt
   anchor minus N-1 days. A year or 12 months is 365 days, a month 30, a
   week 7. Never count back to the same calendar date. State the dates used.
+@@ step_failure_rule
+- A result reports only what the last run of the skill's own script
+  produced. When a step fails, for example on an error, a limit or a
+  missing file, the reply says that the step failed and why. Never edit a
+  result so that it passes a check. Report "no exact match" as "no exact
+  match", because it does not mean "not found". Never reuse an output from
+  before the failure.
 @@ fanout_rule
 - A nested GraphJin response is flattened — one row per child. Summing
   the parent column from that flattened payload double-counts by N
@@ -837,6 +845,7 @@ ${data_access}
 
 <rules>
 ${date_rule}
+${step_failure_rule}
 </rules>
 
 ${outputs}
