@@ -96,6 +96,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 * Team memory, team skill and rule changes from a chat wait for an admin. Skill learning no longer changes team skills by itself: each lesson waits for an admin too.
 * A web search through the Parallel pack asks for approval, unless an admin chose auto.
 * In a Slack channel or a Telegram group, an answer can come as a private message, with a note in the thread.
+* Each agent run gets a read-only copy of the library uploads of its person, at `library/uploads/<user>/<hash>/<name>` under the org folder, as in 4.9.1. A workflow run gets its owner's uploads. A run gets at most 100 MB, and 25 MB for one file; web logs each file that it leaves out. No run gets another member's uploads.
 * On a Linux host with no Landlock, and on a Windows older than 10 1809 or Server 2019, agent questions are refused. Data reads and the rest of the app work.
 
 ### What to do when you upgrade

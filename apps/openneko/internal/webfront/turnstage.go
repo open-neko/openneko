@@ -138,8 +138,8 @@ func (g *runnerGuard) settled() bool {
 }
 
 // turnStage is the least the run needs, copied under the shared runs
-// folder: the knowledge pack, the thread's uploads, the run folder and the
-// run's skills. Memory, other threads and other runs stay out.
+// folder: the knowledge pack, the thread's uploads, the run folder, the
+// run's skills and the person's library uploads. Memory, other threads and other runs stay out.
 type turnStage struct {
 	Dir       string
 	Workspace agentWorkspace
@@ -156,6 +156,7 @@ type stageOptions struct {
 	Own      []string
 	Terminal bool
 	Actor    runActorRow
+	Library  func(stageOrg string) error
 }
 
 func stagePath(host agentWorkspace, stageOrg, p string) (string, error) {
@@ -250,7 +251,15 @@ func stageTurn(host agentWorkspace, o stageOptions) (st *turnStage, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if o.Library != nil {
+		if err := o.Library(stageOrg); err != nil {
+			return nil, err
+		}
+	}
 	if err := shareStageWithGroup(dir); err != nil {
+		return nil, err
+	}
+	if err := lockRunLibrary(stageOrg); err != nil {
 		return nil, err
 	}
 	return &turnStage{Dir: dir, Workspace: ws, host: host, baseline: baseline, actor: o.Actor, own: own}, nil

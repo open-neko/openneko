@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -127,6 +128,7 @@ func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /v1/files", s.authed(s.list))
+	mux.HandleFunc("GET /v1/files/content", s.content)
 	mux.HandleFunc("PUT /v1/files/content", s.authed(s.put))
 	mux.HandleFunc("DELETE /v1/files/content", s.authed(s.delete))
 	mux.HandleFunc("POST /v1/files/search", s.authed(s.search))
@@ -251,6 +253,32 @@ func (s *Service) list(ctx context.Context, c caller, r *http.Request) (any, err
 		after = next
 	}
 	return map[string]any{"files": out}, nil
+}
+
+func (s *Service) content(w http.ResponseWriter, r *http.Request) {
+	c, err := s.authenticate(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		return
+	}
+	key, err := cleanPath(c, r.URL.Query().Get("path"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	body, e, err := s.store.Get(r.Context(), key)
+	if errors.Is(err, fstable.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": errNotFound.msg})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer body.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", strconv.FormatInt(e.Size, 10))
+	_, _ = io.Copy(w, body)
 }
 
 func (s *Service) put(ctx context.Context, c caller, r *http.Request) (any, error) {

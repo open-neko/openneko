@@ -206,7 +206,8 @@ func (a *API) workflowTurnBody(ctx context.Context, o workflowTurnOptions, st *w
 		if err := st.wrapped(ctx, statusEvent("Preparing secure agent workspace…")); err != nil {
 			return axRunResult{}, err
 		}
-		stage, err := stageTurn(ws, stageOptions{Allowed: allowed, Own: own, Terminal: terminal, Actor: act})
+		stage, err := stageTurn(ws, stageOptions{Allowed: allowed, Own: own, Terminal: terminal, Actor: act,
+			Library: func(stageOrg string) error { return a.stageRunLibrary(ctx, wf.OrgID, o.RunID, act.UserID, stageOrg) }})
 		if err != nil {
 			return axRunResult{}, err
 		}
