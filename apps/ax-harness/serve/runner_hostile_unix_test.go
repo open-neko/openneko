@@ -136,6 +136,14 @@ func TestServeKillsARunnerThatOutlivesItsDeadline(t *testing.T) {
 		t.Fatalf("exit = %+v", exit)
 	}
 	requireDead(t, "after the deadline", runner, child)
+	freed := time.Now().Add(10 * time.Second)
+	for !server.acquire() {
+		if time.Now().After(freed) {
+			t.Fatal("the turn slot stayed taken")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	server.release()
 	next := dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(spec)})
 	if _, child := hostilePids(t, next); child == 0 {
 		t.Fatal("the turn slot stayed taken")
