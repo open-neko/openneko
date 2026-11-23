@@ -22,7 +22,7 @@ type Management struct {
 }
 
 type Compatibility struct {
-	OpenNeko string `json:"openneko"`
+	OpenNeko string `json:"openneko,omitempty"`
 	GraphJin *struct {
 		Analytics string `json:"analytics"`
 		Operator  string `json:"operator"`
@@ -174,7 +174,7 @@ var (
 			return nil
 		}))),
 		req("compatibility", strictObj(
-			req("openneko", str(1)),
+			opt("openneko", str(1)),
 			opt("graphjin", strictObj(req("analytics", str(1)), req("operator", str(1)))),
 			req("applications", array(strictObj(req("id", slug), req("editions", array(slug, 1)), req("versions", str(1))), 0)),
 			req("databases", array(strictObj(req("engine", enum("mariadb", "mysql", "postgres")), req("versions", str(1))), 0)),

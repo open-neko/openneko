@@ -403,3 +403,27 @@ func TestPermissions(t *testing.T) {
 		t.Fatalf("slack permissions: %v", got)
 	}
 }
+
+func TestManifestOpenNekoRangeIsOptional(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "service-health", "pack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	with, err := ParseYAML(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseManifest(with); err != nil {
+		t.Fatalf("manifest with compatibility.openneko: %v", err)
+	}
+	without, _ := ParseYAML(raw)
+	compat := without.(map[string]any)["compatibility"].(map[string]any)
+	delete(compat, "openneko")
+	m, err := ParseManifest(without)
+	if err != nil {
+		t.Fatalf("manifest without compatibility.openneko: %v", err)
+	}
+	if _, has := m.Normalized()["compatibility"].(map[string]any)["openneko"]; has {
+		t.Fatal("normalized manifest gained compatibility.openneko")
+	}
+}
