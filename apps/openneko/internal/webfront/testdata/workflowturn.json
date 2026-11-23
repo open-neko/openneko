@@ -57,8 +57,8 @@
         "filesEnabled": false,
         "scriptData": true
       },
-      "bytes": 13498,
-      "sha256": "50136578c71d327cc0f9b1284019ec9d8674c76bbf424f03b52dcce0248baceb"
+      "bytes": 13785,
+      "sha256": "77061ff918c476a2ce91ee54fbcbecdb0bbadf24c6ea123ee32a22d522ea6ef9"
     },
     {
       "name": "live with goal, overlay, memory and files",
@@ -117,8 +117,8 @@
         "filesEnabled": true,
         "scriptData": true
       },
-      "bytes": 14065,
-      "sha256": "bf7380ca118cdd7b1a769412e0f2ede63902abb3c9af32e8e3e5de59fe82bfa5"
+      "bytes": 14352,
+      "sha256": "b243d39562e73940bd7514e0380905b0713c4257878cbb73e6e912f4678d6b4e"
     },
     {
       "name": "eval without value block",
@@ -154,8 +154,8 @@
         "filesEnabled": false,
         "scriptData": true
       },
-      "bytes": 11872,
-      "sha256": "54b84194517e707dce1f0a2e24bae1c9d8fe74e3eec4fec17107ca160a1cac54"
+      "bytes": 12159,
+      "sha256": "088d99e23450cecdde948507785af26fb1eb98827cb117a0911cf8407485accb"
     },
     {
       "name": "other backend",
@@ -214,8 +214,8 @@
         "filesEnabled": false,
         "scriptData": true
       },
-      "bytes": 12921,
-      "sha256": "d5b602eac4edd8f8f6309aff522dbdd2d116ac856d2b15f0311ab5ac396c67a0"
+      "bytes": 13208,
+      "sha256": "936f626f1452b58413681f4cbdc7ac5d7fa997589c8c465f5b0a97cb8816c1a3"
     },
     {
       "name": "no sandbox, so no script data",
@@ -274,8 +274,8 @@
         "filesEnabled": false,
         "scriptData": false
       },
-      "bytes": 12448,
-      "sha256": "f52b88312a09856eb1cf0e7e262f70858c83afa45b568c058f9fb3628d58cdff"
+      "bytes": 12735,
+      "sha256": "c0cf90e1dcb9d97a9613cfd69f6ec823285afb7d9a6cef9b9013da548269c509"
     },
     {
       "name": "step names a skill folder",
@@ -324,8 +324,8 @@
         "filesEnabled": false,
         "scriptData": true
       },
-      "bytes": 13608,
-      "sha256": "9c2c01765e6b1d23cd2898071c9431e72ec160cb903d1a7119c4399020f3a4ee"
+      "bytes": 13895,
+      "sha256": "0ccaeb122f65130f3ee76c046bd81b24e2a240c372343b511bbaf2c9ed21dcf0"
     }
   ],
   "seeds": [

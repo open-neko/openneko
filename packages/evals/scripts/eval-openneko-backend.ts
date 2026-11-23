@@ -2920,7 +2920,6 @@ export function createOpenNekoBackendDriver(
                 orgId: fixture.orgId,
                 ownerUserId: actorUserId,
                 name: String(input.workflow_name ?? slot.caseId),
-                ownerUserId: fixture.userId,
                 description: "A scheduled workflow of the demo server, run again in one install.",
                 goal: question,
                 steps: [],
