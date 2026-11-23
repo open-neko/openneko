@@ -1,11 +1,12 @@
 "use client";
 
-import { acknowledgeWorkStartup, markWorkStartup } from "@/lib/work-startup-timing";
+import { acknowledgeWorkStartup } from "@/lib/work-startup-timing";
 
 import "@/a2ui/components";
 import {
   ChevronsDownUp,
   ChevronsUpDown,
+  Clock,
   History,
   Plus,
   Printer,
@@ -35,16 +36,48 @@ import {
 } from "@/lib/workflow-mention";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { printThread } from "@/lib/print-thread";
+import { confirmSessionUser, useSession } from "@/lib/session-client";
 import { Button } from "@/components/ui/button";
 import { LocalDateTime } from "@/components/ui/local-date-time";
 import { parseClarificationReply } from "@/a2ui/action";
+import {
+  isBrowserOnline,
+  reportNetworkOffline,
+  reportNetworkOnline,
+  useOnlineStatus,
+} from "@/spa/pwa";
 import { useWorkShell } from "../work-shell-context";
 import { joinMessageWithAttachments, uploadFiles } from "./work-attachments";
 import { WorkComposer, useWorkMentions } from "./work-composer";
 import { EmptyAsk, MessageBubble, PendingMemoryPanel } from "./work-messages";
-import { WorkFailureNotice } from "./work-notices";
+import { OfflineFailedElsewhere, OfflineLossNotice, WorkFailureNotice } from "./work-notices";
+import {
+  cancelOfflineQuestion,
+  claimNextOfflineQuestion,
+  completeOfflineQuestion,
+  deferAfterNetworkFailure,
+  dismissOfflineQueueLosses,
+  enqueueOfflineQuestion,
+  hasSendableOfflineQuestion,
+  moveNewChatQuestions,
+  offlineQueueUser,
+  offlineSendOutcome,
+  newClientRequestId,
+  OFFLINE_SEND_TIMEOUT_MS,
+  requeueOfflineQuestion,
+  retryOfflineQuestion,
+  settleOfflineRefusal,
+  setOfflineQueueUser,
+  useOfflineQueue,
+  useOfflineQueueLosses,
+  useOfflineStorageBroken,
+  withOfflineQueueLock,
+  type QueuedQuestion,
+} from "./work-offline-queue";
+import { followRunEvents } from "./work-run-events";
 import { RunTimeline } from "./work-run-timeline";
 import {
+  applyStreamEventToBundle,
   isRunInFlight,
   latestInFlightRun,
   prependOlder,
@@ -56,14 +89,38 @@ import type {
   MessageRecord,
   PendingMemory,
   RunRecord,
-  StreamResult,
   ThreadBundle,
   UploadedWorkFile,
   WorkEvent,
 } from "./work-types";
 import { copyText } from "@/lib/copy-text";
+import { withRunEventFormat } from "@/lib/run-event-format";
 
 const REASONING_STORAGE_KEY = "openneko.work.reasoning";
+
+const RUN_IN_FLIGHT_RETRIES = 5;
+
+class ThreadCreateRefused extends Error {
+  constructor(
+    readonly res: { status: number; headers: Headers; code?: string },
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const ONLINE_RETRY_MAX_MS = 30_000;
+const VERSION_POLL_MAX_MS = 30_000;
+
+function sendTimeout(): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+    ? AbortSignal.timeout(OFFLINE_SEND_TIMEOUT_MS)
+    : undefined;
+}
+
+async function refusalBody(res: Response): Promise<{ error?: string; code?: string }> {
+  return (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+}
 
 export default function WorkScreen() {
   const router = useRouter();
@@ -128,6 +185,69 @@ export default function WorkScreen() {
   const activeRunStreamRef = useRef<ActiveRunStream | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const flushingOfflineRef = useRef(false);
+  const sendingClaimedRef = useRef(false);
+  const isOnline = useOnlineStatus();
+  const offlineQueue = useOfflineQueue();
+  const storageBroken = useOfflineStorageBroken();
+  const offlineLosses = useOfflineQueueLosses();
+  const session = useSession();
+  const sessionKnown = session !== undefined;
+  const sessionUserId = session?.user?.id ?? null;
+  useEffect(() => {
+    if (sessionKnown) setOfflineQueueUser(sessionUserId);
+  }, [sessionKnown, sessionUserId]);
+  const sendingRef = useRef(false);
+  sendingRef.current = sending;
+  const currentThreadKey = activeThreadId ?? routeThreadId ?? null;
+  const queuedQuestions = useMemo(
+    () =>
+      offlineQueue.filter(
+        (item) =>
+          item.status !== "sending" &&
+          item.threadBase === threadBase &&
+          item.threadId === currentThreadKey,
+      ),
+    [offlineQueue, threadBase, currentThreadKey],
+  );
+  const failedElsewhere = useMemo(
+    () =>
+      offlineQueue.filter(
+        (item) =>
+          item.status === "failed" &&
+          !(item.threadBase === threadBase && item.threadId === currentThreadKey),
+      ),
+    [offlineQueue, threadBase, currentThreadKey],
+  );
+  const waitingQuestions = useMemo(
+    () => queuedQuestions.filter((item) => item.status === "waiting"),
+    [queuedQuestions],
+  );
+  const allWaiting = useMemo(
+    () => offlineQueue.filter((item) => item.status === "waiting"),
+    [offlineQueue],
+  );
+  const [retryTick, setRetryTick] = useState(0);
+  useEffect(() => {
+    const now = Date.now();
+    const next = Math.min(
+      ...allWaiting.map((item) => item.retryAt ?? 0).filter((at) => at > now),
+    );
+    if (!Number.isFinite(next)) return;
+    const timer = window.setTimeout(() => setRetryTick((n) => n + 1), next - now + 50);
+    return () => window.clearTimeout(timer);
+  }, [allWaiting]);
+
+  const endOfflineFlush = () => {
+    flushingOfflineRef.current = false;
+    if (!mountedRef.current) return;
+    const openThread = activeThreadIdRef.current ?? routeThreadIdRef.current;
+    const sendable = hasSendableOfflineQuestion(
+      (item) =>
+        !(item.threadBase === threadBase && item.threadId === openThread) || !sendingRef.current,
+    );
+    if (sendable) setRetryTick((n) => n + 1);
+  };
 
   const updateActiveRunId = (next: string | null) => {
     setActiveRunIdState(next);
@@ -154,9 +274,10 @@ export default function WorkScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/onboarding/status");
+        const res = await fetch("/api/v1/onboarding/status", { cache: "no-store" });
         const status = await res.json().catch(() => ({ state: "db_error", message: "Could not reach server" }));
         if (cancelled) return;
+        reportNetworkOnline();
         if (status.state === "db_error") {
           setGateError(status.message ?? "Database unavailable");
           setGateChecked(true);
@@ -178,9 +299,9 @@ export default function WorkScreen() {
           return;
         }
         setGateChecked(true);
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        setGateError(err instanceof Error ? err.message : "Could not reach server");
+        reportNetworkOffline();
         setGateChecked(true);
       }
     })();
@@ -412,20 +533,29 @@ export default function WorkScreen() {
   async function loadThread(threadId: string) {
     // A bot chat opened before shows at once and refreshes in the background.
     const cached = inBotChat ? cachedThread<ThreadBundle>(threadId) : null;
-    if (cached) {
+    const alreadyShowingThread =
+      activeThreadIdRef.current === threadId && bundle !== null;
+    if (cached && !alreadyShowingThread) {
       setBundle(withAssistantTimelinePlaceholders(cached));
       activeThreadIdRef.current = threadId;
       setActiveThreadId(threadId);
-    } else {
+    } else if (!alreadyShowingThread) {
       setLoadingThread(true);
     }
     try {
       const data = inBotChat
         ? await fetchThreadPage<ThreadBundle>(threadId)
-        : await fetch(`/api/work/threads/${threadId}`).then((res) => (res.ok ? (res.json() as Promise<ThreadBundle>) : null));
-      if (routeThreadIdRef.current !== threadId) return;
+        : await fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}`), {
+            cache: "no-store",
+          })
+            .then((res) => (res.ok ? (res.json() as Promise<ThreadBundle>) : null))
+            .catch(() => null);
+      if (routeThreadIdRef.current && routeThreadIdRef.current !== threadId) return;
       if (!data) {
-        if (cached) return;
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+          reportNetworkOffline();
+        }
+        if (cached || alreadyShowingThread) return;
         activeRunStreamRef.current?.close();
         activeRunStreamRef.current = null;
         setSending(false);
@@ -433,6 +563,7 @@ export default function WorkScreen() {
         setBundle(null);
         return;
       }
+      reportNetworkOnline();
       const nextBundle = withAssistantTimelinePlaceholders(data);
       setBundle(nextBundle);
       activeThreadIdRef.current = threadId;
@@ -451,7 +582,8 @@ export default function WorkScreen() {
     setLoadingOlder(true);
     try {
       const res = await fetch(
-        `/api/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}&before=${encodeURIComponent(before)}`,
+        withRunEventFormat(`/api/v1/work/threads/${threadId}?limit=${CHAT_PAGE_RUNS}&before=${encodeURIComponent(before)}`),
+        { cache: "no-store" },
       );
       if (!res.ok || activeThreadIdRef.current !== threadId) return false;
       const older = withAssistantTimelinePlaceholders((await res.json()) as ThreadBundle);
@@ -466,7 +598,9 @@ export default function WorkScreen() {
   async function loadAllOlder() {
     const threadId = activeThreadIdRef.current;
     if (!threadId || !bundle?.hasOlder) return;
-    const res = await fetch(`/api/work/threads/${threadId}`);
+    const res = await fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}`), {
+      cache: "no-store",
+    });
     if (!res.ok || activeThreadIdRef.current !== threadId) return;
     const full = withAssistantTimelinePlaceholders((await res.json()) as ThreadBundle);
     setBundle((prev) => (prev ? prependOlder(prev, { ...full, hasOlder: false }) : prev));
@@ -474,18 +608,40 @@ export default function WorkScreen() {
   }
 
   async function loadPendingMemories(threadId: string) {
-    const res = await fetch(`/api/work/memories/pending?threadId=${encodeURIComponent(threadId)}`);
-    if (!res.ok) return;
-    const data = (await res.json()) as { pending: PendingMemory[] };
-    setPendingMemories(data.pending ?? []);
+    try {
+      const res = await fetch(
+        `/api/v1/work/memories/pending?threadId=${encodeURIComponent(threadId)}`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { pending: PendingMemory[] };
+      setPendingMemories(data.pending ?? []);
+    } catch {
+      // Ignore pending memory load failures while offline.
+    }
   }
 
-  async function createThread(): Promise<string> {
-    const res = await fetch("/api/work/threads", {
+  async function createThread(
+    clientRequestId?: string,
+    expectedUserId: string | null = sessionUserId,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const res = await fetch("/api/v1/work/threads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      ...(signal ? { signal } : {}),
+      body: JSON.stringify({
+        ...(clientRequestId ? { clientRequestId } : {}),
+        ...(expectedUserId ? { expectedUserId } : {}),
+      }),
     });
+    if (!res.ok) {
+      const errBody = await refusalBody(res);
+      throw new ThreadCreateRefused(
+        { status: res.status, headers: res.headers, code: errBody.code },
+        errBody.error ?? `HTTP ${res.status}`,
+      );
+    }
     const data = (await res.json()) as {
       thread: {
         id: string;
@@ -509,18 +665,63 @@ export default function WorkScreen() {
     return nextId;
   }
 
+  function queueQuestionOffline(
+    content: string,
+    targetThreadId: string | null,
+    clientRequestId?: string,
+  ) {
+    reportNetworkOffline();
+    enqueueOfflineQuestion({
+      id: clientRequestId,
+      threadId: targetThreadId,
+      threadBase,
+      content,
+    });
+    setDraft("");
+    setFiles([]);
+    setDraftMentions([]);
+    setMention(null);
+    followRef.current = true;
+    ignoreScrollUntilRef.current = Date.now() + 800;
+    requestAnimationFrame(() => {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  }
 
   async function sendMessage() {
     const submittedAt = performance.now();
     const trimmed = draft.trim();
     if (!trimmed && files.length === 0) return;
 
+    const selectedMentions = activeWorkMentions(draft, draftMentions);
+    const initialThreadId = activeThreadId ?? routeThreadId ?? null;
+    if (sending && (isBrowserOnline() || files.length > 0)) return;
+
+    if (!isBrowserOnline() && files.length === 0) {
+      const offlineMessage = appendWorkMentionBlock(trimmed, selectedMentions);
+      queueQuestionOffline(offlineMessage, initialThreadId);
+      return;
+    }
+
     setSending(true);
     setStreamError(null);
 
-    let threadId = activeThreadId ?? routeThreadId;
+    let threadId = initialThreadId;
     if (!threadId) {
-      threadId = await createThread();
+      try {
+        threadId = await createThread();
+      } catch {
+        setSending(false);
+        if (files.length === 0) {
+          queueQuestionOffline(
+            appendWorkMentionBlock(trimmed, selectedMentions),
+            null,
+          );
+        } else {
+          reportNetworkOffline();
+        }
+        return;
+      }
     }
 
     let uploads: UploadedWorkFile[] = [];
@@ -535,13 +736,13 @@ export default function WorkScreen() {
         return;
       }
     }
-    const selectedMentions = activeWorkMentions(draft, draftMentions);
     const message = appendWorkMentionBlock(
       joinMessageWithAttachments(trimmed, uploads),
       selectedMentions,
     );
+    const tempMessageId = `temp-${Date.now()}`;
     const tempMessage: MessageRecord = {
-      id: `temp-${Date.now()}`,
+      id: tempMessageId,
       runId: null,
       role: "user",
       content: message,
@@ -557,7 +758,17 @@ export default function WorkScreen() {
     setDraftMentions([]);
     setMention(null);
 
-    await postAndStreamRun(threadId, message, submittedAt);
+    const clientRequestId = newClientRequestId();
+    const dispatched = await postAndStreamRun(
+      threadId,
+      message,
+      submittedAt,
+      tempMessageId,
+      { clientRequestId },
+    );
+    if (!dispatched) {
+      queueQuestionOffline(message, threadId, clientRequestId);
+    }
   }
 
   // Submit a follow-up turn directly (no composer round-trip) — the landing
@@ -565,16 +776,30 @@ export default function WorkScreen() {
   async function sendText(text: string) {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    const initialThreadId = activeThreadId ?? routeThreadId ?? null;
+    if (!isBrowserOnline()) {
+      queueQuestionOffline(trimmed, initialThreadId);
+      return;
+    }
     setSending(true);
     setStreamError(null);
-    let threadId = activeThreadId ?? routeThreadId;
-    if (!threadId) threadId = await createThread();
+    let threadId = initialThreadId;
+    if (!threadId) {
+      try {
+        threadId = await createThread();
+      } catch {
+        setSending(false);
+        queueQuestionOffline(trimmed, null);
+        return;
+      }
+    }
     if (!threadId) {
       setSending(false);
       return;
     }
+    const tempMessageId = `temp-${Date.now()}`;
     const tempMessage: MessageRecord = {
-      id: `temp-${Date.now()}`,
+      id: tempMessageId,
       runId: null,
       role: "user",
       content: trimmed,
@@ -583,8 +808,270 @@ export default function WorkScreen() {
     setBundle((prev) =>
       prev ? { ...prev, messages: [...prev.messages, tempMessage] } : prev,
     );
-    await postAndStreamRun(threadId, trimmed);
+    const clientRequestId = newClientRequestId();
+    const dispatched = await postAndStreamRun(
+      threadId,
+      trimmed,
+      performance.now(),
+      tempMessageId,
+      { clientRequestId },
+    );
+    if (!dispatched) {
+      queueQuestionOffline(trimmed, threadId, clientRequestId);
+    }
   }
+
+  async function sendClaimedQuestion(
+    claimed: QueuedQuestion,
+    releaseLock: () => void,
+    queueUser: string,
+  ) {
+    sendingClaimedRef.current = true;
+    let threadId = claimed.threadId;
+    let tempMessageId: string | null = null;
+    try {
+      await Promise.resolve();
+      if (!mountedRef.current) {
+        requeueOfflineQuestion(claimed);
+        return;
+      }
+      setSending(true);
+      setStreamError(null);
+      threadId = threadId ?? activeThreadIdRef.current ?? routeThreadIdRef.current;
+      if (threadId && !bundle) {
+        await loadThread(threadId);
+      }
+      if (!threadId) {
+        try {
+          threadId = await createThread(claimed.id, queueUser, sendTimeout());
+          moveNewChatQuestions(claimed.threadBase, threadId);
+        } catch (err) {
+          if (!(err instanceof ThreadCreateRefused)) throw err;
+          reportNetworkOnline();
+          if (settleOfflineRefusal(claimed.id, err.res, err.message) === "signin") {
+            void confirmSessionUser();
+          }
+          setSending(false);
+          setStreamError(err.message);
+          return;
+        }
+      }
+      tempMessageId = `temp-${Date.now()}`;
+      const now = new Date().toISOString();
+      const tempMessage: MessageRecord = {
+        id: tempMessageId,
+        runId: null,
+        role: "user",
+        content: claimed.content,
+        createdAt: claimed.createdAt || now,
+      };
+      const bundleThreadId = threadId;
+      setBundle((prev) =>
+        prev
+          ? { ...prev, messages: [...prev.messages, tempMessage] }
+          : {
+              thread: {
+                id: bundleThreadId,
+                title: "",
+                createdAt: now,
+                updatedAt: now,
+                lastMessageAt: now,
+              },
+              runs: [],
+              messages: [tempMessage],
+              eventsByRun: {},
+            },
+      );
+      const dispatched = await postAndStreamRun(
+        threadId,
+        claimed.content,
+        performance.now(),
+        tempMessageId,
+        { clientRequestId: claimed.id, claimed: true, onPosted: releaseLock, expectedUserId: queueUser },
+      );
+      if (!dispatched) {
+        deferAfterNetworkFailure(claimed.id, threadId);
+      }
+    } catch {
+      if (tempMessageId) {
+        const removeId = tempMessageId;
+        setBundle((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.filter((m) => m.id !== removeId),
+              }
+            : prev,
+        );
+      }
+      setSending(false);
+      reportNetworkOffline();
+      deferAfterNetworkFailure(claimed.id, threadId);
+    } finally {
+      releaseLock();
+      sendingClaimedRef.current = false;
+      endOfflineFlush();
+    }
+  }
+
+  async function sendQueuedInBackground(claimed: QueuedQuestion, queueUser: string): Promise<boolean> {
+    let threadId = claimed.threadId;
+    try {
+      if (!threadId) {
+        const res = await fetch("/api/v1/work/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: sendTimeout(),
+          body: JSON.stringify({ clientRequestId: claimed.id, expectedUserId: queueUser }),
+        });
+        reportNetworkOnline();
+        if (!res.ok) {
+          const refusal = await refusalBody(res);
+          const outcome = settleOfflineRefusal(
+            claimed.id,
+            { status: res.status, headers: res.headers, code: refusal.code },
+            refusal.error ?? `HTTP ${res.status}`,
+          );
+          if (outcome === "signin") void confirmSessionUser();
+          return true;
+        }
+        const data = (await res.json()) as { thread: { id: string } };
+        threadId = data.thread.id;
+        moveNewChatQuestions(claimed.threadBase, threadId);
+      }
+      const res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: sendTimeout(),
+        body: JSON.stringify({
+          message: claimed.content,
+          clientRequestId: claimed.id,
+          expectedUserId: queueUser,
+        }),
+      });
+      reportNetworkOnline();
+      if (res.ok) {
+        completeOfflineQuestion(claimed.id);
+        return true;
+      }
+      const refusal = await refusalBody(res);
+      const outcome = settleOfflineRefusal(
+        claimed.id,
+        { status: res.status, headers: res.headers, code: refusal.code },
+        refusal.error ?? `HTTP ${res.status}`,
+        threadId,
+      );
+      if (outcome === "signin") void confirmSessionUser();
+      return true;
+    } catch {
+      deferAfterNetworkFailure(claimed.id, threadId);
+      reportNetworkOffline();
+      return false;
+    }
+  }
+
+  // While offline with questions waiting, ask the server with a growing delay
+  // whether the network is back.
+  useEffect(() => {
+    if (allWaiting.length === 0 || isOnline) return;
+    let stopped = false;
+    let delay = 1000;
+    let timer = 0;
+    const poll = () => {
+      timer = window.setTimeout(async () => {
+        if (typeof navigator === "undefined" || navigator.onLine !== false) {
+          try {
+            const res = await fetch("/api/v1/version", { cache: "no-store" });
+            if (res.ok) {
+              reportNetworkOnline();
+              return;
+            }
+          } catch {
+            // Still offline.
+          }
+        }
+        if (stopped) return;
+        delay = Math.min(delay * 2, VERSION_POLL_MAX_MS);
+        poll();
+      }, delay);
+    };
+    poll();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [allWaiting.length, isOnline]);
+
+  useEffect(() => {
+    if (!gateChecked || gateError || !isOnline) return;
+    if (routeThreadId && !bundle && !loadingThread && waitingQuestions.length === 0) {
+      void loadThread(routeThreadId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateChecked, gateError, isOnline, routeThreadId, bundle, loadingThread, waitingQuestions.length]);
+
+  // One loop sends the first question of each thread. A question of the open
+  // thread streams here and waits while a run of this view streams; a
+  // question of another thread posts in the background.
+  useEffect(() => {
+    if (
+      !gateChecked ||
+      gateError ||
+      !sessionUserId ||
+      !isOnline ||
+      flushingOfflineRef.current ||
+      allWaiting.length === 0
+    ) {
+      return;
+    }
+    flushingOfflineRef.current = true;
+    const here = (item: QueuedQuestion) =>
+      item.threadBase === threadBase && item.threadId === currentThreadKey;
+
+    void withOfflineQueueLock(async () => {
+      if (!mountedRef.current) return;
+      const queueUser = offlineQueueUser();
+      const confirmedUser = await confirmSessionUser(sendTimeout());
+      if (!mountedRef.current) return;
+      if (confirmedUser === undefined) {
+        reportNetworkOffline();
+        return;
+      }
+      if (!queueUser || confirmedUser !== queueUser) {
+        setOfflineQueueUser(confirmedUser);
+        return;
+      }
+      while (mountedRef.current) {
+        const claimed = claimNextOfflineQuestion(
+          (item) => !here(item) || !sendingRef.current,
+        );
+        if (!claimed) return;
+        if (here(claimed)) {
+          let releaseLock = () => {};
+          const posted = new Promise<void>((resolve) => {
+            releaseLock = resolve;
+          });
+          void sendClaimedQuestion(claimed, releaseLock, queueUser);
+          await posted;
+          return;
+        }
+        if (!(await sendQueuedInBackground(claimed, queueUser))) return;
+      }
+    }).finally(() => {
+      if (!sendingClaimedRef.current) endOfflineFlush();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    gateChecked,
+    gateError,
+    sessionUserId,
+    isOnline,
+    sending,
+    allWaiting.length,
+    retryTick,
+    currentThreadKey,
+    threadBase,
+  ]);
 
   async function copyUserMessage(text: string) {
     try {
@@ -604,11 +1091,11 @@ export default function WorkScreen() {
     setSending(true);
     setStreamError(null);
     if (activeRunId) {
-      await fetch(`/api/work/runs/${activeRunId}/cancel`, { method: "POST" }).catch(
+      await fetch(`/api/v1/work/runs/${activeRunId}/cancel`, { method: "POST" }).catch(
         () => {},
       );
     }
-    const res = await fetch(`/api/work/threads/${threadId}/truncate`, {
+    const res = await fetch(`/api/v1/work/threads/${threadId}/truncate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId }),
@@ -620,6 +1107,7 @@ export default function WorkScreen() {
       return;
     }
     await loadThread(threadId);
+    const tempMessageId = `temp-${Date.now()}`;
     setBundle((prev) =>
       prev
         ? {
@@ -627,7 +1115,7 @@ export default function WorkScreen() {
             messages: [
               ...prev.messages,
               {
-                id: `temp-${Date.now()}`,
+                id: tempMessageId,
                 runId: null,
                 role: "user",
                 content: text,
@@ -637,79 +1125,190 @@ export default function WorkScreen() {
           }
         : prev,
     );
-    await postAndStreamRun(threadId, text);
+    await postAndStreamRun(threadId, text, performance.now(), tempMessageId);
   }
 
-  async function postAndStreamRun(threadId: string, message: string, submittedAt = performance.now()) {
+  async function postAndStreamRun(
+    threadId: string,
+    message: string,
+    submittedAt = performance.now(),
+    tempMessageId?: string,
+    request?: {
+      clientRequestId: string;
+      claimed?: boolean;
+      onPosted?: () => void;
+      expectedUserId?: string;
+    },
+  ): Promise<boolean> {
     // Every entry point must expose the live-run controls. Retry/edit reloads
     // the truncated thread first, and that reload clears `sending` when no
     // earlier run remains in flight.
     setSending(true);
-    const body = JSON.stringify({ message });
-    const res = await fetch(`/api/work/threads/${threadId}/runs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      ...(body.length < 60_000 ? { keepalive: true } : {}),
-      body,
+    const expectedUserId = request?.expectedUserId ?? sessionUserId;
+    const body = JSON.stringify({
+      message,
+      ...(request ? { clientRequestId: request.clientRequestId } : {}),
+      ...(expectedUserId ? { expectedUserId } : {}),
     });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
+    let res: Response;
+    let refusal: { error?: string; code?: string } | null = null;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const signal = request?.claimed ? sendTimeout() : undefined;
+        res = await fetch(`/api/v1/work/threads/${threadId}/runs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          ...(body.length < 60_000 ? { keepalive: true } : {}),
+          ...(signal ? { signal } : {}),
+          body,
+        });
+        if (res.ok) break;
+        refusal = await refusalBody(res);
+        if (
+          request?.claimed ||
+          refusal.code !== "run_in_flight" ||
+          attempt >= RUN_IN_FLIGHT_RETRIES ||
+          !mountedRef.current
+        ) {
+          break;
+        }
+        const wait = Number(res.headers.get("Retry-After"));
+        const first = (Number.isFinite(wait) && wait > 0 ? wait : 2) * 1000;
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, Math.min(first * 2 ** attempt, ONLINE_RETRY_MAX_MS)),
+        );
+      }
+    } catch {
+      if (tempMessageId) {
+        setBundle((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.filter((m) => m.id !== tempMessageId),
+              }
+            : prev,
+        );
+      }
       setSending(false);
-      setStreamError(errBody.error ?? `HTTP ${res.status}`);
-      await loadThread(threadId);
-      return;
+      reportNetworkOffline();
+      return false;
     }
+    reportNetworkOnline();
+    if (!res.ok) {
+      const error = refusal?.error ?? `HTTP ${res.status}`;
+      const code = refusal?.code;
+      if (request && !request.claimed && offlineSendOutcome(res.status, code) === "retry") {
+        enqueueOfflineQuestion({
+          id: request.clientRequestId,
+          threadId,
+          threadBase,
+          content: message,
+        });
+        settleOfflineRefusal(
+          request.clientRequestId,
+          { status: res.status, headers: res.headers, code },
+          error,
+          threadId,
+        );
+        setSending(false);
+        await loadThread(threadId);
+        return true;
+      }
+      const outcome = request?.claimed
+        ? settleOfflineRefusal(
+            request.clientRequestId,
+            { status: res.status, headers: res.headers, code },
+            error,
+            threadId,
+          )
+        : null;
+      if (outcome ? outcome === "signin" : code === "user_mismatch") {
+        void confirmSessionUser();
+      }
+      request?.onPosted?.();
+      setSending(false);
+      if (outcome !== "retry") setStreamError(error);
+      await loadThread(threadId);
+      return true;
+    }
+    if (request?.claimed) {
+      completeOfflineQuestion(request.clientRequestId);
+    }
+    request?.onPosted?.();
     const { runId, actorRole } = (await res.json()) as {
       runId: string;
       actorRole?: RunRecord["actorRole"];
     };
     acknowledgeWorkStartup(threadId, runId, submittedAt);
-    if (!mountedRef.current) return;
+    if (!mountedRef.current) return true;
 
+    activeThreadIdRef.current = threadId;
+    setActiveThreadId(threadId);
     updateActiveRunId(runId);
-    setBundle((prev) =>
-      prev
-        ? {
-            ...prev,
-            messages: [
-              ...prev.messages.map((message, index) =>
-                index === prev.messages.length - 1 &&
-                message.role === "user" &&
-                message.runId === null
-                  ? { ...message, runId }
-                  : message,
-              ),
-              {
-                id: `assistant-${runId}`,
-                runId,
-                role: "assistant" as const,
-                content: "",
-                createdAt: new Date().toISOString(),
-              },
-            ],
-            runs: [
-              ...prev.runs,
-              {
-                id: runId,
-                backend: "ax",
-                status: "running",
-                error: null,
-                createdAt: new Date().toISOString(),
-                finishedAt: null,
-                analysisMinutesSaved: null,
-                analysisMinutesBasis: null,
-                actorRole: actorRole ?? null,
-              },
-            ],
-          }
-        : prev,
-    );
+    const now = new Date().toISOString();
+    setBundle((prev) => {
+      const base: ThreadBundle = prev ?? {
+        thread: {
+          id: threadId,
+          title: "",
+          createdAt: now,
+          updatedAt: now,
+          lastMessageAt: now,
+        },
+        runs: [],
+        messages: [
+          {
+            id: tempMessageId ?? `temp-${Date.now()}`,
+            runId: null,
+            role: "user",
+            content: message,
+            createdAt: now,
+          },
+        ],
+        eventsByRun: {},
+      };
+      return {
+        ...base,
+        messages: [
+          ...base.messages.map((item, index) =>
+            index === base.messages.length - 1 &&
+            item.role === "user" &&
+            item.runId === null
+              ? { ...item, runId }
+              : item,
+          ),
+          {
+            id: `assistant-${runId}`,
+            runId,
+            role: "assistant" as const,
+            content: "",
+            createdAt: now,
+          },
+        ],
+        runs: [
+          ...base.runs,
+          {
+            id: runId,
+            backend: "ax",
+            status: "running",
+            error: null,
+            createdAt: now,
+            finishedAt: null,
+            analysisMinutesSaved: null,
+            analysisMinutesBasis: null,
+            actorRole: actorRole ?? null,
+          },
+        ],
+      };
+    });
 
-    await streamAndRefreshRun(threadId, runId, 0);
+    await streamAndRefreshRun(threadId, runId, 0, 0);
+    return true;
   }
 
   function resumeLatestInFlightRun(threadId: string, nextBundle: ThreadBundle) {
     const run = latestInFlightRun(nextBundle.runs);
+    if (!run && sendingClaimedRef.current) return;
     const current = activeRunStreamRef.current;
     if (current && (!run || current.threadId !== threadId || current.runId !== run.id)) {
       current.close();
@@ -726,143 +1325,46 @@ export default function WorkScreen() {
     setStreamError(null);
     setSending(true);
     updateActiveRunId(run.id);
-    // The loaded bundle already holds this in-flight run's persisted events.
-    // Resuming replays them from the start (afterId 0), so drop the local copy
-    // first — otherwise replayed events append as duplicates (doubled tool rows
-    // and assistant text).
-    setBundle((prev) =>
-      prev
-        ? { ...prev, eventsByRun: { ...prev.eventsByRun, [run.id]: [] } }
-        : prev,
-    );
-    void streamAndRefreshRun(threadId, run.id, 0);
+    if (current?.threadId === threadId && current.runId === run.id) {
+      return;
+    }
+    // Keep the partial answer events already loaded from the server in bundle
+    // and skip that prefix when the event stream replays stored events.
+    const initialEvents = nextBundle.eventsByRun[run.id] ?? [];
+    void streamAndRefreshRun(threadId, run.id, 0, initialEvents.length);
   }
 
   async function streamAndRefreshRun(
     threadId: string,
     runId: string,
     afterId: number,
+    skipInitialCount = 0,
   ) {
-    const result = await followRunEvents(threadId, runId, afterId);
+    const result = await followRunEvents({
+      activeRunStreamRef,
+      threadId,
+      runId,
+      afterId,
+      skipInitialCount,
+      onEvent: applyIncomingEvent,
+    });
     if (result !== "done" || !mountedRef.current) return;
     if (activeThreadIdRef.current !== threadId) return;
 
-    setSending(false);
     setStreamError(null);
     updateActiveRunId(null);
     await loadThread(threadId);
+    setSending(false);
     window.setTimeout(() => {
       if (!mountedRef.current || activeThreadIdRef.current !== threadId) return;
       void loadPendingMemories(threadId);
     }, 1500);
   }
 
-  async function followRunEvents(
-    threadId: string,
-    runId: string,
-    afterId: number,
-  ): Promise<StreamResult> {
-    const current = activeRunStreamRef.current;
-    if (current?.runId === runId && current.threadId === threadId) {
-      return "closed";
-    }
-
-    current?.close();
-
-    const params = afterId > 0 ? `?afterId=${afterId}` : "";
-    return new Promise<StreamResult>((resolve) => {
-      let settled = false;
-      const es = new EventSource(
-        `/api/work/threads/${threadId}/runs/${runId}/events${params}`,
-      );
-      const settle = (result: StreamResult) => {
-        if (settled) return;
-        settled = true;
-        es.close();
-        const active = activeRunStreamRef.current;
-        if (active?.runId === runId && active.threadId === threadId) {
-          activeRunStreamRef.current = null;
-        }
-        resolve(result);
-      };
-
-      activeRunStreamRef.current = {
-        threadId,
-        runId,
-        close: () => settle("closed"),
-      };
-
-      es.onopen = () => markWorkStartup(runId, "streamOpenMs");
-      es.onmessage = (msgEvent) => {
-        let event: WorkEvent;
-        try {
-          event = JSON.parse(msgEvent.data) as WorkEvent;
-        } catch {
-          return;
-        }
-        if (event.type === "hello") return;
-        applyIncomingEvent(runId, event);
-        markWorkStartup(runId, "firstEventMs");
-        if ((event.type === "message" && event.role === "assistant" && event.content) || event.type === "surface") markWorkStartup(runId, "firstOutputMs");
-        if (event.type === "done") markWorkStartup(runId, "doneMs");
-        if (event.type === "done") settle("done");
-      };
-      es.onerror = () => {
-        // EventSource will reconnect automatically, carrying Last-Event-ID
-        // when the server closes a long poll before the worker is finished.
-      };
-    });
-  }
-
   function applyIncomingEvent(runId: string, event: WorkEvent) {
-    if (event.type === "message" && event.role === "assistant") {
-      // `content` is a delta — append to the assistant message's running text
-      // (the placeholder created in sendMessage already exists with content "").
-      setBundle((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          messages: prev.messages.map((message) =>
-            message.runId === runId && message.role === "assistant"
-              ? { ...message, content: message.content + event.content }
-              : message,
-          ),
-        };
-      });
-    }
-
-    setBundle((prev) => {
-      if (!prev) return prev;
-      const currentEvents = prev.eventsByRun[runId] ?? [];
-      const nextEvents =
-        event.type === "done"
-          ? [...currentEvents, event]
-          : [...currentEvents, event];
-      const nextRuns = prev.runs.map((run) =>
-        run.id === runId
-          ? {
-              ...run,
-              status:
-                event.type === "done"
-                  ? String((event.result as { status?: string } | undefined)?.status ?? run.status)
-                  : event.type === "error"
-                  ? "failed"
-                  : run.status,
-              error: event.type === "error"
-                ? event.message
-                : runWasCancelled(event) ? null : run.error,
-            }
-          : run,
-      );
-      return {
-        ...prev,
-        runs: nextRuns,
-        eventsByRun: {
-          ...prev.eventsByRun,
-          [runId]: nextEvents,
-        },
-      };
-    });
+    setBundle((prev) =>
+      prev ? applyStreamEventToBundle(prev, runId, event) : prev,
+    );
 
     if (event.type === "error") {
       setStreamError(event.message);
@@ -873,7 +1375,7 @@ export default function WorkScreen() {
 
   async function cancelRun() {
     if (!activeRunId) return;
-    await fetch(`/api/work/runs/${activeRunId}/cancel`, { method: "POST" });
+    await fetch(`/api/v1/work/runs/${activeRunId}/cancel`, { method: "POST" });
   }
 
   async function decidePendingMemory(
@@ -881,7 +1383,7 @@ export default function WorkScreen() {
     action: "accept" | "decline",
     overrides: { scope?: string; scopeId?: string | null } = {},
   ) {
-    const res = await fetch("/api/work/memories/decide", {
+    const res = await fetch("/api/v1/work/memories/decide", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, action, ...overrides }),
@@ -1052,7 +1554,9 @@ export default function WorkScreen() {
             <span />
             Loading the work trace
           </div>
-        ) : !bundle?.messages.length && threadBase !== "/work" ? (
+        ) : !bundle?.messages.length &&
+          waitingQuestions.length === 0 &&
+          threadBase !== "/work" ? (
           <BotGreeting
             threadId={routeThreadId}
             onPick={(text) => {
@@ -1060,7 +1564,7 @@ export default function WorkScreen() {
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
           />
-        ) : !bundle?.messages.length ? (
+        ) : !bundle?.messages.length && waitingQuestions.length === 0 ? (
           <EmptyAsk
             onPick={(text) => {
               setDraft(text);
@@ -1208,6 +1712,85 @@ export default function WorkScreen() {
           })
         ) : null}
 
+        {storageBroken && queuedQuestions.length > 0 ? (
+          <div
+            role="alert"
+            data-testid="offline-storage-broken"
+            className="ml-auto max-w-full rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink"
+          >
+            This browser cannot save questions that wait for the network. If you reload or close
+            this page, they are lost.
+          </div>
+        ) : null}
+        {offlineLosses.expired + offlineLosses.otherUser > 0 ? (
+          <OfflineLossNotice losses={offlineLosses} onDismiss={dismissOfflineQueueLosses} />
+        ) : null}
+        {failedElsewhere.length > 0 ? <OfflineFailedElsewhere items={failedElsewhere} /> : null}
+        {queuedQuestions.map((item) => (
+          <div
+            key={item.id}
+            data-testid="offline-queued-question"
+            className="flex flex-col gap-2"
+          >
+            <MessageBubble
+              message={{
+                id: item.id,
+                runId: null,
+                role: "user",
+                content: item.content,
+                createdAt: item.createdAt,
+              }}
+            />
+            {item.status === "failed" ? (
+              <div
+                role="alert"
+                data-testid="offline-failed-status"
+                className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink"
+              >
+                <span>{item.error ?? "The server refused this question."}</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => retryOfflineQuestion(item.id)}
+                  aria-label="Send refused question again"
+                >
+                  Retry
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void cancelOfflineQuestion(item.id)}
+                  aria-label="Remove refused question"
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="offline-waiting-status"
+                className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink"
+              >
+                <Clock className="size-3.5 shrink-0" aria-hidden="true" strokeWidth={2} />
+                <span>
+                  {item.retryAt
+                    ? "Server busy, will send again shortly"
+                    : "Waiting for network — will send once online"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void cancelOfflineQuestion(item.id)}
+                  aria-label="Cancel waiting question"
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+
         {streamError ? <WorkFailureNotice message={streamError} /> : null}
         <div ref={endRef} />
       </div>
@@ -1230,6 +1813,7 @@ export default function WorkScreen() {
           files={files}
           setFiles={setFiles}
           sending={sending}
+          offline={!isOnline}
           mentions={mentions}
           placeholder={
             sending

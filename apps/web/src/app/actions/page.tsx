@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
@@ -23,10 +24,6 @@ import {
 import { cn } from "@/lib/cn";
 import { formatSavedShort } from "@/lib/hours-saved";
 import { workflowDisplayName } from "@/lib/workflow-label";
-import {
-  parseRecordUpdatePayload,
-  RecordActionDiff,
-} from "@/components/records/RecordActionDiff";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/search-input";
@@ -46,6 +43,7 @@ type ActionRow = {
   payload: unknown;
   riskLevel: string | null;
   summary: string | null;
+  facts?: { headline: string; lines: string[]; flags: string[] } | null;
   scope: string;
   status: string;
   minutesSaved: number | null;
@@ -175,7 +173,7 @@ function ActionsPageInner() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/approvals?filter=${filter}`, {
+      const res = await fetch(`/api/v1/approvals?filter=${filter}`, {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -198,6 +196,7 @@ function ActionsPageInner() {
     rejectReason,
     setRejectReason,
     approve,
+    approveWithPasskey,
     beginReject,
     cancelReject,
     submitReject,
@@ -321,7 +320,7 @@ function ActionsPageInner() {
                 rows: group.rows.map<ActRowData>((r) => ({
                   id: r.id,
                   tone: rowToneFor(r),
-                  headline: r.summary || r.kind,
+                  headline: r.facts?.headline || r.kind,
                   detail: describeOutcome(outcomeOf(r), r.executionError ?? r.failureReason, systemForActionKind(r.kind)),
                   target: r.target,
                   kind: r.kind,
@@ -347,6 +346,7 @@ function ActionsPageInner() {
                   onSubmitReject={() => submitReject(rejectingId ? labelFor(rejectingId) : "")}
                   onFocusRow={setFocusedId}
                   onApproveRow={(id) => approve(id, labelFor(id))}
+                  onApproveWithPasskeyRow={(id) => void approveWithPasskey(id, labelFor(id))}
                   onBeginRejectRow={beginReject}
                   rowRef={(id, el) => {
                     rowRefs.current[id] = el;
@@ -363,6 +363,9 @@ function ActionsPageInner() {
                 busy={false}
                 onApprove={() => {
                   if (visibleFocusedId) approve(visibleFocusedId, labelFor(visibleFocusedId));
+                }}
+                onApproveWithPasskey={() => {
+                  if (visibleFocusedId) void approveWithPasskey(visibleFocusedId, labelFor(visibleFocusedId));
                 }}
                 onReject={() => {
                   if (visibleFocusedId) beginReject(visibleFocusedId);
@@ -391,11 +394,13 @@ function ActionReadingPane({
   action,
   busy,
   onApprove,
+  onApproveWithPasskey,
   onReject,
 }: {
   action: ActionRow | null;
   busy: boolean;
   onApprove: () => void;
+  onApproveWithPasskey?: () => void;
   onReject: () => void;
 }) {
   if (!action) {
@@ -407,7 +412,6 @@ function ActionReadingPane({
       </aside>
     );
   }
-  const recordUpdate = parseRecordUpdatePayload(action.kind, action.payload);
   const risk = action.riskLevel ?? "low";
   return (
     <aside className="triage-pane">
@@ -418,8 +422,16 @@ function ActionReadingPane({
           </span>
         </div>
         <h2 className="font-display text-ui-section font-extrabold tracking-[-0.02em] leading-[1.2] text-text">
-          {action.summary || action.kind}
+          {action.facts?.headline || action.kind}
         </h2>
+        {action.facts?.flags.length ? (
+          <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0" aria-label="What is unusual">
+            {action.facts.flags.map((flag) => <li key={flag}><Badge variant="watch">{flag}</Badge></li>)}
+          </ul>
+        ) : null}
+        {action.summary ? (
+          <p className="m-0 mt-2 text-ui-caption text-text3 break-words">The agent&apos;s description: {action.summary}</p>
+        ) : null}
         <div className="text-ui-body-sm text-text2 mt-2 leading-[1.5]">
           Proposed by <span className="text-text font-semibold">{workflowDisplayName(action.workflow)}</span>
           {action.triggeredByObservation ? <> · triggered by “{action.triggeredByObservation.title}”</> : null}
@@ -427,22 +439,12 @@ function ActionReadingPane({
 
         {action.target && (
           <div className="mt-4">
-            <div className="text-ui-caption font-semibold text-text3 mb-1.5">Target</div>
+            <div className="text-ui-caption font-semibold text-text3 mb-1.5">The agent&apos;s target</div>
             <code className="font-mono text-ui-caption text-text2 break-all">{action.target}</code>
           </div>
         )}
 
-        <RecordActionDiff
-          kind={action.kind}
-          payload={action.payload}
-          policyContext={
-            action.status === "pending_approval"
-              ? approverPhrase(action.approverKind, action.approverLabel)
-              : null
-          }
-        />
-
-        {recordUpdate ? null : <ActionChanges payload={action.payload} className="mt-4" />}
+        <ActionChanges payload={action.payload} className="mt-4" />
 
         <Disclosure title="Technical details" className="mt-4">
           <div className="grid gap-2 text-ui-caption text-text2">
@@ -461,7 +463,7 @@ function ActionReadingPane({
           </div>
         )}
 
-        <div className="flex items-center gap-2.5 mt-[18px] pt-4 border-t border-border">
+        <div className="flex flex-wrap items-center gap-2.5 mt-[18px] pt-4 border-t border-border">
           <Button
             variant="primary"
             disabled={busy}
@@ -469,6 +471,15 @@ function ActionReadingPane({
           >
             Approve
           </Button>
+          {onApproveWithPasskey ? (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={onApproveWithPasskey}
+            >
+              Approve with passkey
+            </Button>
+          ) : null}
           <Button
             variant="danger"
             disabled={busy}

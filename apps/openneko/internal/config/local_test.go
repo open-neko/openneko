@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
@@ -79,32 +80,46 @@ func TestWriteLocalPgPasswordPreservesFields(t *testing.T) {
 	}
 }
 
-func TestWriteLocalDatabasePasswordsRoundTrip(t *testing.T) {
+func TestWriteLocalPgPasswordKeepsOtherKeys(t *testing.T) {
 	dir := t.TempDir()
-	if err := WriteLocalDatabasePasswords(dir, "metadata-pass", "records-pass"); err != nil {
-		t.Fatalf("write both: %v", err)
+	seed := `{"database_url":"postgres://neko@db/neko","secrets":{"backend":"file"},"pg":{"sslmode":"verify-full"}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(seed), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
 	}
-
+	if err := WriteLocalPgPassword(dir, "rotated-pass"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
-		t.Fatalf("read file: %v", err)
+		t.Fatal(err)
 	}
-	var onDisk Local
-	if err := json.Unmarshal(raw, &onDisk); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
 	}
-	if onDisk.Pg == nil || !IsEncrypted(onDisk.Pg.Password) {
-		t.Fatal("metadata password is not encrypted")
+	if doc["secrets"] == nil || doc["database_url"] != "postgres://neko@db/neko" {
+		t.Fatalf("other keys were dropped: %s", raw)
 	}
-	if onDisk.RecordsPg == nil || !IsEncrypted(onDisk.RecordsPg.Password) {
-		t.Fatal("records password is not encrypted")
-	}
-
 	lc, _ := ReadLocal(dir)
-	if lc.Pg == nil || lc.Pg.Password != "metadata-pass" {
-		t.Fatalf("metadata round-trip mismatch: %+v", lc.Pg)
+	if lc.Pg == nil || lc.Pg.SSLMode != "verify-full" || lc.Pg.Password != "rotated-pass" {
+		t.Fatalf("pg block not merged: %+v", lc.Pg)
 	}
-	if lc.RecordsPg == nil || lc.RecordsPg.Password != "records-pass" {
-		t.Fatalf("records round-trip mismatch: %+v", lc.RecordsPg)
+}
+
+func TestSecretsBackendOtherThanFileStopsTheStart(t *testing.T) {
+	dir := t.TempDir()
+	seed := `{"secrets":{"backend":"infisical","infisical":{"siteUrl":"https://vault.test","projectId":"p"}}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lc, _ := ReadLocal(dir)
+	err := lc.SecretsBackendError()
+	if err == nil || !strings.Contains(err.Error(), `secrets.backend to "infisical"`) || !strings.Contains(err.Error(), "openneko secrets set") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, ok := range []Local{{}, {Secrets: &LocalSecrets{}}, {Secrets: &LocalSecrets{Backend: "file"}}} {
+		if err := ok.SecretsBackendError(); err != nil {
+			t.Fatalf("%+v: %v", ok.Secrets, err)
+		}
 	}
 }

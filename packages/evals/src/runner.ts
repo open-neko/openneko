@@ -14,6 +14,7 @@ import type { EvalPlan, EvalSlot } from "./plan";
 import { evaluateSuiteGates, promoteResult } from "./report";
 import { assertionsForPhase, summarizeEpisodes } from "./scoring";
 import {
+  EPISODE_SCHEMA_VERSION,
   EvalSemanticEvidenceSchema,
   type EvalSemanticEvidence,
   type EvalEpisode,
@@ -96,7 +97,7 @@ export class EvalTaskError extends Error {
   }
 }
 
-function durationMs(value: string): number {
+export function durationMs(value: string): number {
   const match = /^(\d+)(ms|s|m|h)$/u.exec(value);
   if (!match) throw new Error(`invalid duration ${value}`);
   const amount = Number(match[1]);
@@ -225,7 +226,6 @@ function measuredTotal(
 function semanticsForSlot(slot: EvalSlot): string[] {
   const dataPathSemantic: Partial<Record<EvalVariant["data_path"], string>> = {
     "graphjin-direct": "DATA-DIRECT",
-    "graphjin-agent": "DATA-DELEGATED",
     "planner-host-execute": "DATA-PLANNER-EXECUTE",
   };
   const semantic = dataPathSemantic[slot.variant.data_path];
@@ -573,7 +573,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
               status: "completed",
             });
             terminal = await store.writeEpisode({
-              schemaVersion: "openneko.eval.episode/v1",
+              schemaVersion: EPISODE_SCHEMA_VERSION,
               runId: manifest.runId,
               slotKey: slot.key,
               pairKey: slot.pairKey,
@@ -638,7 +638,7 @@ export async function runEvaluation(options: RunEvaluationOptions): Promise<{
             }
             if (!info.environment) {
               terminal = await store.writeEpisode({
-                schemaVersion: "openneko.eval.episode/v1",
+                schemaVersion: EPISODE_SCHEMA_VERSION,
                 runId: manifest.runId,
                 slotKey: slot.key,
                 pairKey: slot.pairKey,

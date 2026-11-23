@@ -1,4 +1,4 @@
-import { enqueue, QUEUE } from "@neko/db/jobs";
+import { enqueueActionExecute } from "@neko/db/jobs";
 import { holds } from "@neko/db";
 import { actionKindIsGranted, entitlementActorForRun, runWorkflowFilter } from "./entitlement-scope";
 import {
@@ -13,6 +13,7 @@ import {
   type UpsertActionPolicyResult,
 } from "../workflows/action-store";
 import type { ActionExecutionOutcome } from "../workflows/action-executor";
+import type { SourceCheckAnswers, SourceCheckResult } from "../graphjin/source-check";
 import { evaluateActionPolicy } from "../workflows/policy-engine";
 import { withActionTargets } from "../workflows/action-targets";
 import {
@@ -31,38 +32,27 @@ import {
   type WorkflowOutputInput,
   type WorkflowOutputRecord,
 } from "../workflows/store";
-import { notifyWorkflowOutputDeliveryHook } from "../workflows/output-delivery";
 import {
   rememberWorkMemory,
   searchWorkMemoryByContext,
   updateWorkMemoryForRun,
 } from "./memory";
-import { searchLibraryForRun } from "./library";
-import type {
-  GraphjinAgentResponse,
-  GraphjinAgentStatus,
-} from "../graphjin/agent";
 import {
-  callGraphjinMcpTool as callRemoteGraphjinMcpTool,
-  listGraphjinMcpTools as listRemoteGraphjinMcpTools,
-} from "../graphjin/mcp-client";
-import { assertGraphjinMutationAllowed } from "../graphjin/sources-config";
+  queryFileTablesForRun,
+  readFileForRun,
+  searchFilesForRun,
+  type FileReadForRunArgs,
+  type FileSearchForRunArgs,
+  type FileSqlForRunArgs,
+} from "./files";
+import type { FileReadResult, FileSearchResult, FileSqlResult } from "../files/client";
+import { dataAccess } from "../data-access";
+import { isInternalGraphjinURL } from "../data-access/graphjin";
 import type {
   CallToolResult,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenApiSpecAssetView } from "../graphjin/openapi-assets";
-import type {
-  JsonObject,
-  RecordListFilter,
-  RecordsCatalogResult,
-  RecordsDetailResult,
-  RecordsQueryResult,
-  RecordsRecycleDetailResult,
-  RecordsRecycleQueryResult,
-  RecordsReadGateway,
-  RecordsViewer,
-} from "@neko/records";
 
 type PolicyRequestSubject = Parameters<typeof evaluateActionPolicy>[0];
 type PolicyDecision = ReturnType<typeof evaluateActionPolicy>;
@@ -72,10 +62,6 @@ type UpdateWorkMemoryInput = Parameters<typeof updateWorkMemoryForRun>[0];
 type WorkMemorySearchArgs = Parameters<typeof searchWorkMemoryByContext>[0];
 type WorkMemorySearchResult = Awaited<
   ReturnType<typeof searchWorkMemoryByContext>
->[number];
-type LibrarySearchArgs = Parameters<typeof searchLibraryForRun>[0];
-type LibrarySearchResult = Awaited<
-  ReturnType<typeof searchLibraryForRun>
 >[number];
 
 /**
@@ -93,182 +79,6 @@ export type Wire<T> = T extends Date
 
 function toWire<T>(value: T): Wire<T> {
   return JSON.parse(JSON.stringify(value ?? null)) as Wire<T>;
-}
-
-export async function createActionRequestViaWorker(
-  baseUrl: string,
-  input: CreateActionRequestInput,
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ id: string; status: string }> {
-  const url = `${baseUrl.replace(/\/$/, "")}/admin/action-requests/create`;
-  const response = await fetchImpl(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-    signal: AbortSignal.timeout(65_000),
-  });
-  const body = (await response.json().catch(() => null)) as
-    | { id?: unknown; status?: unknown; error?: unknown }
-    | null;
-  if (!response.ok) {
-    const message =
-      body && typeof body.error === "string"
-        ? body.error
-        : `worker action preflight failed with status ${response.status}`;
-    throw new Error(message);
-  }
-  if (
-    !body ||
-    typeof body.id !== "string" ||
-    !body.id ||
-    typeof body.status !== "string"
-  ) {
-    throw new Error("worker action preflight returned an invalid response");
-  }
-  return { id: body.id, status: body.status };
-}
-
-export function assertReadOnlyGraphql(query: string): void {
-  const text = query.trim();
-  if (!text) throw new Error("GraphJin read query is empty");
-  // Deliberately conservative: rejecting the words even in a string/comment
-  // can cause a harmless false positive, while accepting either operation
-  // would turn the broker into a write bypass for legacy GraphJin sources.
-  if (/\b(?:mutation|subscription)\b/i.test(text)) {
-    throw new Error("GraphJin agent broker allows query operations only");
-  }
-  if (!text.startsWith("{") && !/^query\b/i.test(text)) {
-    throw new Error("GraphJin agent broker requires an explicit query operation");
-  }
-}
-
-/** A run's GraphJin token: the K1 principal plus group roles when group grants are on. */
-/** The org's knowledge pack digest, so GraphJin's agent starts from known patterns and join paths. */
-async function graphjinAgentKnowledge(orgId: string): Promise<{ knowledge_pack?: Record<string, unknown> }> {
-  try {
-    const { ensureOrgWorkspace } = await import("./workspace");
-    const { knowledgePackPaths, readKnowledgePack } = await import("../knowledge-pack");
-    const pack = await readKnowledgePack(knowledgePackPaths((await ensureOrgWorkspace(orgId)).knowledgeRoot));
-    if (pack.mode !== "agentic") return {};
-    const insights = JSON.parse(pack.insights) as { hub_tables?: unknown; help_cards?: unknown };
-    return {
-      knowledge_pack: {
-        graphjin_syntax: JSON.parse(pack.syntax),
-        hub_tables: insights.hub_tables,
-        help_cards: insights.help_cards,
-      },
-    };
-  } catch {
-    return {};
-  }
-}
-
-async function runGraphjinToken(orgId: string, runId: string | null | undefined): Promise<string> {
-  const { mintGraphjinToken } = await import("../graphjin/token");
-  const { getWorkRunActor } = await import("./personas");
-  const principal = runId ? graphjinReadPrincipal(await getWorkRunActor(runId, orgId)) : { userId: null, role: "service" as const };
-  let claims: { roles: string[]; groups: string[] } | null = null;
-  if (principal.userId && principal.role === "member") {
-    const { getGroupGrantsEnabled, graphjinGroupClaims } = await import("@neko/db");
-    if (await getGroupGrantsEnabled(orgId)) claims = await graphjinGroupClaims(orgId, principal.userId);
-  }
-  return mintGraphjinToken({
-    orgId,
-    userId: principal.userId,
-    role: principal.role,
-    ...(claims ? { groupRoles: claims.roles, groups: claims.groups } : {}),
-  });
-}
-
-export function graphjinReadPrincipal(actor: {
-  userId: string | null;
-  role: string | null;
-}): { userId: string | null; role: "admin" | "member" | "service" } {
-  if (actor.role === "admin" || actor.role === "member") {
-    return { userId: actor.userId, role: actor.role };
-  }
-  if (actor.role === "service") {
-    return { userId: null, role: "service" };
-  }
-  throw new Error("GraphJin read actor has an invalid role");
-}
-
-export function graphjinDevelopmentAuthHeaders(
-  principal: ReturnType<typeof graphjinReadPrincipal>,
-  nodeEnv = process.env.NODE_ENV,
-): Record<string, string> {
-  if (nodeEnv === "production") {
-    throw new Error(
-      "GraphJin development header auth is forbidden in production",
-    );
-  }
-  return {
-    "X-User-ID": principal.userId ?? "openneko-service",
-    "X-User-Role": principal.role,
-  };
-}
-
-/** A run needs at least one data_source item to reach GraphJin. */
-async function assertRunHoldsDataSource(orgId: string, runId: string | null | undefined): Promise<void> {
-  if (!runId) return;
-  const actor = await entitlementActorForRun(orgId, runId);
-  const { heldItems } = await import("@neko/db");
-  const held = actor ? await heldItems(actor, "data_source") : new Set<string>();
-  if (held !== "*" && held.size === 0) throw new Error("No data source is available to this run.");
-}
-
-async function graphjinMcpAccess(input: {
-  orgId: string;
-  runId?: string | null;
-}): Promise<{ mcpUrl: string; headers: Record<string, string> }> {
-  await assertRunHoldsDataSource(input.orgId, input.runId);
-  const { and, data_source, db, desc, eq } = await import("@neko/db");
-  const [source] = await db()
-    .select({
-      mcpUrl: data_source.mcp_url,
-      graphqlUrl: data_source.graphql_url,
-      kind: data_source.kind,
-      authMode: data_source.auth_mode,
-    })
-    .from(data_source)
-    .where(
-      and(
-        eq(data_source.org_id, input.orgId),
-        eq(data_source.enabled, true),
-      ),
-    )
-    .orderBy(desc(data_source.is_default), data_source.created_at)
-    .limit(1);
-  if (!source?.mcpUrl) {
-    throw new Error("no enabled GraphJin MCP endpoint configured");
-  }
-  if (source.kind !== "graphjin") {
-    throw new Error("the default enabled data source is not a GraphJin server");
-  }
-  if (
-    isInternalGraphjinURL(source.graphqlUrl) ||
-    isInternalGraphjinURL(source.mcpUrl)
-  ) {
-    throw new Error("refusing to expose the OpenNeko internal GraphJin MCP");
-  }
-
-  const headers: Record<string, string> = {};
-  if (source.authMode === "jwt") {
-    headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
-  } else if (source.authMode === "development") {
-    let principal: ReturnType<typeof graphjinReadPrincipal> = {
-      userId: null,
-      role: "service",
-    };
-    if (input.runId) {
-      const { getWorkRunActor } = await import("./personas");
-      principal = graphjinReadPrincipal(
-        await getWorkRunActor(input.runId, input.orgId),
-      );
-    }
-    Object.assign(headers, graphjinDevelopmentAuthHeaders(principal));
-  }
-  return { mcpUrl: source.mcpUrl, headers };
 }
 
 async function requireSourceConfigAccess(input: {
@@ -351,26 +161,35 @@ async function requireSourceConfigAccess(input: {
   return { ok: true, userId };
 }
 
-export type SourceConfigAgentResult = {
-  denied?: boolean;
-  error?: string;
-  source?: { id: string; name: string; host: string | null };
-  agentStatus?: GraphjinAgentStatus;
-  response?: GraphjinAgentResponse;
-};
+const SOURCE_CONFIG_VIEW_FIELDS = [
+  "sources",
+  "roles",
+  "databases",
+  "tables",
+  "blocklist",
+  "system",
+  "mcp",
+  "serv",
+] as const;
 
-/** Read-only answer from the selected customer GraphJin server agent. */
-export type GraphjinDataAgentResult = {
+const SOURCE_CONFIG_VIEW_MAX_CHARS = 60_000;
+
+export type SourceConfigViewResult = {
   denied?: boolean;
   error?: string;
   source?: { id: string; name: string; host: string | null };
-  agentStatus?: GraphjinAgentStatus;
-  response?: GraphjinAgentResponse;
+  catalogRevision?: string;
+  config?: Record<string, unknown>;
+  /** Plain sentences per source and role, from the same redacted config. */
+  summary?: import("../graphjin/config-describe").ConfigDescription;
+  truncated?: boolean;
 };
 
 export type SourceConfigPreviewResult = {
   denied?: boolean;
   error?: string;
+  /** Each problem names the admin's answer at fault. */
+  problems?: import("../graphjin/config-problems").ConfigProblem[];
   source?: { id: string; name: string; host: string | null };
   specAsset?: OpenApiSpecAssetView;
   preview?: {
@@ -383,6 +202,9 @@ export type SourceConfigPreviewResult = {
     changes: unknown;
     findings: unknown;
     errors: unknown;
+    fileCheck?: import("../graphjin/config-file-check").GraphjinFileCheck;
+    /** The touched sources and roles, before and after, as sentences and redacted YAML. */
+    summary?: import("../graphjin/config-describe").ConfigChangeDescription;
   };
 };
 
@@ -403,116 +225,6 @@ export type WaitForActionExecutionResult =
   | {
       status: "timeout";
     };
-
-type RecordsControlPlaneRuntime = {
-  gateway: RecordsReadGateway;
-};
-
-const recordsRuntimeGlobal = globalThis as typeof globalThis & {
-  __opennekoLlmRecordsRuntime?: Promise<RecordsControlPlaneRuntime>;
-};
-
-async function recordsControlPlaneRuntime(): Promise<RecordsControlPlaneRuntime> {
-  const existing = recordsRuntimeGlobal.__opennekoLlmRecordsRuntime;
-  if (existing) return existing;
-  const created = Promise.all([
-    import("pg"),
-    import("@neko/db"),
-    import("@neko/records"),
-  ]).then(([pgModule, dbModule, records]) => {
-    const pool = new pgModule.default.Pool({
-      ...dbModule.buildRecordsPoolConfig(),
-      application_name: "openneko-agent-records",
-    });
-    return {
-      gateway: new records.RecordsReadGateway(
-        pool,
-        new records.RecordRegistry(pool),
-        new records.RecordsGraphjinClient({
-          baseUrl:
-            process.env.OPENNEKO_RECORDS_GRAPHJIN_URL ??
-            "http://127.0.0.1:8090",
-        }),
-      ),
-    };
-  });
-  recordsRuntimeGlobal.__opennekoLlmRecordsRuntime = created;
-  return created;
-}
-
-async function recordsViewerForRun(input: {
-  orgId: string;
-  runId: string;
-}): Promise<RecordsViewer> {
-  const {
-    and,
-    app_user,
-    db,
-    eq,
-    resolveUserGroups,
-    work_run,
-  } = await import("@neko/db");
-  const [run] = await db()
-    .select({
-      orgId: work_run.org_id,
-      userId: work_run.actor_user_id,
-      snapshotRole: work_run.actor_role,
-    })
-    .from(work_run)
-    .where(eq(work_run.id, input.runId))
-    .limit(1);
-  if (!run || run.orgId !== input.orgId) {
-    throw new Error("records tools are not available to this run");
-  }
-
-  if (run.userId) {
-    const [user] = await db()
-      .select({ disabledAt: app_user.disabled_at })
-      .from(app_user)
-      .where(
-        and(eq(app_user.id, run.userId), eq(app_user.org_id, input.orgId)),
-      )
-      .limit(1);
-    if (!user || user.disabledAt) {
-      throw new Error("records tools are not available to this actor");
-    }
-    const groups = await resolveUserGroups(input.orgId, run.userId);
-    return {
-      orgId: input.orgId,
-      userId: run.userId,
-      role: groups.administrator ? "admin" : "member",
-      groupIds: [...groups.groupIds, ...groups.ssoGroupIds],
-      solo: false,
-    };
-  }
-
-  // A userless admin exists only in the solo profile. Once the org has any
-  // user, a detached/deleted run must not inherit this synthetic authority.
-  const [anyUser] = await db()
-    .select({ id: app_user.id })
-    .from(app_user)
-    .where(eq(app_user.org_id, input.orgId))
-    .limit(1);
-  if (anyUser || run.snapshotRole !== "admin") {
-    throw new Error("records tools are not available to this actor");
-  }
-  return {
-    orgId: input.orgId,
-    userId: `urn:openneko:solo-admin:${input.orgId}`,
-    role: "admin",
-    groupIds: [],
-    solo: true,
-  };
-}
-
-async function activeRecordAppIds(orgId: string): Promise<ReadonlySet<string>> {
-  const { and, app_state, db, eq } = await import("@neko/db");
-  const rows = await db()
-    .select({ appId: app_state.app_id })
-    .from(app_state)
-    .where(and(eq(app_state.org_id, orgId), eq(app_state.status, "active")));
-  return new Set(rows.map((row) => row.appId));
-}
 
 /** The payload lets kinds with a target spec match their real targets. */
 export type PolicyEvaluationInput = { orgId: string; payload?: Record<string, unknown> | null } & PolicyRequestSubject;
@@ -555,7 +267,9 @@ export interface AgentControlPlane {
   searchWorkMemoryByContext(
     args: WorkMemorySearchArgs,
   ): Promise<WorkMemorySearchResult[]>;
-  searchLibraryForRun(args: LibrarySearchArgs): Promise<LibrarySearchResult[]>;
+  searchFilesForRun(args: FileSearchForRunArgs): Promise<FileSearchResult>;
+  readFileForRun(args: FileReadForRunArgs): Promise<FileReadResult>;
+  queryFileTablesForRun(args: FileSqlForRunArgs): Promise<FileSqlResult>;
   queryGraphjinRead(input: {
     orgId: string;
     /** Trusted work-run binding used to mint the same actor identity as chat. */
@@ -579,75 +293,6 @@ export interface AgentControlPlane {
     name: string;
     arguments?: Record<string, unknown>;
   }): Promise<CallToolResult>;
-  /**
-   * Delegate one bounded read-only data question to a customer GraphJin
-   * server agent. Source selection and credentials remain on the host.
-   */
-  askGraphjinDataAgent(input: {
-    orgId: string;
-    runId?: string | null;
-    dataSourceId?: string;
-    instruction: string;
-    maxSteps?: number;
-  }): Promise<GraphjinDataAgentResult>;
-  /** Actor-scoped registry catalog for native generated records apps. */
-  listRecordCatalog(input: {
-    orgId: string;
-    runId: string;
-    appId?: string;
-  }): Promise<RecordsCatalogResult>;
-  /** Generated, bounded GraphJin list/search query under the run's actor. */
-  findRecords(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    first?: number;
-    after?: string | null;
-    sort?: { field: string; direction: "asc" | "desc" };
-    search?: string | null;
-    filters?: RecordListFilter[];
-    myRecords?: boolean;
-  }): Promise<RecordsQueryResult>;
-  /** Exact actor-scoped record lookup after an id has been resolved. */
-  getRecord(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    recordId: string;
-    allFields?: boolean;
-  }): Promise<RecordsDetailResult>;
-  /** Actor-scoped deleted-record summaries for safe restore id resolution. */
-  findRecycledRecords(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    first?: number;
-    after?: string | null;
-    search?: string | null;
-  }): Promise<RecordsRecycleQueryResult>;
-  /** Exact actor-scoped lookup in the recycle index. */
-  getRecycledRecord(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    recordId: string;
-  }): Promise<RecordsRecycleDetailResult>;
-  /** Shipped domain blueprints; exact lookup includes its app_create payload. */
-  listRecordBlueprints(input: {
-    orgId: string;
-    blueprintId?: string;
-  }): Promise<{
-    blueprints: Array<{
-      id: string;
-      version: string;
-      description: string;
-      payload?: JsonObject;
-    }>;
-  }>;
   saveWorkflowWithTrigger(
     input: SaveWorkflowInput,
   ): Promise<Wire<SaveWorkflowWithTriggerResult>>;
@@ -662,7 +307,7 @@ export interface AgentControlPlane {
   /**
    * Hard-delete a workflow and its dependents (triggers, runs, outputs,
    * proposed actions cascade via FK). Org-scoped: `found: false` when the id
-   * doesn't belong to the org. Mirrors `DELETE /api/workflows/[id]`.
+   * doesn't belong to the org. Mirrors `DELETE /api/v1/workflows/[id]`.
    */
   deleteWorkflow(input: {
     orgId: string;
@@ -676,8 +321,6 @@ export interface AgentControlPlane {
     orgId: string;
     limit?: number;
   }): Promise<{ total: number; policies: Array<Wire<ActionPolicyRecord>> }>;
-  /** ADM3: installed plugins (manifest) + marketplace catalog. */
-  listPlugins(input: { orgId: string }): Promise<PluginCatalog>;
   /** ADM1: the org's users (id, email, role, disabled). */
   listGroups(input: { orgId: string }): Promise<{
     groups: Array<{
@@ -787,20 +430,20 @@ export interface AgentControlPlane {
     error?: string;
     assets: OpenApiSpecAssetView[];
   }>;
-  /**
-   * Ask the selected customer GraphJin's built-in server agent to inspect or
-   * explain its configuration. The host verifies the agent is globally
-   * read-only before forwarding an instruction, and authenticates with a
-   * short-lived admin JWT that never enters the sandbox.
-   */
-  askSourceConfigAgent(input: {
+  /** The selected customer GraphJin's current config, with every secret redacted. */
+  describeSourceConfig(input: {
     orgId: string;
     runId?: string | null;
     actorRole?: string | null;
     dataSourceId?: string;
-    instruction: string;
-    maxSteps?: number;
-  }): Promise<SourceConfigAgentResult>;
+  }): Promise<SourceConfigViewResult>;
+  /** Test one database source from the admin's answers; the password comes from the stored secret. */
+  checkSource(input: {
+    orgId: string;
+    runId?: string | null;
+    actorRole?: string | null;
+    answers: SourceCheckAnswers;
+  }): Promise<{ denied?: boolean; error?: string; check?: SourceCheckResult }>;
   /** Validate the exact allowlisted patch before an approval is created. */
   previewSourceConfigChange(input: {
     orgId: string;
@@ -867,22 +510,115 @@ export interface AgentControlPlane {
   }>;
 }
 
-export type PluginCatalog = {
-  installed: Array<{
-    name: string;
-    version: string;
-    source: string;
-    network: string[];
-    installedAt: string | null;
-  }>;
-  available: Array<{
-    name: string;
-    title: string;
-    description: string;
-    version: string;
-  }>;
-  marketplaceError?: string;
-};
+/**
+ * The customer GraphJin's current config, redacted, with plain sentences.
+ * The caller has already checked that the actor is an admin.
+ */
+export async function readSourceConfigView(input: {
+  orgId: string;
+  userId: string | null;
+  dataSourceId?: string;
+  signal?: AbortSignal;
+}): Promise<SourceConfigViewResult> {
+  const { and, data_source, db, eq } = await import("@neko/db");
+  const rows = await db()
+    .select({
+      id: data_source.id,
+      name: data_source.name,
+      kind: data_source.kind,
+      graphqlUrl: data_source.graphql_url,
+    })
+    .from(data_source)
+    .where(
+      and(
+        eq(data_source.org_id, input.orgId),
+        eq(data_source.enabled, true),
+        ...(input.dataSourceId
+          ? [eq(data_source.id, input.dataSourceId)]
+          : []),
+      ),
+    )
+    .limit(input.dataSourceId ? 1 : 3);
+  if (rows.length === 0) {
+    return { error: "no enabled customer GraphJin data source was found" };
+  }
+  if (!input.dataSourceId && rows.length > 1) {
+    return {
+      error:
+        "multiple enabled data sources exist; choose a dataSourceId with list_data_sources first",
+    };
+  }
+  const src = rows[0]!;
+  const source = { id: src.id, name: src.name, host: hostnameOf(src.graphqlUrl) };
+  if (src.kind !== "graphjin") {
+    return { source, error: "the selected data source is not a GraphJin server" };
+  }
+  if (isInternalGraphjinURL(src.graphqlUrl)) {
+    return {
+      denied: true,
+      source,
+      error: "refusing to read the OpenNeko internal GraphJin config",
+    };
+  }
+
+  const { graphjinQuery } = await import("../graphjin/client");
+  const { mintGraphjinToken } = await import("../graphjin/token");
+  const { redactSourceConfig } = await import("../graphjin/config-redact");
+  const token = mintGraphjinToken({
+    orgId: input.orgId,
+    userId: input.userId,
+    role: "admin",
+    ttlSeconds: 120,
+  });
+  const fields = SOURCE_CONFIG_VIEW_FIELDS.join(" ");
+  try {
+    const res = await graphjinQuery<{ gj_config?: Record<string, unknown> }>({
+      baseUrl: src.graphqlUrl,
+      headers: { authorization: `Bearer ${token}` },
+      query: `query { gj_config(id: "current") { catalog_revision ${fields} } }`,
+      signal: input.signal,
+    });
+    const row = res.data?.gj_config;
+    if (res.errors?.length || !row) {
+      return {
+        source,
+        error:
+          res.errors?.map((item) => item.message).join("; ").slice(0, 1_000) ||
+          "GraphJin did not return its config",
+      };
+    }
+    const { describeGraphjinConfig } = await import("../graphjin/config-describe");
+    const summary = describeGraphjinConfig({
+      sources: redactSourceConfig(parseJsonColumn(row.sources) ?? []),
+      roles: redactSourceConfig(parseJsonColumn(row.roles) ?? []),
+    });
+    const config: Record<string, unknown> = {};
+    let size = 0;
+    let truncated = false;
+    for (const field of SOURCE_CONFIG_VIEW_FIELDS) {
+      const redacted = redactSourceConfig(parseJsonColumn(row[field]) ?? null);
+      const length = JSON.stringify(redacted)?.length ?? 0;
+      if (size + length > SOURCE_CONFIG_VIEW_MAX_CHARS) {
+        truncated = true;
+        continue;
+      }
+      size += length;
+      config[field] = redacted;
+    }
+    return {
+      source,
+      catalogRevision: String(row.catalog_revision ?? ""),
+      config,
+      summary,
+      ...(truncated ? { truncated } : {}),
+    };
+  } catch (err) {
+    return {
+      source,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 1_000),
+    };
+  }
+}
 
 export class InProcessControlPlane implements AgentControlPlane {
   async evaluateActionPolicy(
@@ -912,10 +648,6 @@ export class InProcessControlPlane implements AgentControlPlane {
         throw new Error(`action ${input.kind} is not available to this run`);
       }
     }
-    const workerAdminUrl = process.env.WORKER_ADMIN_URL?.trim();
-    if (workerAdminUrl) {
-      return createActionRequestViaWorker(workerAdminUrl, input);
-    }
     const request = await createActionRequest(input);
     return { id: request.id, status: request.status };
   }
@@ -924,7 +656,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     orgId: string;
     actionRequestId: string;
   }): Promise<void> {
-    await enqueue(QUEUE.ACTION_EXECUTE, input);
+    await enqueueActionExecute(input);
   }
 
   async waitForActionExecution(input: {
@@ -1016,13 +748,24 @@ export class InProcessControlPlane implements AgentControlPlane {
     limit?: number;
   }): Promise<Array<{ name: string; score: number }>> {
     const { searchSkillsForRun } = await import("./skill-index");
-    return searchSkillsForRun(input);
+    const { ADMIN_ONLY_SKILLS } = await import("./admin-skills");
+    const gate = await requireSourceConfigAccess(input);
+    return searchSkillsForRun({
+      ...input,
+      ...(gate.ok ? {} : { exclude: [...ADMIN_ONLY_SKILLS] }),
+    });
   }
 
-  async searchLibraryForRun(
-    args: LibrarySearchArgs,
-  ): Promise<LibrarySearchResult[]> {
-    return searchLibraryForRun(args);
+  async searchFilesForRun(args: FileSearchForRunArgs): Promise<FileSearchResult> {
+    return searchFilesForRun(args);
+  }
+
+  async readFileForRun(args: FileReadForRunArgs): Promise<FileReadResult> {
+    return readFileForRun(args);
+  }
+
+  async queryFileTablesForRun(args: FileSqlForRunArgs): Promise<FileSqlResult> {
+    return queryFileTablesForRun(args);
   }
 
   async queryGraphjinRead(input: {
@@ -1032,47 +775,11 @@ export class InProcessControlPlane implements AgentControlPlane {
     variables?: Record<string, unknown>;
     operationName?: string;
   }) {
-    assertReadOnlyGraphql(input.query);
-    await assertRunHoldsDataSource(input.orgId, input.runId);
-    const { data_source, db, desc, eq } = await import("@neko/db");
-    const [source] = await db()
-      .select({
-        graphqlUrl: data_source.graphql_url,
-        authMode: data_source.auth_mode,
-      })
-      .from(data_source)
-      .where(eq(data_source.org_id, input.orgId))
-      .orderBy(desc(data_source.is_default), data_source.created_at)
-      .limit(1);
-    if (!source?.graphqlUrl) {
-      throw new Error("no GraphJin GraphQL endpoint configured");
-    }
-
-    const headers: Record<string, string> = {};
-    if (source.authMode === "jwt") {
-      headers.authorization = `Bearer ${await runGraphjinToken(input.orgId, input.runId)}`;
-    }
-    const { graphjinQuery } = await import("../graphjin/client");
-    return graphjinQuery({
-      baseUrl: source.graphqlUrl,
-      query: input.query,
-      variables: input.variables,
-      operationName: input.operationName,
-      headers,
-      signal: AbortSignal.timeout(60_000),
-    });
+    return dataAccess.query(input);
   }
 
-  async listGraphjinTools(input: {
-    orgId: string;
-    runId?: string | null;
-  }): Promise<Tool[]> {
-    const access = await graphjinMcpAccess(input);
-    return listRemoteGraphjinMcpTools({
-      baseUrl: access.mcpUrl,
-      headers: access.headers,
-      signal: AbortSignal.timeout(60_000),
-    });
+  async listGraphjinTools(input: { orgId: string; runId?: string | null }): Promise<Tool[]> {
+    return dataAccess.listTools(input);
   }
 
   async callGraphjinTool(input: {
@@ -1081,262 +788,7 @@ export class InProcessControlPlane implements AgentControlPlane {
     name: string;
     arguments?: Record<string, unknown>;
   }): Promise<CallToolResult> {
-    if (input.name === "execute_graphql") {
-      await assertGraphjinMutationAllowed(
-        String(input.arguments?.query ?? ""),
-        process.env.OPENNEKO_GRAPHJIN_CONFIG,
-      );
-    }
-    if (input.name === "execute_saved_query" && input.runId) {
-      const actor = await entitlementActorForRun(input.orgId, input.runId);
-      const name = String(input.arguments?.name ?? "");
-      if (!actor || !(await holds(actor, "saved_query", name)).allowed) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: `Saved query "${name}" is not available to this run.` }],
-        };
-      }
-    }
-    const access = await graphjinMcpAccess(input);
-    return callRemoteGraphjinMcpTool(
-      {
-        baseUrl: access.mcpUrl,
-        headers: access.headers,
-        // Native tools include ask_graphjin_agent and governed operations that
-        // legitimately outlive a normal query. Match the existing agent path.
-        signal: AbortSignal.timeout(180_000),
-      },
-      { name: input.name, arguments: input.arguments },
-    );
-  }
-
-  async askGraphjinDataAgent(input: {
-    orgId: string;
-    runId?: string | null;
-    dataSourceId?: string;
-    instruction: string;
-    maxSteps?: number;
-  }): Promise<GraphjinDataAgentResult> {
-    try {
-      await assertRunHoldsDataSource(input.orgId, input.runId);
-    } catch (error) {
-      return { denied: true, error: error instanceof Error ? error.message : String(error) };
-    }
-    const instruction = input.instruction.trim();
-    if (!instruction || instruction.length > 8_000) {
-      return { error: "instruction must contain between 1 and 8,000 characters" };
-    }
-
-    const { and, data_source, db, desc, eq } = await import("@neko/db");
-    const rows = await db()
-      .select({
-        id: data_source.id,
-        name: data_source.name,
-        kind: data_source.kind,
-        graphqlUrl: data_source.graphql_url,
-        authMode: data_source.auth_mode,
-      })
-      .from(data_source)
-      .where(
-        and(
-          eq(data_source.org_id, input.orgId),
-          eq(data_source.enabled, true),
-          ...(input.dataSourceId
-            ? [eq(data_source.id, input.dataSourceId)]
-            : []),
-        ),
-      )
-      .orderBy(desc(data_source.is_default), data_source.created_at)
-      .limit(input.dataSourceId ? 1 : 2);
-    if (rows.length === 0) {
-      return { error: "no enabled customer GraphJin data source was found" };
-    }
-    if (!input.dataSourceId && rows.length > 1) {
-      return {
-        error:
-          "multiple enabled data sources exist; choose a dataSourceId before asking the data agent",
-      };
-    }
-    const src = rows[0]!;
-    if (src.kind !== "graphjin") {
-      return { error: "the selected data source is not a GraphJin server" };
-    }
-    if (isInternalGraphjinURL(src.graphqlUrl)) {
-      return {
-        denied: true,
-        error: "refusing to query the OpenNeko internal GraphJin",
-      };
-    }
-
-    let token = "openneko-read-only";
-    if (src.authMode === "jwt") {
-      token = await runGraphjinToken(input.orgId, input.runId);
-    }
-    const source = {
-      id: src.id,
-      name: src.name,
-      host: hostnameOf(src.graphqlUrl),
-    };
-    try {
-      const { GRAPHJIN_AGENT_MAX_STEPS, askGraphjinAgent, getGraphjinAgentStatus } = await import(
-        "../graphjin/agent"
-      );
-      const agentStatus = await getGraphjinAgentStatus({
-        baseUrl: src.graphqlUrl,
-        token,
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!agentStatus.ready) {
-        return {
-          source,
-          agentStatus,
-          error: agentStatus.message || "GraphJin agent is not ready",
-        };
-      }
-      if (!agentStatus.read_only) {
-        return {
-          denied: true,
-          source,
-          agentStatus,
-          error:
-            "GraphJin agent is not configured read-only; OpenNeko will not delegate data questions",
-        };
-      }
-      const response = await askGraphjinAgent({
-        baseUrl: src.graphqlUrl,
-        token,
-        signal: AbortSignal.timeout(180_000),
-        request: {
-          instruction,
-          max_steps: Math.min(Math.max(input.maxSteps ?? GRAPHJIN_AGENT_MAX_STEPS, 1), GRAPHJIN_AGENT_MAX_STEPS),
-          return_trace: false,
-          context: {
-            caller: "OpenNeko data agent",
-            purpose: "read-only operational data retrieval and analysis",
-            constraint:
-              "Use catalog and execution evidence. Do not mutate data, configuration, artifacts, tasks, watches, or workflows.",
-            ...(await graphjinAgentKnowledge(input.orgId)),
-          },
-        },
-      });
-      return { source, agentStatus, response };
-    } catch (error) {
-      return {
-        source,
-        error: (error instanceof Error ? error.message : String(error)).slice(
-          0,
-          1_000,
-        ),
-      };
-    }
-  }
-
-  async listRecordCatalog(input: {
-    orgId: string;
-    runId: string;
-    appId?: string;
-  }): Promise<RecordsCatalogResult> {
-    const [viewer, activeAppIds, runtime] = await Promise.all([
-      recordsViewerForRun(input),
-      activeRecordAppIds(input.orgId),
-      recordsControlPlaneRuntime(),
-    ]);
-    return runtime.gateway.listCatalog({
-      viewer,
-      activeAppIds,
-      ...(input.appId ? { appId: input.appId } : {}),
-    });
-  }
-
-  async findRecords(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    first?: number;
-    after?: string | null;
-    sort?: { field: string; direction: "asc" | "desc" };
-    search?: string | null;
-    filters?: RecordListFilter[];
-    myRecords?: boolean;
-  }): Promise<RecordsQueryResult> {
-    const [viewer, activeAppIds, runtime] = await Promise.all([
-      recordsViewerForRun(input),
-      activeRecordAppIds(input.orgId),
-      recordsControlPlaneRuntime(),
-    ]);
-    return runtime.gateway.findRecords({ ...input, viewer, activeAppIds });
-  }
-
-  async getRecord(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    recordId: string;
-    allFields?: boolean;
-  }): Promise<RecordsDetailResult> {
-    const [viewer, activeAppIds, runtime] = await Promise.all([
-      recordsViewerForRun(input),
-      activeRecordAppIds(input.orgId),
-      recordsControlPlaneRuntime(),
-    ]);
-    return runtime.gateway.getRecord({ ...input, viewer, activeAppIds });
-  }
-
-  async findRecycledRecords(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    first?: number;
-    after?: string | null;
-    search?: string | null;
-  }): Promise<RecordsRecycleQueryResult> {
-    const [viewer, activeAppIds, runtime] = await Promise.all([
-      recordsViewerForRun(input),
-      activeRecordAppIds(input.orgId),
-      recordsControlPlaneRuntime(),
-    ]);
-    return runtime.gateway.findRecycledRecords({ ...input, viewer, activeAppIds });
-  }
-
-  async getRecycledRecord(input: {
-    orgId: string;
-    runId: string;
-    appId: string;
-    objectApiName: string;
-    recordId: string;
-  }): Promise<RecordsRecycleDetailResult> {
-    const [viewer, activeAppIds, runtime] = await Promise.all([
-      recordsViewerForRun(input),
-      activeRecordAppIds(input.orgId),
-      recordsControlPlaneRuntime(),
-    ]);
-    return runtime.gateway.getRecycledRecord({ ...input, viewer, activeAppIds });
-  }
-
-  async listRecordBlueprints(input: {
-    orgId: string;
-    blueprintId?: string;
-  }) {
-    // orgId deliberately remains part of the brokered call for uniform audit
-    // attribution even though shipped blueprint content is organization-neutral.
-    void input.orgId;
-    const { listRecordAppBlueprints, loadRecordAppBlueprint } = await import(
-      "@neko/records"
-    );
-    const blueprints = input.blueprintId
-      ? [await loadRecordAppBlueprint(input.blueprintId)]
-      : await listRecordAppBlueprints();
-    return {
-      blueprints: blueprints.map((blueprint) => ({
-        id: blueprint.id,
-        version: blueprint.version,
-        description: blueprint.description,
-        ...(input.blueprintId ? { payload: blueprint.payload } : {}),
-      })),
-    };
+    return dataAccess.callTool(input);
   }
 
   async saveWorkflowWithTrigger(
@@ -1356,9 +808,7 @@ export class InProcessControlPlane implements AgentControlPlane {
   async emitWorkflowOutput(
     input: WorkflowOutputInput,
   ): Promise<Wire<WorkflowOutputRecord>> {
-    const output = await emitWorkflowOutput(input);
-    notifyWorkflowOutputDeliveryHook(input.orgId, output);
-    return toWire(output);
+    return toWire(await emitWorkflowOutput(input));
   }
 
   async listWorkflowsWithTriggers(input: {
@@ -1410,44 +860,6 @@ export class InProcessControlPlane implements AgentControlPlane {
     return {
       total: all.length,
       policies: all.slice(0, input.limit ?? 50).map((p) => toWire(p)),
-    };
-  }
-
-  async listPlugins(_input: { orgId: string }): Promise<PluginCatalog> {
-    const {
-      readManifest,
-      createMarketplaceClient,
-      OFFICIAL_MARKETPLACE_URL,
-      pickInstallVersion,
-    } = await import("@open-neko/plugin-install");
-    const manifest = await readManifest(process.cwd()).catch(() => null);
-    const installed = (manifest?.plugins ?? []).map((p) => ({
-      name: p.name,
-      version: p.version,
-      source: p.installSource ?? "marketplace",
-      network: p.permissions?.network ?? [],
-      installedAt: p.installedAt ?? null,
-    }));
-    let available: PluginCatalog["available"] = [];
-    let marketplaceError: string | undefined;
-    try {
-      const marketplace = await createMarketplaceClient().fetch(
-        OFFICIAL_MARKETPLACE_URL,
-      );
-      available = (marketplace.plugins ?? []).flatMap((p) => {
-        try {
-          return [{ name: p.name, title: p.title || p.name, description: p.description ?? "", version: pickInstallVersion(p).version }];
-        } catch {
-          return [];
-        }
-      });
-    } catch (err) {
-      marketplaceError = err instanceof Error ? err.message : String(err);
-    }
-    return {
-      installed,
-      available,
-      ...(marketplaceError ? { marketplaceError } : {}),
     };
   }
 
@@ -1711,128 +1123,31 @@ export class InProcessControlPlane implements AgentControlPlane {
     };
   }
 
-  async askSourceConfigAgent(input: {
+  async describeSourceConfig(input: {
     orgId: string;
     runId?: string | null;
     actorRole?: string | null;
     dataSourceId?: string;
-    instruction: string;
-    maxSteps?: number;
-  }): Promise<SourceConfigAgentResult> {
+  }): Promise<SourceConfigViewResult> {
     const gate = await requireSourceConfigAccess(input);
-    if (!gate.ok) {
-      return { denied: true, error: gate.error };
-    }
-    const instruction = input.instruction.trim();
-    if (!instruction || instruction.length > 8_000) {
-      return {
-        error: "instruction must contain between 1 and 8,000 characters",
-      };
-    }
-
-    const { and, data_source, db, eq } = await import("@neko/db");
-    const rows = await db()
-      .select({
-        id: data_source.id,
-        name: data_source.name,
-        kind: data_source.kind,
-        graphqlUrl: data_source.graphql_url,
-      })
-      .from(data_source)
-      .where(
-        and(
-          eq(data_source.org_id, input.orgId),
-          eq(data_source.enabled, true),
-          ...(input.dataSourceId
-            ? [eq(data_source.id, input.dataSourceId)]
-            : []),
-        ),
-      )
-      .limit(input.dataSourceId ? 1 : 3);
-    if (rows.length === 0) {
-      return { error: "no enabled customer GraphJin data source was found" };
-    }
-    if (!input.dataSourceId && rows.length > 1) {
-      return {
-        error:
-          "multiple enabled data sources exist; choose a dataSourceId with list_data_sources before asking the configuration agent",
-      };
-    }
-    const src = rows[0]!;
-    if (src.kind !== "graphjin") {
-      return { error: "the selected data source is not a GraphJin server" };
-    }
-    if (isInternalGraphjinURL(src.graphqlUrl)) {
-      return {
-        denied: true,
-        error: "refusing to inspect the OpenNeko internal GraphJin",
-      };
-    }
-
-    const { askGraphjinAgent, getGraphjinAgentStatus } = await import(
-      "../graphjin/agent"
-    );
-    const { mintGraphjinToken } = await import("../graphjin/token");
-    const token = mintGraphjinToken({
+    if (!gate.ok) return { denied: true, error: gate.error };
+    return readSourceConfigView({
       orgId: input.orgId,
       userId: gate.userId,
-      role: "admin",
+      dataSourceId: input.dataSourceId,
     });
-    const timeout = AbortSignal.timeout(90_000);
-    try {
-      const agentStatus = await getGraphjinAgentStatus({
-        baseUrl: src.graphqlUrl,
-        token,
-        signal: timeout,
-      });
-      const source = {
-        id: src.id,
-        name: src.name,
-        host: hostnameOf(src.graphqlUrl),
-      };
-      if (!agentStatus.ready) {
-        return {
-          source,
-          agentStatus,
-          error: agentStatus.message || "GraphJin agent is not ready",
-        };
-      }
-      if (!agentStatus.read_only) {
-        return {
-          denied: true,
-          source,
-          agentStatus,
-          error:
-            "GraphJin agent is not configured read-only; OpenNeko will not forward configuration instructions",
-        };
-      }
-      const response = await askGraphjinAgent({
-        baseUrl: src.graphqlUrl,
-        token,
-        signal: timeout,
-        request: {
-          instruction,
-          max_steps: Math.min(Math.max(input.maxSteps ?? 8, 1), 12),
-          return_trace: false,
-          context: {
-            caller: "OpenNeko admin chat",
-            purpose: "configuration inspection and planning",
-            constraint:
-              "Read-only advisory request. Do not apply configuration or schema changes.",
-          },
-        },
-      });
-      return { source, agentStatus, response };
-    } catch (err) {
-      return {
-        source: {
-          id: src.id,
-          name: src.name,
-          host: hostnameOf(src.graphqlUrl),
-        },
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 1_000),
-      };
-    }
+  }
+
+  async checkSource(input: {
+    orgId: string;
+    runId?: string | null;
+    actorRole?: string | null;
+    answers: SourceCheckAnswers;
+  }) {
+    const gate = await requireSourceConfigAccess(input);
+    if (!gate.ok) return { denied: true, error: gate.error };
+    const { checkSourceForOrg } = await import("../graphjin/source-check");
+    return { check: await checkSourceForOrg({ orgId: input.orgId, answers: input.answers }) };
   }
 
   async previewSourceConfigChange(input: {
@@ -1897,6 +1212,8 @@ export class InProcessControlPlane implements AgentControlPlane {
     }
 
     let secretValue = "";
+    const scrub = (value: string | undefined): string =>
+      secretValue ? (value ?? "").split(secretValue).join("[REDACTED]") : value ?? "";
     try {
       let specAsset: OpenApiSpecAssetView | undefined;
       const kind = Array.isArray(input.payload.kind)
@@ -1965,6 +1282,85 @@ export class InProcessControlPlane implements AgentControlPlane {
               process.env.OPENNEKO_GRAPHJIN_FILES_DIR?.trim() || "/config/files",
           })
         : undefined;
+      const { graphjinQuery } = await import("../graphjin/client");
+      const { mintGraphjinToken } = await import("../graphjin/token");
+      const token = mintGraphjinToken({
+        orgId: input.orgId,
+        userId: gate.userId,
+        role: "admin",
+        ttlSeconds: 120,
+      });
+      const headers = { authorization: `Bearer ${token}` };
+      const revisionResponse = await graphjinQuery<{
+        gj_config?: { catalog_revision?: string; sources?: unknown; roles?: unknown };
+      }>({
+        baseUrl: src.graphqlUrl,
+        headers,
+        query: 'query { gj_config(id: "current") { catalog_revision sources roles } }',
+      });
+      const revision = revisionResponse.data?.gj_config?.catalog_revision;
+      if (!revision || revisionResponse.errors?.length) {
+        return {
+          source,
+          error:
+            revisionResponse.errors?.map((item) => item.message).join("; ") ||
+            "GraphJin did not return catalog_revision",
+        };
+      }
+      let currentSources = revisionResponse.data?.gj_config?.sources;
+      if (typeof currentSources === "string") {
+        try {
+          currentSources = JSON.parse(currentSources);
+        } catch {
+          currentSources = [];
+        }
+      }
+      const {
+        checkSourceConfigAnswers,
+        describeConfigProblems,
+        mapGraphjinConfigErrors,
+      } = await import("../graphjin/config-problems");
+      const secretNames = (
+        await db()
+          .select({ name: data_source_secret.name })
+          .from(data_source_secret)
+          .where(eq(data_source_secret.org_id, input.orgId))
+      ).map((row) => row.name);
+      const sourceTables = new Map<string, string[]>();
+      const tablesSource =
+        input.payload.action === "set_source_tables" &&
+        typeof input.payload.source === "string"
+          ? input.payload.source.trim()
+          : "";
+      if (tablesSource) {
+        const tablesResponse = await graphjinQuery<{
+          gj_catalog?: Array<{ table_name?: string | null }>;
+        }>({
+          baseUrl: src.graphqlUrl,
+          headers,
+          query:
+            'query ($source: String!) { gj_catalog(where: { kind: { eq: "table" }, source: { eq: $source } }, limit: 5000) { table_name } }',
+          variables: { source: tablesSource },
+        });
+        const tables = (tablesResponse.data?.gj_catalog ?? [])
+          .map((row) => row.table_name ?? "")
+          .filter(Boolean);
+        if (!tablesResponse.errors?.length) {
+          sourceTables.set(tablesSource.toLowerCase(), tables);
+        }
+      }
+      const answerProblems = checkSourceConfigAnswers(input.payload, {
+        secretNames,
+        currentSources,
+        sourceTables,
+      });
+      if (answerProblems.length > 0) {
+        return {
+          source,
+          problems: answerProblems,
+          error: describeConfigProblems(answerProblems),
+        };
+      }
       const { update } = await buildGraphjinConfigUpdate(
         input.payload,
         async (name) => {
@@ -2002,39 +1398,6 @@ export class InProcessControlPlane implements AgentControlPlane {
       // entropy; even its plain SHA-256 must never enter an approval payload.
       // Canonical JSON survives PostgreSQL JSONB key reordering.
       const patchHash = graphjinConfigPatchHash(input.payload);
-      const { graphjinQuery } = await import("../graphjin/client");
-      const { mintGraphjinToken } = await import("../graphjin/token");
-      const token = mintGraphjinToken({
-        orgId: input.orgId,
-        userId: gate.userId,
-        role: "admin",
-        ttlSeconds: 120,
-      });
-      const headers = { authorization: `Bearer ${token}` };
-      const revisionResponse = await graphjinQuery<{
-        gj_config?: { catalog_revision?: string; sources?: unknown };
-      }>({
-        baseUrl: src.graphqlUrl,
-        headers,
-        query: 'query { gj_config(id: "current") { catalog_revision sources } }',
-      });
-      const revision = revisionResponse.data?.gj_config?.catalog_revision;
-      if (!revision || revisionResponse.errors?.length) {
-        return {
-          source,
-          error:
-            revisionResponse.errors?.map((item) => item.message).join("; ") ||
-            "GraphJin did not return catalog_revision",
-        };
-      }
-      let currentSources = revisionResponse.data?.gj_config?.sources;
-      if (typeof currentSources === "string") {
-        try {
-          currentSources = JSON.parse(currentSources);
-        } catch {
-          currentSources = [];
-        }
-      }
       assertDatabaseSourcesStayReadOnly(update, currentSources);
       if (
         input.payload.action === "register_source" &&
@@ -2052,6 +1415,37 @@ export class InProcessControlPlane implements AgentControlPlane {
           error: `a GraphJin source named "${sourceName}" already exists`,
         };
       }
+      const summary = await (async () => {
+        try {
+          const { describeGraphjinConfigChange } = await import("../graphjin/config-describe");
+          const described = describeGraphjinConfigChange({
+            current: {
+              sources: currentSources,
+              roles: parseJsonColumn(revisionResponse.data?.gj_config?.roles),
+            },
+            update,
+          });
+          return {
+            ...described,
+            yaml: {
+              before: scrub(described.yaml.before),
+              after: scrub(described.yaml.after),
+            },
+          };
+        } catch {
+          return undefined;
+        }
+      })();
+      const checkConfigFile = async (candidate: Record<string, unknown>) => {
+        const { checkGraphjinConfigCandidate } = await import(
+          "../graphjin/config-file-check"
+        );
+        return checkGraphjinConfigCandidate({
+          configFile: process.env.OPENNEKO_GRAPHJIN_CONFIG,
+          socketPath: process.env.OPENNEKO_CONFIG_CHECK_SOCKET,
+          update: candidate,
+        });
+      };
       // The managed file is materialized only after approval. Local OpenAPI
       // validation plus the live catalog revision form the proposal preview;
       // the worker performs GraphJin's own two-phase preview after staging it.
@@ -2079,6 +1473,7 @@ export class InProcessControlPlane implements AgentControlPlane {
             },
             findings: specAsset.warnings,
             errors: null,
+            ...(summary ? { summary } : {}),
           },
         };
       }
@@ -2106,6 +1501,7 @@ export class InProcessControlPlane implements AgentControlPlane {
             },
             findings: [],
             errors: null,
+            ...(summary ? { summary } : {}),
           },
         };
       }
@@ -2132,38 +1528,63 @@ export class InProcessControlPlane implements AgentControlPlane {
       if (response.errors?.length) {
         return {
           source,
-          error: response.errors.map((item) => item.message).join("; "),
+          error: scrub(response.errors.map((item) => item.message).join("; ")),
         };
       }
       const row = response.data?.gj_config;
-      const scrub = (value: string | undefined): string =>
-        secretValue && secretValue.length >= 8
-          ? (value ?? "").split(secretValue).join("[REDACTED]")
-          : value ?? "";
+      const valid = row?.valid === true && Boolean(row.preview_id);
+      const errors = parseConfigPreviewJSON(scrub(row?.errors_json));
+      const preview = {
+        valid,
+        patchHash,
+        catalogRevision: revision,
+        expiresAt: row?.expires_at ?? null,
+        scope: null,
+        reloadMode: null,
+        changes: parseConfigPreviewJSON(scrub(row?.change_summary_json)),
+        findings: parseConfigPreviewJSON(scrub(row?.findings_json)),
+        errors,
+        ...(summary ? { summary } : {}),
+      };
+      if (!valid) {
+        const problems = mapGraphjinConfigErrors(errors, input.payload);
+        return {
+          source,
+          preview,
+          ...(problems.length > 0
+            ? { problems, error: describeConfigProblems(problems) }
+            : {}),
+        };
+      }
+      const checked = await checkConfigFile(update);
+      const fileCheck = checked.checked
+        ? { ...checked, errors: checked.errors.map((item) => scrub(item)) }
+        : { ...checked, reason: scrub(checked.reason) };
+      if (fileCheck.checked && !fileCheck.valid) {
+        const problems = mapGraphjinConfigErrors(fileCheck.errors, input.payload);
+        return {
+          source,
+          problems,
+          error: `The config file would not load in GraphJin. ${describeConfigProblems(problems)}`,
+          preview: { ...preview, valid: false, errors: fileCheck.errors, fileCheck },
+        };
+      }
       return {
         source,
         ...(specAsset ? { specAsset } : {}),
-        preview: {
-          valid: row?.valid === true && Boolean(row.preview_id),
-          patchHash,
-          catalogRevision: revision,
-          expiresAt: row?.expires_at ?? null,
-          scope: null,
-          reloadMode: null,
-          changes: parseConfigPreviewJSON(scrub(row?.change_summary_json)),
-          findings: parseConfigPreviewJSON(scrub(row?.findings_json)),
-          errors: parseConfigPreviewJSON(scrub(row?.errors_json)),
-        },
+        preview: { ...preview, fileCheck },
       };
     } catch (err) {
+      const { PasswordRequiredError } = await import("../graphjin/source-types");
+      if (err instanceof PasswordRequiredError) {
+        return {
+          source,
+          problems: [{ field: err.field, message: err.message }],
+          error: err.message,
+        };
+      }
       const message = err instanceof Error ? err.message : String(err);
-      return {
-        source,
-        error:
-          secretValue && secretValue.length >= 8
-            ? message.split(secretValue).join("[REDACTED]").slice(0, 1_000)
-            : message.slice(0, 1_000),
-      };
+      return { source, error: scrub(message).slice(0, 1_000) };
     }
   }
 
@@ -2297,24 +1718,21 @@ export class InProcessControlPlane implements AgentControlPlane {
   }
 }
 
+function parseJsonColumn(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 function hostnameOf(url: string | null): string | null {
   if (!url) return null;
   try {
     return new URL(url).hostname;
   } catch {
     return null;
-  }
-}
-
-function isInternalGraphjinURL(url: string): boolean {
-  try {
-    const candidate = new URL(url).host;
-    const internal = new URL(
-      process.env.OPENNEKO_GRAPHJIN_URL ?? "http://127.0.0.1:8089",
-    ).host;
-    return candidate === internal;
-  } catch {
-    return true;
   }
 }
 

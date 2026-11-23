@@ -19,7 +19,11 @@ export const TOOL_CSP = [
   "form-action 'none'",
   "base-uri 'none'",
   "frame-src 'none'",
+  "webrtc 'block'",
 ].join("; ");
+export const TOOL_NO_WEBRTC = [
+  "RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCIceCandidate", "RTCSessionDescription",
+].map((name) => `try{Object.defineProperty(window,${JSON.stringify(name)},{value:undefined,writable:false,configurable:false})}catch(e){}`).join("");
 export const TOOL_HEIGHT_MESSAGE = "openneko-tool-height";
 export const TOOL_MIN_HEIGHT = 120;
 export const TOOL_MAX_HEIGHT = 900;
@@ -122,6 +126,7 @@ export function buildToolDocument(html: string, tokens: Readonly<Record<string, 
     '<meta http-equiv="x-dns-prefetch-control" content="off">',
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    `<script>${TOOL_NO_WEBRTC}</script>`,
     `<style>${toolTokenCss(tokens)}${BASE_CSS}</style>`,
     "</head><body><main>",
     html,

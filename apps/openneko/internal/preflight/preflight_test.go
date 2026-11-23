@@ -2,17 +2,17 @@ package preflight
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 )
 
-func TestDefaultPortsIncludeWebAndLoopbackGateway(t *testing.T) {
-	if len(DefaultPorts) != 2 ||
+func TestDefaultPortsAreOnlyWeb(t *testing.T) {
+	if len(DefaultPorts) != 1 ||
 		DefaultPorts[0].Label != "web" || DefaultPorts[0].Def != 3000 ||
-		DefaultPorts[0].BindEnvVar != "OPENNEKO_WEB_BIND_ADDRESS" ||
-		DefaultPorts[1].EnvVar != "OPENSHELL_PORT" || DefaultPorts[1].Def != 18080 ||
-		DefaultPorts[1].BindAddress() != "127.0.0.1" {
-		t.Fatalf("packaged host ports = %+v, want web and loopback OpenShell gateway", DefaultPorts)
+		DefaultPorts[0].BindEnvVar != "OPENNEKO_WEB_BIND_ADDRESS" {
+		t.Fatalf("packaged host ports = %+v, want only web", DefaultPorts)
 	}
 }
 
@@ -82,6 +82,18 @@ func TestDuplicateBinary(t *testing.T) {
 	// No openneko on PATH → nothing to warn about.
 	if r := duplicateBinaryWith("/usr/local/bin/openneko", "", errNotFound); r.Level != Pass {
 		t.Fatalf("lookup error should be Pass, got %+v", r)
+	}
+	dir := t.TempDir()
+	real := filepath.Join(dir, "openneko")
+	if err := os.WriteFile(real, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if r := duplicateBinaryWith(real, link, nil); r.Level != Pass {
+		t.Fatalf("a link on PATH to this binary should be Pass, got %+v", r)
 	}
 	// A different openneko shadows us → warn with remediation.
 	r := duplicateBinaryWith("/opt/me/openneko", "/usr/bin/openneko", nil)

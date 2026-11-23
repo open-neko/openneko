@@ -6,8 +6,6 @@ import { ADMINISTRATORS_GROUP_SLUG } from "./schema";
 export const ITEM_TYPES = [
   "skill",
   "workflow",
-  "library_collection",
-  "library_concept",
   "metric",
   "dashboard",
   "watcher",
@@ -242,32 +240,6 @@ export async function listGroupItemGrants(orgId: string, groupId: string): Promi
       from item_grant where org_id = ${orgId} and group_id = ${groupId}
       order by item_type, item_id = '*' desc, item_id`),
   );
-}
-
-export type EffectiveItem = { itemType: ItemType; itemId: string; groups: Array<{ groupId: string; name: string }> };
-
-export async function effectiveAccess(
-  orgId: string,
-  userId: string,
-): Promise<{ administrator: boolean; items: EffectiveItem[] }> {
-  const groups = await resolveUserGroups(orgId, userId);
-  if (groups.groupIds.length === 0) return { administrator: false, items: [] };
-  const found = rows<{ item_type: ItemType; item_id: string; group_id: string; name: string }>(
-    await db().execute(sql`
-      select ig.item_type, ig.item_id, g.id as group_id, g.name
-      from item_grant ig join user_group g on g.id = ig.group_id
-      where ig.org_id = ${orgId}
-        and ig.group_id = any(${pgTextArray(groups.groupIds)}::uuid[])
-      order by ig.item_type, ig.item_id = '*' desc, ig.item_id, lower(g.name)`),
-  );
-  const items = new Map<string, EffectiveItem>();
-  for (const row of found) {
-    const key = `${row.item_type}\u0000${row.item_id}`;
-    const item = items.get(key) ?? { itemType: row.item_type, itemId: row.item_id, groups: [] };
-    item.groups.push({ groupId: row.group_id, name: row.name });
-    items.set(key, item);
-  }
-  return { administrator: groups.administrator, items: [...items.values()] };
 }
 
 async function requireGrantableGroup(orgId: string, groupId: string) {

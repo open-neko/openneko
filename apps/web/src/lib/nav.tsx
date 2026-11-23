@@ -71,7 +71,7 @@ export const SECONDARY_NAV: NavDestination[] = [
     href: "/library",
     label: "Library",
     shortLabel: "Library",
-    description: "Documents distilled into knowledge",
+    description: "Your documents and spreadsheets",
     icon: LibraryBig,
     group: "knowledge",
   },
@@ -119,7 +119,7 @@ export function hideAppChrome(pathname: string) {
 export function useApprovalsCount(enabled = true) {
   const visualTest =
     process.env.NODE_ENV !== "production" &&
-    process.env.NEXT_PUBLIC_RECORDS_VISUAL_TEST === "true";
+    process.env.NEXT_PUBLIC_VISUAL_TEST === "true";
   const [pending, setPending] = useState(visualTest ? 3 : 0);
 
   useEffect(() => {
@@ -127,7 +127,7 @@ export function useApprovalsCount(enabled = true) {
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await fetch("/api/approvals?countOnly=true", {
+        const res = await fetch("/api/v1/approvals?countOnly=true", {
           cache: "no-store",
         });
         if (cancelled || !res.ok) return;

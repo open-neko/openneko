@@ -42,8 +42,7 @@ type storageCollationState struct {
 // ReconcileStorage repairs all persisted indexes when a database volume moves
 // to the enforced storage ABI. It records completion in a numeric singleton
 // row rather than schema_migrations: schema migration ledgers use text indexes
-// (the thing being repaired), can be bootstrapped as already applied, and do
-// not cover records-db.
+// (the thing being repaired) and can be bootstrapped as already applied.
 //
 // The function is idempotent. If a process dies after REINDEX but before the
 // marker update, the next run safely repeats the repair.
@@ -51,12 +50,11 @@ func ReconcileStorage(ctx context.Context, conn StorageConn, logf func(string, .
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, storageReconcileAdvisoryLockKey); err != nil {
-		return false, fmt.Errorf("acquire storage reconciliation lock: %w", err)
+	unlock, err := Lock(ctx, conn, storageReconcileAdvisoryLockKey, "storage repair", logf)
+	if err != nil {
+		return false, err
 	}
-	defer func() {
-		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, storageReconcileAdvisoryLockKey)
-	}()
+	defer unlock()
 
 	state, err := readStorageCollationState(ctx, conn)
 	if err != nil {
@@ -193,4 +191,27 @@ func nullableString(value *string) string {
 		return "<none>"
 	}
 	return fmt.Sprintf("%q", *value)
+}
+
+// InspectStorage reports the collation state of a database that OpenNeko
+// does not own. It writes nothing.
+func InspectStorage(ctx context.Context, conn StorageConn, logf func(string, ...any)) error {
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+	state, err := readStorageCollationState(ctx, conn)
+	if err != nil {
+		return err
+	}
+	logf("[storage] %s is an external database; OpenNeko reports on it and changes nothing", state.database)
+	logf("[storage] collation provider %q, recorded version %s, actual version %s",
+		state.provider, nullableString(state.recorded), nullableString(state.actual))
+	if state.recorded != nil && state.actual != nil && *state.recorded != *state.actual {
+		quoted := pgx.Identifier{state.database}.Sanitize()
+		logf("[storage] WARN the collation version changed from %q to %q, so text indexes can be out of order", *state.recorded, *state.actual)
+		logf("[storage]      Run this SQL as the database owner:")
+		logf("[storage]        REINDEX DATABASE %s;", quoted)
+		logf("[storage]        ALTER DATABASE %s REFRESH COLLATION VERSION;", quoted)
+	}
+	return nil
 }

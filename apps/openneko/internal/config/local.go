@@ -2,10 +2,12 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // LocalPg mirrors the `pg` block of ~/.config/openneko/config.json, written
@@ -23,8 +25,23 @@ type LocalPg struct {
 }
 
 type Local struct {
-	Pg        *LocalPg `json:"pg,omitempty"`
-	RecordsPg *LocalPg `json:"recordsPg,omitempty"`
+	// DatabaseURL is a postgres:// URL for OpenNeko's database. It replaces Pg.
+	DatabaseURL string        `json:"database_url,omitempty"`
+	Pg          *LocalPg      `json:"pg,omitempty"`
+	Secrets     *LocalSecrets `json:"secrets,omitempty"`
+}
+
+type LocalSecrets struct {
+	Backend string `json:"backend,omitempty"`
+}
+
+// SecretsBackendError holds the same text as secretsBackendError in
+// packages/db/src/local-config.ts.
+func (lc Local) SecretsBackendError() error {
+	if lc.Secrets == nil || lc.Secrets.Backend == "" || lc.Secrets.Backend == "file" {
+		return nil
+	}
+	return fmt.Errorf("config.json sets secrets.backend to %q. OpenNeko keeps secrets only in the local secrets file. Copy each secret into it with `openneko secrets set <section> <key>`, remove the \"secrets\" block from config.json, then start again.", lc.Secrets.Backend)
 }
 
 // ReadLocal returns the local config, plus the path it was read from (empty
@@ -60,9 +77,9 @@ func ReadLocal(override string) (Local, string) {
 				lc.Pg.Password = plain
 			}
 		}
-		if lc.RecordsPg != nil && lc.RecordsPg.Password != "" {
-			if plain, err := MaybeDecryptValue(override, lc.RecordsPg.Password); err == nil {
-				lc.RecordsPg.Password = plain
+		if lc.DatabaseURL != "" {
+			if plain, err := MaybeDecryptValue(override, lc.DatabaseURL); err == nil {
+				lc.DatabaseURL = plain
 			}
 		}
 		return lc, path
@@ -72,53 +89,54 @@ func ReadLocal(override string) (Local, string) {
 
 // WriteLocalPgPassword persists the rotated DB password into the host config
 // (~/.config/openneko/config.json), encrypted at rest (enc:v1) with the host
-// secret-key — the single source ReadLocal and configureOpenShellDBURL read.
+// secret-key — the single source ReadLocal reads.
 //
 // The web /setup wizard writes the same field, but it runs in a container and
 // can only reach the in-container config volume, never the host file. The CLI
 // is the one component that both holds the plaintext password and can write the
 // host path, so it bridges the gap here. Existing fields are preserved.
 func WriteLocalPgPassword(override, password string) error {
-	return WriteLocalDatabasePasswords(override, password, "")
+	enc, err := EncryptValue(override, password)
+	if err != nil {
+		return err
+	}
+	return updateLocal(override, func(doc map[string]any) {
+		pg, _ := doc["pg"].(map[string]any)
+		if pg == nil {
+			pg = map[string]any{}
+		}
+		pg["password"] = enc
+		doc["pg"] = pg
+	})
 }
 
-// WriteLocalDatabasePasswords persists the metadata and records role
-// passwords rotated together by /setup. An empty records password preserves
-// the existing recordsPg block for backwards-compatible callers.
-func WriteLocalDatabasePasswords(override, metadataPassword, recordsPassword string) error {
-	enc, err := EncryptValue(override, metadataPassword)
+// WriteLocalDatabaseURL stores OpenNeko's database URL in the host config,
+// encrypted with the host secret-key.
+func WriteLocalDatabaseURL(override, url string) error {
+	enc, err := EncryptValue(override, url)
 	if err != nil {
 		return err
 	}
+	return updateLocal(override, func(doc map[string]any) {
+		doc["database_url"] = enc
+	})
+}
+
+// updateLocal changes config.json in place. Keys it does not know, and every
+// key the change leaves alone, stay as written.
+func updateLocal(override string, change func(map[string]any)) error {
 	dir := Dir(override)
 	path := filepath.Join(dir, "config.json")
-
-	// Merge over whatever is on disk so we only touch pg.password (read the
-	// raw bytes, not ReadLocal, to avoid round-tripping through decryption).
-	var lc Local
+	doc := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &lc)
+		_ = json.Unmarshal(data, &doc)
 	}
-	if lc.Pg == nil {
-		lc.Pg = &LocalPg{}
-	}
-	lc.Pg.Password = enc
-	if recordsPassword != "" {
-		recordsEnc, err := EncryptValue(override, recordsPassword)
-		if err != nil {
-			return err
-		}
-		if lc.RecordsPg == nil {
-			lc.RecordsPg = &LocalPg{}
-		}
-		lc.RecordsPg.Password = recordsEnc
-	}
-
-	out, err := json.MarshalIndent(lc, "", "  ")
+	change(doc)
+	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ownonly.Mkdir(dir); err != nil {
 		return err
 	}
 	return os.WriteFile(path, out, 0o600)

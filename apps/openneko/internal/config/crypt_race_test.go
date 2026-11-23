@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 // Two overlapping CLI invocations (a deploy `upgrade` racing a cron
-// `status`) must never mint different secret keys: the derived openshell
-// DB-role password and every enc:v1 value hang off this one file.
+// `status`) must never mint different secret keys: every enc:v1 value hangs
+// off this one file.
 func TestLoadOrCreateKeyConcurrent(t *testing.T) {
 	dir := t.TempDir()
 
@@ -38,13 +40,7 @@ func TestLoadOrCreateKeyConcurrent(t *testing.T) {
 		}
 	}
 
-	info, err := os.Stat(filepath.Join(dir, "secret-key"))
-	if err != nil {
-		t.Fatalf("stat key file: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("key file mode = %o, want 600", perm)
-	}
+	testmode.Private(t, filepath.Join(dir, "secret-key"), 0o600)
 }
 
 func TestLoadOrCreateKeyEmptyFileFails(t *testing.T) {

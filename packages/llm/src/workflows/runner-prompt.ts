@@ -12,8 +12,7 @@ import {
   buildMemorySection,
 } from "../prompts/sections";
 import type { WorkflowRecord } from "./store";
-import { GRAPHJIN_AGENT_ASK_TOOL_TITLE, GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "../graphjin/mcp-names";
-import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
+import { GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE } from "../graphjin/mcp-names";
 
 export type BuildWorkflowRunnerPromptInput = {
   workflow: WorkflowRecord;
@@ -26,10 +25,8 @@ export type BuildWorkflowRunnerPromptInput = {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
-  /** "agent" when the org opted in to GraphJin's server-side agent. */
-  graphjinDataPath?: GraphjinDataPath;
-  /** Installed plugin action kinds, so the runner uses real kinds (e.g. send_slack_dm) not generic ones. */
-  pluginActions?: readonly PluginActionPromptDescriptor[];
+  /** The run has a sandbox, so skill scripts can query data. */
+  scriptData?: boolean;
 };
 
 const HEADLESS_TAIL = `<mode>headless</mode>
@@ -61,74 +58,14 @@ if it moves), \`kind: "observation"\` is the right shape: emit the
 observation and end. Let the work stop where the steps say it should.
 </outputs>`;
 
-// Installed plugin action kinds, surfaced to the runner the same way the
-// chat path surfaces them (see work/prompt.ts). Without this the runner
-// agent invents a generic `send_message`, which no adapter handles and no
-// kind-scoped policy rule matches — so the action silently stalls at
-// pending_approval and never sends.
-export type PluginActionPromptDescriptor = {
-  kind: string;
-  description: string;
-  scope?: "external" | "internal";
-  default_mode?:
-    | "auto"
-    | "ask"
-    | "deny"
-    | { external?: "auto" | "ask" | "deny"; internal?: "auto" | "ask" | "deny" };
-  example?: Record<string, unknown>;
-};
-
-function isDeniedEverywhere(
-  defaultMode: PluginActionPromptDescriptor["default_mode"],
-): boolean {
-  if (defaultMode === "deny") return true;
-  if (defaultMode && typeof defaultMode === "object") {
-    const keys = Object.keys(defaultMode) as Array<"external" | "internal">;
-    return keys.length > 0 && keys.every((k) => defaultMode[k] === "deny");
-  }
-  return false;
-}
-
-function activeKinds(
-  pluginActions: readonly PluginActionPromptDescriptor[],
-): PluginActionPromptDescriptor[] {
-  return pluginActions.filter((d) => !isDeniedEverywhere(d.default_mode));
-}
-
-function installedKindsBlock(
-  pluginActions: readonly PluginActionPromptDescriptor[],
-): string {
-  const active = activeKinds(pluginActions);
-  if (active.length === 0) return "";
-  const rows = active
-    .map((d) => {
-      const head = `  - \`${d.kind}\` (scope: ${d.scope ?? "external"}) — ${d.description.split("\n")[0]}`;
-      return d.example
-        ? `${head}\n    example payload: ${JSON.stringify(d.example)}`
-        : head;
-    })
-    .join("\n");
-  return `
-Installed action kinds — when a step calls for one of these, use the
-EXACT \`kind\` value below; do NOT substitute a generic kind like
-\`send_message\` (the policy rules and the executing adapter both match
-on the exact kind, so a generic name silently fails to route).
-Always use the exact scope listed for an installed kind:
-${rows}
-`;
-}
-
-function buildMcpActionsBlock(
-  pluginActions: readonly PluginActionPromptDescriptor[],
-): string {
-  return `<actions>
+const MCP_ACTIONS_BLOCK = `<actions>
 Workflows decide; actions mutate. When a step needs to change real-world
 or internal state, propose it through \`mcp_neko_action_request\` and
 let policy decide whether it auto-executes, queues for operator
 approval, or is denied.
-${installedKindsBlock(pluginActions)}
-For mutations with no installed kind, use a generic kind: \`mutate_record\`,
-\`open_pr\`, \`run_command\` (external) or \`memory_write\`,
+
+When a step names an action kind, use that exact kind. Otherwise use a
+generic kind: \`mutate_record\`, \`open_pr\`, \`run_command\` (external) or \`memory_write\`,
 \`briefing_create\`, \`schedule_workflow\` (internal).
 
 Fill in \`risk_level\` honestly (\`low\`, \`medium\`, \`high\`,
@@ -139,10 +76,16 @@ plain language; that's what the operator may read before approving.
 When a request returns \`decision: denied\`, surface the reason to the
 operator and stop; re-attempting after a denial is wasted effort.
 </actions>`;
-}
 
 function buildNativeDelegationBlock(backend: AgentBackendId): string {
   return backend === "ax" ? AX_DELEGATION : "";
+}
+
+const RELATIVE_SKILL_PATH = /(^|[\t\n\f\r "'`(\[<])(?:\.\/)?skills\/([a-z0-9])/g;
+
+/** Same as withSkillsDir() in workflowprompt.go. */
+export function withSkillsDir(text: string, staged: boolean): string {
+  return staged ? text.replace(RELATIVE_SKILL_PATH, (_, before: string, first: string) => `${before}$SKILLS_DIR/${first}`) : text;
 }
 
 export function buildWorkflowRunnerPrompt(
@@ -152,27 +95,25 @@ export function buildWorkflowRunnerPrompt(
   if (!mcpTools) {
     throw new Error("Workflow runs require the native GraphJin broker tool");
   }
-  const pluginActions = input.pluginActions ?? [];
   const shellTool = shellToolName(backend);
-  const dataAccessSection = input.graphjinDataPath === "agent"
-    ? buildDataAccessSection({ shellTool, agentTool: GRAPHJIN_AGENT_ASK_TOOL_TITLE, workspace, knowledge, inlineKnowledge: "syntax" })
-    : buildDataAccessSection({
-        shellTool,
-        queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
-        queryIdentity: "actor",
-        readOnly: true,
-        scriptAccess: true,
-        workspace,
-        knowledge,
-        inlineKnowledge: "syntax",
-      });
+  const dataAccessSection = buildDataAccessSection({
+    shellTool,
+    queryTool: GRAPHJIN_EXECUTE_GRAPHQL_TOOL_TITLE,
+    queryIdentity: "actor",
+    readOnly: true,
+    scriptAccess: input.scriptData ?? false,
+    workspace,
+    knowledge,
+    inlineKnowledge: "syntax",
+  });
 
   const stepsBlock = workflow.steps
-    .map((step, index) =>
-      step.script
-        ? `  ${index + 1}. ${step.description} (script step: already ran; see <step_results>)`
-        : `  ${index + 1}. ${step.description}`,
-    )
+    .map((step, index) => {
+      const text = withSkillsDir(`${step.description}`, Boolean(workspace.skillsRoot));
+      return step.script
+        ? `  ${index + 1}. ${text} (script step: already ran; see <step_results>)`
+        : `  ${index + 1}. ${text}`;
+    })
     .join("\n");
 
   const overlay = workflow.systemPromptOverlay.trim();
@@ -198,7 +139,7 @@ ${overlay}
     : "";
 
   const outputsBlock = MCP_OUTPUTS_BLOCK;
-  const actionsBlock = buildMcpActionsBlock(pluginActions);
+  const actionsBlock = MCP_ACTIONS_BLOCK;
 
   return `<role>
 You are running a saved OpenNeko workflow as part of an operational loop.
@@ -233,6 +174,12 @@ ${dataAccessSection}
 
 <rules>
 ${GRAPHJIN_DATE_RULE}
+- A result reports only what the last run of the skill's own script
+  produced. When a step fails, for example on an error, a limit or a
+  missing file, the reply says that the step failed and why. Never edit a
+  result so that it passes a check. Report "no exact match" as "no exact
+  match", because it does not mean "not found". Never reuse an output from
+  before the failure.
 </rules>
 
 ${outputsBlock}
@@ -251,6 +198,11 @@ ${VALUE_ESTIMATE_INSTRUCTIONS}`}
 ${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}
 
 <files>
+The run folder is ${workspace.runRoot}. The skills folder is ${workspace.skillsRoot}.
+A path in a file tool or a terminal command may start with $RUN_DIR for
+the run folder, $ARTIFACT_DIR for the artifact folder or $SKILLS_DIR for the
+skills folder.
+
 Save every report or file you make under ${workspace.artifactRoot}. Files
 saved there become downloads for the operator. Files saved anywhere else are
 lost when the run ends.

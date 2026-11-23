@@ -93,15 +93,7 @@ jobs:
       - name: Build openneko binary
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         working-directory: apps/openneko
-        run: |
-          set -euo pipefail
-          ref="ghcr.io/open-neko/neko-librarian:${{ steps.ctx.outputs.tag }}"
-          digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -er '.digest')
-          pinned="$ref@$digest"
-          go build \
-            -ldflags "-X github.com/open-neko/neko/apps/openneko/internal/version.LibrarianImage=$pinned" \
-            -o /usr/local/bin/openneko ./cmd/openneko
-          echo "LIBRARIAN_IMAGE=$pinned" >> "$GITHUB_ENV"
+        run: go build -o /usr/local/bin/openneko ./cmd/openneko
 
       - name: Pre-pull images with retry
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
@@ -112,8 +104,6 @@ jobs:
           # misses fails the boot — so derive the list from the full demo
           # stack instead of hand-maintaining it. Demo includes every core
           # service plus the upgrade-sensitive datasource overlay.
-          # (busybox:latest for openshell-reg was the second one missed).
-          # OPENSHELL_VERSION is intentionally literal in the second sed expression.
           # The final expression unwraps ANY other ${VAR:-default} to its
           # default (e.g. ${OPENNEKO_GRAPHJIN_IMAGE:-dosco/graphjin:X}) — an
           # uninterpolated ref reaches `docker pull` as a literal and fails
@@ -123,9 +113,10 @@ jobs:
             sed -n 's/^[[:space:]]*image:[[:space:]]*//p' \
               apps/openneko/assets/compose/core.yml \
               apps/openneko/assets/compose/demo.yml \
-              apps/openneko/assets/compose/openshell.yml \
+              apps/openneko/assets/compose/bundled-db.yml \
+              recipes/sandbox/compose.yml \
             | sed -e "s/\${OPENNEKO_VERSION:-latest}/${tag}/" \
-                  -e 's/\${OPENSHELL_VERSION:-\([0-9.][0-9.]*\)}/\1/' \
+                  -e "s/\${OPENNEKO_VERSION:?[^}]*}/${tag}/" \
                   -e 's/\${[A-Za-z_][A-Za-z_0-9]*:-\([^}]*\)}/\1/g' \
             | sort -u
           )
@@ -144,21 +135,6 @@ jobs:
             done
           done
 
-      - name: Verify agent egress executable contract
-        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        env:
-          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # OpenShell binds model egress to this exact executable.
-          configured_binary=$(docker run --rm --entrypoint node \
-            "ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION" \
-            --import tsx/esm --input-type=module --eval \
-            'import { AX_HARNESS_BINARY } from "@neko/llm"; console.log(AX_HARNESS_BINARY)')
-          echo "OpenNeko policy executable: $configured_binary"
-          docker run --rm --entrypoint sh "ghcr.io/open-neko/agent:$OPENNEKO_VERSION" \
-            -c "test -x '$configured_binary'"
-
       - name: Verify enforced database storage contract
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
@@ -170,7 +146,7 @@ jobs:
             storage contract)
           echo "OpenNeko storage contract: $contract"
           test "$contract" = "1"
-          for image in neko-db records-db neko-backup; do
+          for image in neko-db; do
             ref="ghcr.io/open-neko/${image}:$OPENNEKO_VERSION"
             image_contract=$(docker image inspect \
               --format '{{ index .Config.Labels "org.openneko.storage-contract" }}' \
@@ -185,6 +161,47 @@ jobs:
             test "$image_owner" = "999:999"
             test "$runtime" = "glibc 2.36 / PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) / $image_owner"
           done
+
+      - name: Images hold no node executable
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        env:
+          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh "ghcr.io/open-neko/neko-web:$OPENNEKO_VERSION" \
+            -c '! command -v node && ! command -v nodejs'
+
+      - name: Sandbox from the release's published image
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        run: |
+          set -euo pipefail
+          key=$(openssl rand -hex 24)
+          echo "::add-mask::$key"
+          echo "OPENNEKO_SANDBOX_KEY=$key" >> "$GITHUB_ENV"
+          mkdir -p ~/.config/openneko
+          cat recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml
+          # shellcheck disable=SC2016
+          grep -qF 'image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?' ~/.config/openneko/compose.override.yml
+          if grep -q 'build:' ~/.config/openneko/compose.override.yml; then
+            echo "the sandbox override still builds from source" >&2
+            exit 1
+          fi
+
+      - name: Prove the sandbox's egress controls with real containers
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        working-directory: recipes/sandbox
+        env:
+          OPENNEKO_EGRESS_PROOF_IMAGE: ghcr.io/open-neko/neko-sandbox:${{ steps.ctx.outputs.tag }}
+          OPENNEKO_EGRESS_PROOF_REQUIRED: "1"
+          OPENNEKO_EGRESS_PROOF_HOST_PORT: "39187"
+        run: |
+          set -euo pipefail
+          docker pull -q pgvector/pgvector:0.8.6-pg16
+          go test -count=1 -run '^TestEgressProof$' -v -timeout 20m . | tee /tmp/egress-proof.log
+          if grep -- '--- SKIP' /tmp/egress-proof.log; then
+            echo "the egress proof skipped; it must run" >&2
+            exit 1
+          fi
 
       - name: openneko demo start (detached) against pre-pulled images
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
@@ -212,46 +229,25 @@ jobs:
           openneko logs || true
           exit 1
 
-      - name: Vendored librarian PDF extraction smoke
-        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        run: |
-          set -euo pipefail
-          worker=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=worker | head -1)
-          librarian=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=librarian | head -1)
-          test -n "$worker"
-          test -n "$librarian"
-          test "$(docker inspect --format '{{.State.Health.Status}}' "$librarian")" = healthy
-          test "$(docker inspect --format '{{.Config.Image}}' "$librarian")" = "$LIBRARIAN_IMAGE"
-          docker cp scripts/smoke-librarian.mjs "$worker:/tmp/smoke-librarian.mjs"
-          docker exec "$worker" node /tmp/smoke-librarian.mjs | tee /tmp/librarian-smoke.log
-          grep -F "librarian_pdf_async=ok" /tmp/librarian-smoke.log
-          docker exec "$librarian" python -c \
-            "from pathlib import Path; assert any(Path('/opt/docling/models').rglob('*'))"
-
-      - name: Retained-volume upgrade repairs and serves GraphJin
+      - name: Retained-volume upgrade keeps the GraphJin config and serves it from serve
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         env:
           OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
         run: |
           set -euo pipefail
-          worker_image="ghcr.io/open-neko/neko-worker:$OPENNEKO_VERSION"
+          web_image="ghcr.io/open-neko/neko-web:$OPENNEKO_VERSION"
           config_volume="openneko-demo_graphjin-config"
 
-          # Recreate the production regression exactly: the persisted config
-          # exists, but the runtime supervisor artifact is absent. Also keep a
-          # sentinel proving the upgrade reused rather than replaced the volume.
+          # Keep a sentinel proving the upgrade reused rather than replaced the
+          # volume, and a shell supervisor copy that releases before GraphJin
+          # moved into serve left behind; serve-init removes it.
           docker run --rm --user 0:0 \
             --entrypoint /bin/sh \
             -v "$config_volume:/config" \
-            "$worker_image" -ceu '
+            "$web_image" -ceu '
               test -s /config/agentic.yml
               printf "%s\n" retained-state > /config/.upgrade-smoke-sentinel
-              rm -f /config/.openneko-graphjin-supervisor.sh \
-                    /config/.openneko-graphjin-supervisor.sh.tmp
+              printf "#!/bin/sh\n" > /config/.openneko-graphjin-supervisor.sh
             '
 
           openneko upgrade --stack-only --mode demo \
@@ -260,52 +256,37 @@ jobs:
           docker run --rm --user 0:0 \
             --entrypoint /bin/sh \
             -v "$config_volume:/config" \
-            "$worker_image" -ceu '
+            "$web_image" -ceu '
               test "$(cat /config/.upgrade-smoke-sentinel)" = retained-state
-              test -x /config/.openneko-graphjin-supervisor.sh
+              test ! -e /config/.openneko-graphjin-supervisor.sh
             '
 
-          graphjin=$(docker ps -q \
+          serve=$(docker ps -q \
             --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=graphjin | head -1)
-          test -n "$graphjin"
-          test "$(docker inspect --format '{{.State.Health.Status}}' "$graphjin")" = healthy
-
-          worker=$(docker ps -q \
+            --filter label=com.docker.compose.service=openneko-serve | head -1)
+          test -n "$serve"
+          test "$(docker inspect --format '{{.State.Status}}' "$serve")" = running
+          web=$(docker ps -q \
             --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=worker | head -1)
-          test -n "$worker"
-          docker exec "$worker" node --import tsx/esm --input-type=module --eval '
-            import { mintGraphjinToken, callGraphjinMcpTool } from "@neko/llm";
-            const token = mintGraphjinToken({
-              orgId: "adventureworks",
-              userId: null,
-              role: "service",
-            });
-            const response = await callGraphjinMcpTool({
-              baseUrl: "http://graphjin:8080/api/v1/mcp",
-              headers: { authorization: "Bearer " + token },
-              signal: AbortSignal.timeout(10_000),
-            }, {
-              name: "execute_graphql",
-              arguments: {
-                query: "query { soh(limit: 1, order_by: { id: desc }) { id } }",
-              },
-            });
-            const text = response.content
-              .map((item) => item.type === "text" ? item.text : "")
-              .join("");
-            const payload = JSON.parse(text);
-            if (response.isError ||
-                !Array.isArray(payload.data?.soh) ||
-                payload.data.soh.length !== 1) {
-              throw new Error("authenticated datasource query failed");
-            }
-            console.log("authenticated_datasource_query=ok");
-          '
+            --filter label=com.docker.compose.service=web | head -1)
+          test -n "$web"
+          # The signed web -> GraphJin -> AdventureWorks path must return a real
+          # row, web must reach the agent socket of openneko serve, and the pack
+          # catalog must list the built-in packs, and web must find the bundled skills.
+          checks=$(docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills)
+          echo "$checks"
+          grep -qx authenticated_datasource_query=ok <<<"$checks"
+          grep -qx serve_socket=ok <<<"$checks"
+          grep -qx sandbox=ok <<<"$checks"
+          grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"
+          grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"
           openneko status
 
-      - name: Verify reconciled database volumes and pg-boss equality
+      - name: A workflow script step runs a bundled skill in the sandbox
+        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
+        run: scripts/smoke-script-step.sh openneko-demo
+
+      - name: Verify reconciled database volumes
         if: ${{ steps.ctx.outputs.build_ok == 'true' }}
         run: |
           set -euo pipefail
@@ -315,11 +296,7 @@ jobs:
               --filter "label=com.docker.compose.service=$1" | head -1
           }
           neko_db=$(container_for neko-db)
-          records_db=$(container_for records-db)
-          worker=$(container_for worker)
           test -n "$neko_db"
-          test -n "$records_db"
-          test -n "$worker"
 
           verify_contract() {
             container=$1
@@ -333,53 +310,6 @@ jobs:
             test "$collation" = "t"
           }
           verify_contract "$neko_db" neko neko
-          verify_contract "$records_db" records records
-
-          # Match the production failure exactly: the parent row must be found
-          # through indexed equality, or pg-boss's send-it FK insert fails.
-          test "$(docker exec "$neko_db" psql -v ON_ERROR_STOP=1 -U neko -d neko -Atc \
-            "select exists(select 1 from pgboss.queue where name = '__pgboss__send-it');")" = "t"
-          if docker logs --since 5m "$worker" 2>&1 | grep -F \
-            'violates foreign key constraint "q_fkey"'; then
-            echo "::error::pg-boss send-it FK failure survived storage reconciliation"
-            exit 1
-          fi
-
-      - name: OpenShell work sandbox lifecycle smoke
-        if: ${{ steps.ctx.outputs.build_ok == 'true' }}
-        env:
-          OPENNEKO_VERSION: ${{ steps.ctx.outputs.tag }}
-        run: |
-          set -euo pipefail
-          worker=$(docker ps -q \
-            --filter label=com.docker.compose.project=openneko-demo \
-            --filter label=com.docker.compose.service=worker | head -1)
-          test -n "$worker"
-          sandbox="neko-smoke-$$"
-          trap 'docker exec "$worker" openshell --gateway openneko sandbox delete "$sandbox" >/dev/null 2>&1 || true' EXIT
-          # Work sandboxes supply /app in their creation policy. Without it,
-          # OpenShell's no-network default denies the agent bundle under Landlock.
-          docker exec -i "$worker" sh -c 'cat > /tmp/openneko-smoke-policy.yaml' <<'POLICY'
-          version: 1
-          filesystem_policy:
-            include_workdir: true
-            read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
-            read_write: [/sandbox, /tmp, /dev/null]
-          landlock:
-            compatibility: best_effort
-          process:
-            run_as_user: sandbox
-            run_as_group: sandbox
-          network_policies: {}
-          POLICY
-          docker exec "$worker" openshell sandbox create \
-            --gateway openneko \
-            --name "$sandbox" \
-            --from "ghcr.io/open-neko/agent:$OPENNEKO_VERSION" \
-            --policy /tmp/openneko-smoke-policy.yaml \
-            --detach --no-tty --no-auto-providers -- sleep infinity
-          docker exec "$worker" openshell --gateway openneko sandbox exec \
-            -n "$sandbox" --no-tty -- node /app/entry.js --preflight
 
       # Failed releases are demoted to prerelease by the failure path below.
       # A manual recovery must reverse that state before this workflow ends:

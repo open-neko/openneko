@@ -1,13 +1,27 @@
-import { connection } from "next/server";
-import { getCurrentActor } from "@/lib/actor";
-import { getCurrentUser } from "@/lib/auth";
-import IntegrationsList from "@/app/integrations/IntegrationsList";
-import { loadIntegrations } from "@/app/integrations/load";
+"use client";
 
-export default async function ConnectorsPage() {
-  await connection();
-  const [actor, user] = await Promise.all([getCurrentActor(), getCurrentUser()]);
-  const { connectors, personal } = await loadIntegrations(actor, user);
+import { Suspense } from "react";
+import IntegrationsList from "@/app/integrations/IntegrationsList";
+import { useIntegrationsData } from "@/app/integrations/load";
+
+function ConnectorsLoader() {
+  const loaded = useIntegrationsData();
+  if (!loaded) return null;
   // Org-wide connections stay in Admin; this screen holds the person's own.
-  return <IntegrationsList variant="chat" initial={{ workspace: [], connectors, personal }} isAdmin={false} canSetUp={actor.role === "admin"} />;
+  return (
+    <IntegrationsList
+      variant="chat"
+      initial={{ workspace: [], connectors: loaded.connectors, personal: loaded.personal }}
+      isAdmin={false}
+      canSetUp={loaded.role === "admin"}
+    />
+  );
+}
+
+export default function ConnectorsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ConnectorsLoader />
+    </Suspense>
+  );
 }

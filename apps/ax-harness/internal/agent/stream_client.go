@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -51,7 +52,88 @@ type streamingModeClient struct {
 	// lastStatus is the HTTP status of the last failed model call, or 0.
 	// Ax 25's agent StreamingForward drops the provider error from its
 	// generate failure, so the harness reads the status here instead.
-	lastStatus atomic.Int32
+	lastStatus    atomic.Int32
+	executorNotes *executorNotes
+	executorCalls atomic.Int64
+	stageLimiter  func(stage string) ax.AxRateLimiter
+	// summaries tells whether a route's provider sends thought summaries.
+	summaries func(route string) bool
+}
+
+// rawReasoning is true when a fallback route serves the call and its
+// provider sends raw reasoning text in place of a summary.
+func (c *streamingModeClient) rawReasoning(served *servedRoute) bool {
+	route := served.get()
+	return route != "" && c.summaries != nil && !c.summaries(route)
+}
+
+func (c *streamingModeClient) staged(options map[string]ax.Value) map[string]ax.Value {
+	path, _ := options["executionPath"].(string)
+	if c.stageLimiter == nil || path == "" {
+		return options
+	}
+	out := maps.Clone(options)
+	out["rateLimiter"] = c.stageLimiter(path)
+	return out
+}
+
+func actorStage(options map[string]ax.Value) bool {
+	path, _ := options["executionPath"].(string)
+	for _, stage := range []string{"executor", "distiller"} {
+		if path == stage || strings.HasSuffix(path, "/"+stage) {
+			return true
+		}
+	}
+	return false
+}
+
+type thoughtTap struct {
+	ax.AxChatStream
+	notes *executorNoteStream
+}
+
+func (s *thoughtTap) Next() bool {
+	if !s.AxChatStream.Next() {
+		s.notes.end()
+		return false
+	}
+	chunk, _ := s.AxChatStream.Value().(map[string]ax.Value)
+	for _, item := range items(chunk["results"]) {
+		result, _ := item.(map[string]ax.Value)
+		if text, _ := result["thought"].(string); text != "" {
+			s.notes.add(text)
+		}
+	}
+	return true
+}
+
+// thoughtStrip removes the thinking text from a responder stream.
+type thoughtStrip struct{ ax.AxChatStream }
+
+func (s *thoughtStrip) Value() ax.Value {
+	chunk, ok := s.AxChatStream.Value().(map[string]ax.Value)
+	if !ok {
+		return s.AxChatStream.Value()
+	}
+	results := items(chunk["results"])
+	out := maps.Clone(chunk)
+	kept := make([]ax.Value, len(results))
+	for i, item := range results {
+		result, ok := item.(map[string]ax.Value)
+		if ok {
+			result = maps.Clone(result)
+			delete(result, "thought")
+			item = result
+		}
+		kept[i] = item
+	}
+	switch chunk["results"].(type) {
+	case []ax.Value:
+		out["results"] = kept
+	case *ax.AxArray:
+		out["results"] = &ax.AxArray{Items: kept}
+	}
+	return out
 }
 
 func (c *streamingModeClient) record(err error) error {
@@ -75,6 +157,7 @@ func (c *streamingModeClient) Chat(ctx context.Context, request, options map[str
 const maxResamples = 3
 
 func (c *streamingModeClient) chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {
+	options = c.staged(options)
 	response, err := c.AIClient.Chat(ctx, request, options)
 	for attempt := 0; attempt < maxResamples && err != nil && ctx.Err() == nil && resampleable(err); attempt++ {
 		noteResample(err)
@@ -109,7 +192,31 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 		}
 		return &valueStream{values: []ax.Value{response}}, nil
 	}
+	options = c.staged(options)
+	ctx, served := withServedRoute(ctx)
 	open := func() (ax.AxChatStream, error) { return streamEvents(ctx, c.AIClient, request, options) }
+	if actorStage(options) {
+		if c.executorNotes != nil {
+			plain := open
+			open = func() (ax.AxChatStream, error) {
+				stream, err := plain()
+				if err != nil || c.rawReasoning(served) {
+					return stream, err
+				}
+				call := c.executorCalls.Add(1)
+				return &thoughtTap{AxChatStream: stream, notes: c.executorNotes.stream(call)}, nil
+			}
+		}
+	} else {
+		plain := open
+		open = func() (ax.AxChatStream, error) {
+			stream, err := plain()
+			if err != nil || !c.rawReasoning(served) {
+				return stream, err
+			}
+			return &thoughtStrip{AxChatStream: stream}, nil
+		}
+	}
 	if request["response_format"] != nil {
 		// Structured stage output is never shown live, so read it whole and
 		// sample again when it fails, even after partial content.

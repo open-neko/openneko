@@ -94,7 +94,7 @@ export function UsersClient({
   async function createUser(event: React.FormEvent) {
     event.preventDefault();
     setBusy("create");
-    const created = await callApi("/api/admin/users", {
+    const created = await callApi("/api/v1/admin/users", {
       method: "POST",
       body: JSON.stringify({
         email,
@@ -120,7 +120,7 @@ export function UsersClient({
     patch: { role?: string; disabled?: boolean },
   ) {
     setBusy(id);
-    await callApi(`/api/admin/users/${encodeURIComponent(id)}`, {
+    await callApi(`/api/v1/admin/users/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     });
@@ -148,15 +148,15 @@ export function UsersClient({
       </div>}
 
       {identitySetup && <p className="mb-4 text-sm text-text2">Use the email you will sign in with if you enable SSO later.</p>}
-      {/* A user row without a sign-in plugin promises an account nobody
+      {/* A user row without a sign-in provider promises an account nobody
           can reach, and asks a real person for their address to do it. */}
       {!signInProvider && !identitySetup ? (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-control border border-border bg-neutral-soft px-4 py-3">
           <p className="text-ui-body-sm text-text2">
-            Install a sign-in plugin, such as Email link or Scalekit, to add other people.
+            Set up single sign-on or email-link sign-in to add other people.
           </p>
           <Button asChild size="sm">
-            <Link href="/admin/plugins">Open Plugins</Link>
+            <Link href="/admin/settings">Open Settings</Link>
           </Button>
         </div>
       ) : (

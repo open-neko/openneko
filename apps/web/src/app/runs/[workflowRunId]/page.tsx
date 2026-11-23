@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonList } from "@/components/ui/skeleton";
+import { withRunEventFormat } from "@/lib/run-event-format";
+import { coalesceRunEvents, type RunEventRow } from "@/lib/run-event-items";
 import { useParams, useRouter } from "next/navigation";
-import { Check, Download, MessageCircle, Pin, TriangleAlert } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { Download, MessageCircle, Square, TriangleAlert } from "lucide-react";
+import ReactMarkdown from "@/lib/safe-markdown";
 import remarkGfm from "remark-gfm";
 import AppHeader from "@/components/AppHeader";
+import { confirmDialog } from "@/components/ConfirmModal";
 import CreatorCredit from "@/components/CreatorCredit";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
@@ -17,6 +20,7 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Field, Textarea } from "@/components/ui/field";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
+import { createApprovalPasskeyAssertion, sendApproval, type PasskeyAssertionPayload } from "@/lib/passkey";
 
 type RunDetailPayload = {
   workflow: {
@@ -104,12 +108,7 @@ type RunDetailPayload = {
     rejectionReason: string | null;
     createdAt: string;
   }>;
-  events: Array<{
-    seq: number;
-    type: string;
-    event: Record<string, unknown> | null;
-    createdAt: string;
-  }>;
+  events: RunEventRow[];
   lineage: {
     triggeredBySubscriptionId: string | null;
     triggeredByOutputId: string | null;
@@ -126,6 +125,7 @@ type RunDetailPayload = {
       workflowRunId: string | null;
     };
   };
+  canStop: boolean;
 };
 
 function formatTime(iso: string | null): string {
@@ -280,15 +280,12 @@ export default function RunPage() {
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [pinningOutputId, setPinningOutputId] = useState<string | null>(null);
-  const [pinnedOutputIds, setPinnedOutputIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [stopping, setStopping] = useState(false);
 
   const load = useCallback(async () => {
     if (!workflowRunId) return;
     try {
-      const res = await fetch(`/api/workflow-runs/${workflowRunId}`, {
+      const res = await fetch(withRunEventFormat(`/api/v1/workflow-runs/${workflowRunId}`), {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -322,14 +319,23 @@ export default function RunPage() {
   }, [data?.run?.status, load]);
 
   const actOnRequest = useCallback(
-    async (id: string, decision: "approve" | "reject", reason?: string) => {
+    async (
+      id: string,
+      decision: "approve" | "reject",
+      reason?: string,
+      withPasskey = false,
+    ) => {
       setActionBusyId(id);
       try {
-        await fetch(`/api/action-requests/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, reason }),
-        });
+        const send = (passkey?: PasskeyAssertionPayload) =>
+          fetch(`/api/v1/action-requests/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decision, reason, ...(passkey ? { passkey } : {}) }),
+          });
+        if (decision !== "approve") await send();
+        else if (withPasskey) await send(await createApprovalPasskeyAssertion(id));
+        else await sendApproval(id, send);
         await load();
       } finally {
         setActionBusyId(null);
@@ -352,32 +358,34 @@ export default function RunPage() {
     setRejectReason("");
   }, []);
 
-  const pinOutput = useCallback(async (outputId: string) => {
-    setPinningOutputId(outputId);
+  const stopRun = useCallback(async () => {
+    const workRunId = data?.run.workRunId;
+    if (!workRunId) return;
+    const confirmed = await confirmDialog({
+      title: "Stop this run?",
+      description: "The run ends now as cancelled. Work it already did stays.",
+      confirmLabel: "Stop run",
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setStopping(true);
     try {
-      const res = await fetch("/api/briefing/pins", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outputId }),
-      });
-      if (res.ok) {
-        setPinnedOutputIds((current) => {
-          const next = new Set(current);
-          next.add(outputId);
-          return next;
-        });
+      const res = await fetch(`/api/v1/work/runs/${workRunId}/cancel`, { method: "POST" });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(json?.error ?? `Couldn't stop the run (HTTP ${res.status})`);
+        return;
       }
-    } catch {
-      // Best-effort: leave the control available so the operator can retry.
+      await load();
     } finally {
-      setPinningOutputId(null);
+      setStopping(false);
     }
-  }, []);
+  }, [data?.run.workRunId, load]);
 
   const askFollowUp = useCallback(async () => {
     if (!workflowRunId) return;
     try {
-      const res = await fetch("/api/work/threads", {
+      const res = await fetch("/api/v1/work/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seedWorkflowRunId: workflowRunId }),
@@ -435,15 +443,29 @@ export default function RunPage() {
           meta={run.status.replace(/_/g, " ")}
           description={`${formatRunTimestamp(run.startedAt ?? run.createdAt)} · ${formatTrigger(run.triggerKind, run.executionMode)} · ${formatDuration(durationMs)}`}
           actions={
-            <Button
-              size="sm"
-              className="run-followup-control"
-              onClick={askFollowUp}
-              title="Open an Ask thread pre-loaded with this run's context"
-            >
-              <MessageCircle aria-hidden="true" />
-              <span>Ask about this run</span>
-            </Button>
+            <ActionGroup>
+              {data.canStop ? (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={stopRun}
+                  disabled={stopping}
+                  title="Stop this run now"
+                >
+                  <Square aria-hidden="true" />
+                  <span>{stopping ? "Stopping…" : "Stop"}</span>
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                className="run-followup-control"
+                onClick={askFollowUp}
+                title="Open an Ask thread pre-loaded with this run's context"
+              >
+                <MessageCircle aria-hidden="true" />
+                <span>Ask about this run</span>
+              </Button>
+            </ActionGroup>
           }
         />
 
@@ -513,33 +535,6 @@ export default function RunPage() {
                         <span>{formatTaxonomy(o.topic)}</span>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "run-finding-pin-control",
-                        pinnedOutputIds.has(o.id) &&
-                          "disabled:text-success-mid disabled:opacity-100",
-                      )}
-                      disabled={
-                        pinningOutputId === o.id || pinnedOutputIds.has(o.id)
-                      }
-                      onClick={() => void pinOutput(o.id)}
-                      title="Pin this finding to the Briefing"
-                    >
-                      {pinnedOutputIds.has(o.id) ? (
-                        <Check aria-hidden="true" />
-                      ) : (
-                        <Pin aria-hidden="true" />
-                      )}
-                      <span>
-                        {pinnedOutputIds.has(o.id)
-                          ? "Pinned"
-                          : pinningOutputId === o.id
-                            ? "Pinning…"
-                            : "Pin to briefing"}
-                      </span>
-                    </Button>
                   </footer>
                 </li>
               ))}
@@ -558,11 +553,11 @@ export default function RunPage() {
                   key={a.id}
                   className="run-action-card bg-card border border-border rounded-2xl px-4 py-3.5"
                 >
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-1.5">
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="font-semibold text-sm text-text leading-[1.4] bg-transparent border-0 p-0 text-left cursor-pointer hover:underline hover:underline-offset-[3px]"
+                      className="min-w-0 whitespace-normal font-semibold text-sm text-text leading-[1.4] bg-transparent border-0 p-0 text-left cursor-pointer hover:underline hover:underline-offset-[3px]"
                       onClick={() => router.push(`/actions/${a.id}`)}
                       title="Open action receipt"
                     >
@@ -620,7 +615,7 @@ export default function RunPage() {
                       </div>
                     </div>
                   ) : a.status === "pending_approval" ? (
-                    <div className="flex gap-2 mt-2.5">
+                    <div className="flex flex-wrap gap-2 mt-2.5">
                       <Button
                         variant="primary"
                         size="sm"
@@ -628,6 +623,14 @@ export default function RunPage() {
                         onClick={() => void actOnRequest(a.id, "approve")}
                       >
                         Approve
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={actionBusyId === a.id}
+                        onClick={() => void actOnRequest(a.id, "approve", undefined, true)}
+                      >
+                        Approve with passkey
                       </Button>
                       <Button
                         variant="danger"
@@ -921,42 +924,8 @@ function JsonPanel({
 
 type EventRow = RunDetailPayload["events"][number];
 
-type RenderedItem =
-  | { type: "message-block"; seq: number; content: string }
-  | { type: "single"; seq: number; ev: EventRow };
-
-function coalesceEvents(events: EventRow[]): RenderedItem[] {
-  // Streaming chunks each become their own `message` event row. Rendering each
-  // independently through ReactMarkdown breaks any inline syntax that spans a
-  // chunk boundary (e.g. `**Daily Revenue Health Check**` split between two
-  // events leaves both halves un-bolded). Coalesce consecutive message events
-  // into a single block so the markdown parser sees a complete string.
-  const items: RenderedItem[] = [];
-  let current: { seq: number; content: string } | null = null;
-  for (const ev of events) {
-    if (ev.type === "message") {
-      const content = (ev.event as { content?: string } | null)?.content ?? "";
-      if (current) {
-        current.content += content;
-      } else {
-        current = { seq: ev.seq, content };
-      }
-      continue;
-    }
-    if (current) {
-      items.push({ type: "message-block", seq: current.seq, content: current.content });
-      current = null;
-    }
-    items.push({ type: "single", seq: ev.seq, ev });
-  }
-  if (current) {
-    items.push({ type: "message-block", seq: current.seq, content: current.content });
-  }
-  return items;
-}
-
 function EventStream({ events }: { events: EventRow[] }) {
-  const items = coalesceEvents(events);
+  const items = coalesceRunEvents(events);
   return (
     <ul className="list-none p-0 m-0 flex flex-col gap-1.5 text-ui-body border-l-2 border-border pl-3">
       {items.map((item) => {

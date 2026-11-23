@@ -12,15 +12,14 @@ import * as schema from "./schema";
 
 export { schema };
 export * from "./schema";
-export { buildPoolConfig } from "./connection";
 export {
-  buildRecordsPoolConfig,
-  defaultRecordsMigrationsDir,
-  discoverRecordsMigrations,
-  runRecordsMigrations,
-  type RecordsMigration,
-  type RecordsMigrationResult,
-} from "./records-migrate";
+  buildPoolConfig,
+  configuredDatabaseUrl,
+  formatDatabaseUrl,
+  parseDatabaseUrl,
+  resolveDatabaseTarget,
+  type DatabaseTarget,
+} from "./connection";
 export { createNotifyClient, type NotifyClient } from "./notify";
 export {
   guardPoolErrors,
@@ -68,7 +67,6 @@ export {
 export {
   ITEM_TYPES,
   _resetEntitlementCacheForTesting,
-  effectiveAccess,
   filterHeld,
   grantItem,
   grantItems,
@@ -81,7 +79,6 @@ export {
   packsContaining,
   revokeItem,
   whoHolds,
-  type EffectiveItem,
   type EntitlementActor,
   type GroupItemGrant,
   type HeldItems,
@@ -105,19 +102,37 @@ export {
   type DataAccessRuleRow,
 } from "./data-access";
 export {
+  DEVICE_IDLE_DAYS,
+  DEVICE_POLL_INTERVAL_SECONDS,
+  DEVICE_REQUEST_TTL_SECONDS,
+  DeviceError,
+  decideDeviceRequest,
+  deviceTokenFromAuthorization,
+  findDeviceRequest,
+  formatUserCode,
+  listDevices,
+  normalizeUserCode,
+  redeemDeviceRequest,
+  startDeviceRequest,
+  verifyDeviceToken,
+  type DeviceErrorCode,
+  type DeviceRequestView,
+  type DeviceRow,
+  type RedeemResult,
+} from "./devices";
+export {
   readLocalConfig,
   writeLocalConfig,
   hasCustomPassword,
   localConfigPath,
+  secretsBackendError,
   type LocalConfig,
   type LocalPgConfig,
 } from "./local-config";
 export {
   DEFAULT_INSTALL_POLICY,
   INSTALL_POLICY_SCOPE,
-  OFFICIAL_MARKETPLACE_URL,
   getInstallPolicyForOrg,
-  isInstallSourceAllowed,
   policyFromConfig,
   type InstallPolicy,
 } from "./install-policy";
@@ -126,15 +141,9 @@ export {
   GRAPHJIN_CONFIG_SCOPE,
   getGraphjinConfigSettingsForOrg,
   graphjinConfigSettingsFromConfig,
+  graphjinConfigSettingsFromRow,
   type GraphjinConfigSettings,
 } from "./graphjin-config";
-export {
-  GRAPHJIN_AGENT_REUSE_PRIMARY,
-  GRAPHJIN_AGENT_SCOPE,
-  getGraphjinAgentRow,
-  graphjinAgentEnabledForOrg,
-  type GraphjinAgentRow,
-} from "./graphjin-agent";
 export {
   and,
   asc,

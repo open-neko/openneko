@@ -42,7 +42,6 @@ for (const path of await yamlFiles(evalRoot)) {
       : []) {
       const dataPath = (variant as { data_path?: unknown }).data_path;
       if (dataPath === "graphjin-direct") evalCovered.add("DATA-DIRECT");
-      if (dataPath === "graphjin-agent") evalCovered.add("DATA-DELEGATED");
       if (dataPath === "planner-host-execute") {
         evalCovered.add("DATA-PLANNER-EXECUTE");
       }
@@ -55,9 +54,8 @@ const ownerBySection: Record<number, string[]> = {
   3: ["packages/llm/src", "apps/worker/src/jobs"],
   4: ["packages/llm/src/work"],
   5: ["packages/llm/src/workflows", "apps/worker/src/jobs"],
-  6: ["packages/channels", "packages/plugin-types", "packages/plugin-install"],
-  7: ["packages/records"],
-  8: ["packages/llm/src/work", "packages/records/src/policy"],
+  6: ["apps/openneko/internal/webfront"],
+  8: ["packages/llm/src/work"],
   9: ["apps/worker/src", "apps/openneko/internal"],
 };
 const categoryBySection: Record<number, string> = {
@@ -67,7 +65,6 @@ const categoryBySection: Record<number, string> = {
   4: "work-context",
   5: "workflow-automation",
   6: "channels-plugins",
-  7: "records",
   8: "security-governance",
   9: "operability-recovery",
 };

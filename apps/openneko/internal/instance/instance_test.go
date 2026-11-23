@@ -22,14 +22,14 @@ func TestValidate(t *testing.T) {
 func TestScopedDirectories(t *testing.T) {
 	t.Setenv(EnvName, "acme")
 	t.Setenv("XDG_STATE_HOME", "/var/state")
-	if got := ScopeConfigDir("/var/config/openneko"); got != "/var/config/openneko/instances/acme" {
+	if got := ScopeConfigDir("/var/config/openneko"); got != filepath.Join("/var/config/openneko", "instances", "acme") {
 		t.Fatalf("config dir = %q", got)
 	}
 	got, ok, err := StateDir()
 	if err != nil || !ok {
 		t.Fatalf("StateDir = %q, %v, %v", got, ok, err)
 	}
-	if want := filepath.Join("/var/state", "openneko", "instances", "acme"); got != want {
+	if want, _ := filepath.Abs(filepath.Join("/var/state", "openneko", "instances", "acme")); got != want {
 		t.Fatalf("state dir = %q, want %q", got, want)
 	}
 }

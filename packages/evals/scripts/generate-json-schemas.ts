@@ -32,7 +32,7 @@ const schemas = {
   "threshold-policy.v1.schema.json": ThresholdPolicySchema,
   "case.v1.schema.json": CaseSchema,
   "attempt.v1.schema.json": AttemptSchema,
-  "episode.v1.schema.json": EpisodeSchema,
+  "episode.v2.schema.json": EpisodeSchema,
   "score.v1.schema.json": ScoreSchema,
   "manifest.v1.schema.json": ManifestSchema,
   "semantics.v1.schema.json": SemanticRegistrySchema,

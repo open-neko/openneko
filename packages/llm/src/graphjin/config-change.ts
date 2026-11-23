@@ -7,6 +7,11 @@ import {
   validatePublicFileBaseUrl,
 } from "./file-source";
 import { parseManagedFileSourceManifest } from "./file-source-assets";
+import {
+  DATABASE_SOURCE_TYPES,
+  PasswordRequiredError,
+  SOURCE_TABLE_NAME,
+} from "./source-types";
 
 export type ResolveSourceSecret = (name: string) => Promise<string>;
 
@@ -94,6 +99,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const WRITABLE_SOURCE_KINDS = new Set(["api", "file"]);
 
+
+function tableList(value: unknown, field: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new Error(`${field} must be a list of table names`);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of value) {
+    const name = typeof item === "string" ? item.trim() : "";
+    if (!SOURCE_TABLE_NAME.test(name)) {
+      throw new Error(`${field} has an invalid table name "${String(item)}"`);
+    }
+    if (seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push(name);
+  }
+  return out;
+}
+
+function assertDisjointTables(lists: Record<string, string[]>): void {
+  const owner = new Map<string, string>();
+  for (const [field, names] of Object.entries(lists)) {
+    for (const name of names) {
+      const other = owner.get(name.toLowerCase());
+      if (other) throw new Error(`table "${name}" is in both ${other} and ${field}`);
+      owner.set(name.toLowerCase(), field);
+    }
+  }
+}
+
 /**
  * Customer databases are never written. Reject any proposal that would open a
  * write path on a database source (or on a source of unknown kind), whether
@@ -160,6 +194,7 @@ export async function buildGraphjinConfigUpdate(
   const action = String(payload.action ?? "");
   const update: Record<string, unknown> = {};
   let secretName: string | null = null;
+  const tableAccess: Record<string, string[]> = {};
 
   if (action === "add_role") {
     const name = String(payload.name ?? "").trim();
@@ -182,6 +217,27 @@ export async function buildGraphjinConfigUpdate(
     if (payload.delete) access.delete = String(payload.delete);
     if (Object.keys(access).length === 0) {
       throw new Error("set_source_access needs at least one access field");
+    }
+    update.source_patches = [{ name: source, access }];
+    return { update, secretName };
+  }
+
+  if (action === "set_source_tables") {
+    const source = String(payload.source ?? "").trim();
+    if (!source) throw new Error("set_source_tables needs source");
+    const blocked = tableList(payload.blockedTables, "blockedTables");
+    const admin = tableList(payload.adminTables, "adminTables");
+    const open = tableList(payload.openTables, "openTables");
+    assertDisjointTables({ blockedTables: blocked, adminTables: admin, openTables: open });
+    if (blocked.length + admin.length + open.length === 0) {
+      throw new Error("set_source_tables needs blockedTables, adminTables or openTables");
+    }
+    const access: Record<string, string[]> = {};
+    if (blocked.length) access.blocked_tables_add = blocked;
+    if (admin.length) access.admin_tables_add = admin;
+    if (open.length) {
+      access.blocked_tables_remove = open;
+      access.admin_tables_remove = open;
     }
     update.source_patches = [{ name: source, access }];
     return { update, secretName };
@@ -308,20 +364,32 @@ export async function buildGraphjinConfigUpdate(
       // Customer databases are read-only by contract. GraphJin pins this flag
       // at startup, so a later config patch cannot lift it.
       source.read_only = true;
-      source.type = String(payload.type ?? "postgres");
+      const type = selectedString(payload.type, "postgres").toLowerCase();
+      if (!(DATABASE_SOURCE_TYPES as readonly string[]).includes(type)) {
+        throw new Error(
+          `register_source database type must be ${DATABASE_SOURCE_TYPES.join(", ")} (received "${type}")`,
+        );
+      }
+      source.type = type;
+      const blocked = tableList(payload.blockedTables, "blockedTables");
+      const admin = tableList(payload.adminTables, "adminTables");
+      assertDisjointTables({ blockedTables: blocked, adminTables: admin });
+      if (blocked.length) tableAccess.blocked_tables = blocked;
+      if (admin.length) tableAccess.admin_tables = admin;
       copyString("host");
       if (payload.port) source.port = Number(payload.port);
       copyString("dbname");
       copyString("user");
       const ref =
         typeof payload.secretRef === "string" ? payload.secretRef.trim() : "";
-      if (ref) {
-        if (!resolveSecret) {
-          throw new Error("register_source secret resolution is unavailable");
-        }
-        secretName = ref;
-        source.password = await resolveSecret(ref);
+      if (!ref) throw new PasswordRequiredError();
+      if (!resolveSecret) {
+        throw new Error("register_source secret resolution is unavailable");
       }
+      secretName = ref;
+      const password = await resolveSecret(ref);
+      if (!password) throw new PasswordRequiredError();
+      source.password = password;
     }
     if (kind === "api") {
       const specAssetId =
@@ -399,6 +467,7 @@ export async function buildGraphjinConfigUpdate(
             read: String(payload.read ?? "authenticated"),
             write: String(payload.write ?? "blocked"),
             delete: String(payload.delete ?? "blocked"),
+            ...tableAccess,
           };
     update.update_sources = [source];
     return { update, secretName };

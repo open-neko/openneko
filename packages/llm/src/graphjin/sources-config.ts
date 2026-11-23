@@ -5,10 +5,9 @@ import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
 /**
  * Pure helpers for the GraphJin sources-mode (agentic) config file.
  *
- * Kept isolated from the worker dependency graph on purpose: the one-shot
- * graphjin-secret-init container patches this file BEFORE GraphJin's first
- * start and needs only the YAML parser plus Node built-ins. host-provision.ts
- * re-exports these helpers so existing imports keep working.
+ * `openneko serve-init` applies the same three edits in Go before GraphJin
+ * starts; the worker's boot pass uses these. host-provision.ts re-exports
+ * them.
  */
 
 export const SOURCES_SECRET_PLACEHOLDER = "REPLACE_WITH_PER_ORG_SECRET_B64";

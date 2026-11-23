@@ -1,6 +1,6 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "@/lib/safe-markdown";
 import { useEffect, useState } from "react";
 import {
   WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/linkify-workspace-paths";
 import { Disclosure } from "@/components/ui/disclosure";
 import { REMARK_PLUGINS } from "./work-markdown";
+import { currentTool, stepLabel } from "./work-step-label";
 import type { RunRecord, TimelineItem } from "./work-types";
 
 export function ProviderProgress({
@@ -19,12 +20,20 @@ export function ProviderProgress({
   live: boolean;
   collapsed?: boolean;
 }) {
+  if (collapsed && !content.trim().includes("\n")) {
+    return (
+      <div className="work-progress-disclosure flex min-h-10 items-center gap-3 rounded-inner border border-border bg-card px-3.5 py-2.5 font-body text-ui-body-sm text-text2">
+        <span className="min-w-0 flex-1">{progressPreview(content)}</span>
+        <span className="text-ui-caption font-semibold text-text3">Progress</span>
+      </div>
+    );
+  }
   if (collapsed) {
     return (
       <Disclosure title={<span className="font-normal text-text2">{progressPreview(content)}</span>} meta="Progress" className="work-progress-disclosure">
         <div className="work-markdown px-3.5 pb-3">
           <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
-            {linkifyWorkspacePaths(readableTrace(content))}
+            {linkifyWorkspacePaths(noteBody(content))}
           </ReactMarkdown>
         </div>
       </Disclosure>
@@ -42,12 +51,18 @@ export function ProviderProgress({
         <span className="work-progress-summary-label">Progress</span>
         <div className="work-markdown">
           <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
-            {linkifyWorkspacePaths(readableTrace(content))}
+            {linkifyWorkspacePaths(content)}
           </ReactMarkdown>
         </div>
       </div>
     </div>
   );
+}
+
+/** A note without its heading line, which the collapsed row already shows. */
+function noteBody(content: string): string {
+  const lines = content.trim().split("\n");
+  return /^\s*(\*\*.+\*\*|#{1,6}\s.+)\s*$/.test(lines[0]) ? lines.slice(1).join("\n").trim() : content;
 }
 
 type ProgressSection = { heading: string; detail: string };
@@ -146,6 +161,23 @@ export function progressPreview(content: string): string {
   return line.length > 140 ? `${line.slice(0, 139)}…` : line;
 }
 
+/**
+ * The line that says what the run does now: the newest of the thinking
+ * notes, the tool steps and the step status.
+ */
+export function liveStep(items: TimelineItem[], lastStatus: string | null, statusIsNewest = false): string | null {
+  if (statusIsNewest && lastStatus) return lastStatus;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.kind === "progress") return progressPreview(item.content);
+    if (item.kind === "tools") {
+      const tool = currentTool(item.tools.filter((t) => !t.approval));
+      if (tool) return stepLabel(tool);
+    }
+  }
+  return lastStatus;
+}
+
 /** Elapsed time such as "45 s", "3 min 12 s" or "1 h 5 min". */
 export function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000));
@@ -174,16 +206,28 @@ export function useElapsed(since: string | undefined, active: boolean): string |
   return Number.isFinite(ms) && ms >= 0 ? formatElapsed(ms) : null;
 }
 
-export function WorkTrail({ run, items, children }: { run: RunRecord | null; items: TimelineItem[]; children?: React.ReactNode }) {
+export function WorkTrail({
+  run,
+  items,
+  title,
+  className = "work-trail",
+  children,
+}: {
+  run: RunRecord | null;
+  items: TimelineItem[];
+  title?: string;
+  className?: string;
+  children?: React.ReactNode;
+}) {
   const notes = items.filter((item) => item.kind === "progress" || item.kind === "interim").length;
   const tools = items.reduce((count, item) => count + (item.kind === "tools" ? item.tools.length : 0), 0);
   const duration = workDuration(run);
   const meta = [
     notes ? `${notes} ${notes === 1 ? "note" : "notes"}` : "",
-    tools ? `${tools} ${tools === 1 ? "tool call" : "tool calls"}` : "",
+    tools ? `${tools} ${tools === 1 ? "step" : "steps"}` : "",
   ].filter(Boolean).join(", ");
   return (
-    <Disclosure title={duration ? `Worked for ${duration}` : "How OpenNeko worked"} meta={meta} className="work-trail">
+    <Disclosure title={title ?? (duration ? `Worked for ${duration}` : "How OpenNeko worked")} meta={meta} className={className}>
       <div className="flex flex-col gap-2.5 px-3 pb-3">{children}</div>
     </Disclosure>
   );

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
 import type { KnowledgePackContents } from "../src/knowledge-pack";
-import type { PluginCatalog } from "../src/work/control-plane";
 import { buildBotSection, buildCardsSection, buildWorkPrompt } from "../src/work/prompt";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
 import { splitStablePrompt } from "../src/prompts/stable-prefix";
@@ -38,18 +37,8 @@ function build(
     supportsPolicyTool?: boolean;
     supportsSourceConfigTool?: boolean;
     supportsClarificationTool?: boolean;
-    supportsPluginManagerTool?: boolean;
     supportsNativeDelegation?: boolean;
-    pluginCatalog?: PluginCatalog;
     installedSkills?: Array<{ name: string; description: string }>;
-    pluginActions?: Array<{
-      kind: string;
-      description: string;
-      scope?: "external" | "internal";
-      default_mode?: "auto" | "ask" | "deny";
-    }>;
-    dataSurface?: "customer" | "records";
-    graphjinDataPath?: "direct" | "agent";
   } = {},
 ): string {
   return buildWorkPrompt({
@@ -67,28 +56,8 @@ function build(
     supportsPolicyTool: overrides.supportsPolicyTool ?? false,
     supportsSourceConfigTool: overrides.supportsSourceConfigTool ?? false,
     supportsClarificationTool: overrides.supportsClarificationTool ?? false,
-    supportsPluginManagerTool: overrides.supportsPluginManagerTool ?? false,
     supportsNativeDelegation: overrides.supportsNativeDelegation ?? true,
-    pluginCatalog: overrides.pluginCatalog,
     installedSkills: overrides.installedSkills,
-    pluginActions: overrides.pluginActions,
-    dataSurface: overrides.dataSurface,
-    ...(overrides.graphjinDataPath ? { graphjinDataPath: overrides.graphjinDataPath } : {}),
-    ...(overrides.dataSurface === "records"
-      ? {
-          appContext: {
-            appId: "crm",
-            appLabel: "CRM",
-          },
-          recordContext: {
-            surface: "list" as const,
-            appId: "crm",
-            appLabel: "CRM",
-            objectApiName: "activity",
-            objectLabel: "Activities",
-          },
-        }
-      : {}),
     inlineTranscript: false,
   });
 }
@@ -106,42 +75,18 @@ describe("buildWorkPrompt UX metadata", () => {
   });
 });
 
-describe("buildWorkPrompt GraphJin agent path", () => {
-  it("describes only GraphJin's agent for data, including workflow triggers", () => {
-    const agent = build("ax", { graphjinDataPath: "agent", supportsWorkflowTool: true });
-    expect(agent).toContain("`mcp_neko_graphjin_agent_ask`");
-    expect(agent).not.toMatch(/mcp_neko_graphjin_(execute_graphql|query_catalog|validate_where_clause)/);
-    expect(agent).not.toContain(knowledge.syntax);
-    expect(agent).toContain("- Knowledge:");
-    expect(agent).toContain("Write each instruction as a precise data request.");
-    expect(agent).not.toMatch(/hidden|not available/i);
-  });
-
-  it("keeps the direct path unchanged", () => {
+describe("buildWorkPrompt GraphJin data path", () => {
+  it("names the direct GraphJin tools and never GraphJin's agent", () => {
     const direct = build("ax", { supportsWorkflowTool: true });
-    expect(direct).toBe(build("ax", { graphjinDataPath: "direct", supportsWorkflowTool: true }));
     expect(direct).toContain("`mcp_neko_graphjin_execute_graphql`");
     expect(direct).toContain("`mcp_neko_graphjin_query_catalog`");
     expect(direct).not.toContain("mcp_neko_graphjin_agent_ask");
   });
-});
 
-describe("buildWorkPrompt records data surface", () => {
-  it("routes generated-app questions only to native records tools", () => {
-    const prompt = build("ax", {
-      dataSurface: "records",
-      supportsSourceConfigTool: true,
-    });
-    expect(prompt).toContain("<records_access>");
-    expect(prompt).toContain("mcp_neko_records_*");
-    expect(prompt).toContain('"appId":"crm"');
-    expect(prompt).toContain('"objectApiName":"activity"');
-    expect(prompt).toContain("default subject and conversational home");
-    expect(prompt).toContain("CRM account context plus Support tickets");
-    expect(prompt).toContain("existing app, object, and field");
-    expect(prompt).not.toContain("<data_access>");
-    expect(prompt).not.toContain("graphjin cli execute_graphql");
-    expect(prompt).not.toContain("neko_source_config_manager");
+  it("states the house rule for relative periods", () => {
+    const prompt = build("ax", { supportsWorkflowTool: true });
+    expect(prompt).toContain("A year or 12 months is 365 days");
+    expect(prompt).toContain("Never count back to the same calendar date");
   });
 });
 
@@ -225,30 +170,9 @@ describe("buildWorkPrompt skill catalog", () => {
   });
 });
 
-describe("buildWorkPrompt action scopes", () => {
-  it("teaches fence-based agents the fixed scope for records and plugin actions", () => {
-    const prompt = build("ax", {
-      pluginActions: [
-        {
-          kind: "record_create",
-          description: "Create a generated-app record.",
-          scope: "internal",
-          default_mode: "ask",
-        },
-        {
-          kind: "send_slack_dm",
-          description: "Send a Slack direct message.",
-          default_mode: "ask",
-        },
-      ],
-    });
-
-    expect(prompt).toContain("`record_create` (scope:internal; mode:ask)");
-    expect(prompt).toContain("`send_slack_dm` (scope:external; mode:ask)");
-    expect(prompt).toContain(
-      '"scope": "<the exact scope shown for the selected kind>"',
-    );
-    expect(prompt).toMatch(/Never relabel an internal records\s+action as external/);
+describe("buildWorkPrompt action tools", () => {
+  it("carries no fenced action tool list", () => {
+    expect(build("ax", { supportsCardTool: false })).not.toContain("<action_tools>");
   });
 });
 
@@ -352,7 +276,9 @@ describe("buildWorkPrompt workflow + policy management", () => {
     expect(enabled).toContain("graphjin-config");
     expect(enabled).toContain(`${workspace.skillsRoot}/graphjin-config/SKILL.md`);
     expect(enabled).toContain("mcp_neko_source_config_manager_describe_source_graph");
-    expect(enabled).toContain("Call `ask_graphjin_config_agent`");
+    expect(enabled).toContain("Call `describe_source_config`");
+    expect(enabled).toContain("mcp_neko_source_config_manager_describe_source_config");
+    expect(enabled).not.toContain("ask_graphjin_config_agent");
     expect(enabled).toContain("Success for a view or explanation");
     expect(enabled).toContain("source_config_admin");
     expect(enabled).toContain("call `present_source_form` with the values you already know");
@@ -370,45 +296,6 @@ describe("buildWorkPrompt workflow + policy management", () => {
   it("frames /work as the single chat surface for everything", () => {
     const prompt = build("ax");
     expect(prompt).toMatch(/only chat surface/i);
-  });
-});
-
-describe("buildWorkPrompt capability recovery", () => {
-  it("uses the plugin manager approval tool when MCP tools are available", () => {
-    const prompt = build("ax", {
-      supportsPluginManagerTool: true,
-    });
-
-    expect(prompt).toContain("mcp_neko_plugin_manager_list_plugins");
-    expect(prompt).toContain(
-      "mcp_neko_plugin_manager_request_plugin_install",
-    );
-    expect(prompt).toMatch(/approval request.*inline/i);
-    expect(prompt).toMatch(/same answer/i);
-    expect(prompt).toMatch(/operator's yes\/no question/i);
-  });
-
-  it("gives the agent exact marketplace names and an approval-gated action fence", () => {
-    const prompt = build("ax", {
-      pluginCatalog: {
-        installed: [],
-        available: [
-          {
-            name: "@openneko/weather",
-            title: "Weather",
-            description: "Live weather data.",
-            version: "1.0.0",
-          },
-        ],
-      },
-    });
-
-    expect(prompt).toContain("@openneko/weather");
-    expect(prompt).toContain('"kind": "plugin_install"');
-    expect(prompt).toContain('"risk_level": "high"');
-    expect(prompt).toMatch(/does not install silently/i);
-    expect(prompt).toMatch(/same answer/i);
-    expect(prompt).toMatch(/operator's yes\/no question/i);
   });
 });
 
@@ -483,7 +370,6 @@ describe("cards in the final answer", () => {
         supportsPolicyTool: true,
         supportsSourceConfigTool: false,
         supportsClarificationTool: true,
-        supportsPluginManagerTool: true,
         supportsNativeDelegation: true,
         inlineTranscript: true,
       });

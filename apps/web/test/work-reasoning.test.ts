@@ -1,8 +1,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { buildRunTimeline } from "../src/app/(work)/work/work-timeline-model";
+import type { WorkEvent } from "../src/app/(work)/work/work-types";
 import {
   formatElapsed,
+  liveStep,
   progressPreview,
   ProviderProgress,
   WorkTrail,
@@ -58,6 +61,51 @@ describe("work reasoning", () => {
       ],
     }, createElement("p", null, "trail")));
     expect(html).toContain("Worked for 3 min 12 s");
-    expect(html).toContain("2 notes, 3 tool calls");
+    expect(html).toContain("2 notes, 3 steps");
+  });
+
+  it("renders the same thinking text the same way for every provider", () => {
+    const deltas = ["**Counting the orders**\n\nThe query ", "returned one row.", "\n\n**Writing the answer**\n\nOne sentence."];
+    const render = (provider: string) => {
+      const events: WorkEvent[] = [
+        { type: "status", message: "Check the data" },
+        ...deltas.map((content): WorkEvent => ({ type: "progress", id: "ax-summary-1", content, source: "provider_summary", provider })),
+      ];
+      const { items, lastStatus } = buildRunTimeline(events, "run-1");
+      const notes = items.filter((item) => item.kind === "progress");
+      expect(notes).toEqual([{ kind: "progress", id: "ax-summary-1", content: deltas.join("") }]);
+      return {
+        open: renderToStaticMarkup(createElement(ProviderProgress, { content: notes[0].content, live: true })),
+        collapsed: renderToStaticMarkup(createElement(ProviderProgress, { content: notes[0].content, live: false, collapsed: true })),
+        step: liveStep(items, lastStatus),
+      };
+    };
+    const anthropic = render("anthropic");
+    for (const provider of ["google-gemini", "deepseek", "openrouter", "together"]) {
+      expect(render(provider)).toEqual(anthropic);
+    }
+    expect(anthropic.open).toContain("Writing the answer");
+    expect(anthropic.step).toBe("Counting the orders");
+  });
+
+  it("shows the newest of the notes, the steps and the status lines", () => {
+    const note = (id: string, content: string): WorkEvent => ({ type: "progress", id, content, source: "provider_summary", provider: "google-gemini" });
+    const live = (events: WorkEvent[]) => {
+      const { items, lastStatus, statusIsNewest } = buildRunTimeline(events, "run-1");
+      return liveStep(items, lastStatus, statusIsNewest);
+    };
+    const first: WorkEvent = { type: "status", message: "Reading your question" };
+    expect(live([first])).toBe("Reading your question");
+    expect(live([first, note("ax-summary-1", "**Analyzing Sales Data**")])).toBe("Analyzing Sales Data");
+    expect(live([first, note("ax-summary-1", "**Analyzing Sales Data**"), { type: "status", message: "Putting the findings together" }]))
+      .toBe("Putting the findings together");
+    expect(live([first, { type: "status", message: "Putting the findings together" }, note("ax-summary-2", "**Comparing Regions**")]))
+      .toBe("Comparing Regions");
+  });
+
+  it("shows the step status when a provider sends no thinking text", () => {
+    const { items, lastStatus } = buildRunTimeline([{ type: "status", message: "Check the data" }], "run-1");
+    expect(liveStep(items, lastStatus)).toBe("Check the data");
+    expect(liveStep([], null)).toBeNull();
   });
 });

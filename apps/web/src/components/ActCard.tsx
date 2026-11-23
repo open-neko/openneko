@@ -8,7 +8,6 @@ import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatSavedShort } from "@/lib/hours-saved";
 import { ActionChanges } from "@/components/ActionChanges";
-import { RecordActionDiff } from "@/components/records/RecordActionDiff";
 import { actionApprovalAttribution } from "@/lib/action-copy";
 
 export type ActRowTone = "good" | "watch" | "action";
@@ -79,6 +78,7 @@ export default function ActCard({
   onSubmitReject,
   onFocusRow,
   onApproveRow,
+  onApproveWithPasskeyRow,
   onBeginRejectRow,
   rowRef,
 }: {
@@ -93,6 +93,7 @@ export default function ActCard({
   onSubmitReject?: () => void;
   onFocusRow?: (id: string) => void;
   onApproveRow?: (id: string) => void;
+  onApproveWithPasskeyRow?: (id: string) => void;
   onBeginRejectRow?: (id: string) => void;
   rowRef?: (id: string, el: HTMLLIElement | null) => void;
 }) {
@@ -173,13 +174,7 @@ export default function ActCard({
                     {row.detail}
                   </p>
                 )}
-                <RecordActionDiff
-                  kind={row.kind}
-                  payload={row.payload}
-                  compact
-                  policyContext={isPending ? row.approverPhrase : null}
-                />
-                {isPending && row.kind !== "record_update" ? (
+                {isPending ? (
                   <ActionChanges payload={row.payload} limit={3} className="mt-1.5" />
                 ) : null}
                 {row.rejectionReason && (
@@ -230,7 +225,7 @@ export default function ActCard({
                     </div>
                   </div>
                 ) : isPending ? (
-                  <div className="flex gap-2 mt-2">
+                  <div className="flex flex-wrap gap-2 mt-2">
                     <RowButton
                       tone="primary"
                       disabled={isBusy}
@@ -241,6 +236,17 @@ export default function ActCard({
                     >
                       Approve
                     </RowButton>
+                    {onApproveWithPasskeyRow ? (
+                      <RowButton
+                        disabled={isBusy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onApproveWithPasskeyRow(row.id);
+                        }}
+                      >
+                        Approve with passkey
+                      </RowButton>
+                    ) : null}
                     <RowButton
                       disabled={isBusy}
                       onClick={(e) => {

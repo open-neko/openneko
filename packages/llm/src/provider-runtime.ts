@@ -10,6 +10,7 @@ export type ProviderEndpoint = {
 export type ProviderRuntime = {
   model: string;
   baseUrl: string;
+  /** The env var the agent reads the key from; the launcher loads it per run. */
   keyEnv?: string;
   credentialSource: ProviderCredentialSource;
   endpoint: ProviderEndpoint;
@@ -76,24 +77,27 @@ export function vertexOpenAiBaseUrl(config: Record<string, unknown>): string {
   return `https://${host}/v1beta1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(region)}/endpoints/openapi`;
 }
 
-function ollamaBaseUrl(config: Record<string, unknown>): string {
-  const configured = requiredConfig(config, "url", "Ollama Base URL");
+function localBaseUrl(config: Record<string, unknown>, label: string, defaultPath?: string): string {
+  const configured = requiredConfig(config, "url", `${label} Base URL`);
   let url: URL;
   try {
     url = new URL(configured);
   } catch {
-    throw new Error(`Invalid Ollama Base URL: ${configured}`);
+    throw new Error(`Invalid ${label} Base URL: ${configured}`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Ollama Base URL must use http or https.");
+    throw new Error(`${label} Base URL must use http or https.`);
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(`${label} Base URL must not carry credentials, a query or a fragment.`);
   }
 
-  // The model runs in an OpenShell sandbox, so loopback points at the
-  // sandbox itself. Route host-local Ollama through Docker's host gateway.
+  // openneko serve calls the model from its own container, where loopback is
+  // not the host. Route a host-local server through Docker's host gateway.
   if (["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname)) {
     url.hostname = "host.docker.internal";
   }
-  if (url.pathname === "/" || url.pathname === "") url.pathname = "/v1";
+  if (defaultPath && (url.pathname === "/" || url.pathname === "")) url.pathname = defaultPath;
   return url.toString().replace(/\/$/, "");
 }
 
@@ -135,11 +139,21 @@ export function resolveProviderRuntime(args: {
     case "deepseek":
       return fixedRuntime(args.model, "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY");
     case "ollama": {
-      const baseUrl = ollamaBaseUrl(config);
+      const baseUrl = localBaseUrl(config, "Ollama", "/v1");
       return {
         model: args.model,
         baseUrl,
         credentialSource: "none",
+        endpoint: endpointFromUrl(baseUrl),
+      };
+    }
+    case "openai-compatible": {
+      const baseUrl = localBaseUrl(config, "OpenAI-compatible");
+      return {
+        model: args.model,
+        baseUrl,
+        keyEnv: "OPENAI_COMPATIBLE_API_KEY",
+        credentialSource: "stored-api-key",
         endpoint: endpointFromUrl(baseUrl),
       };
     }
@@ -164,7 +178,10 @@ export function resolveProviderRuntime(args: {
   }
 }
 
-/** Non-secret Ax Harness model route. The key reaches the box as an OpenShell placeholder in keyEnv. */
+/** The variable that carries the turn fallback model's key to the runner. */
+export const FALLBACK_KEY_ENV = "FALLBACK_MODEL_API_KEY";
+
+/** Non-secret Ax Harness model route. The key, loaded per run, goes to serve under keyEnv. */
 export type AxModelRoute = {
   /** An Ax provider profile, or openai-compatible. */
   provider: string;
@@ -173,6 +190,8 @@ export type AxModelRoute = {
   keyEnv?: string;
   /** Ax provider settings, for example Azure's resource and deployment. */
   options?: Record<string, string>;
+  /** The admin's price on the model record, in USD per million tokens. */
+  price?: { inputUsdPer1M: number; outputUsdPer1M: number };
 };
 
 // Ax has a profile for each of these. A profile keeps the provider's auth

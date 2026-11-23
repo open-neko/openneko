@@ -75,8 +75,8 @@ describe("compactIfNeeded", () => {
 
 describe("compactor signature", () => {
   it("accepts a first fold with no prior summary", () => {
-    const fields = compactor.getSignature().getInputFields();
-    expect(fields.find((f) => f.name === "priorSummary")?.isOptional).toBe(true);
-    expect(fields.find((f) => f.name === "transcript")?.isOptional).toBeFalsy();
+    const [inputs] = compactor.signature.split("->");
+    expect(inputs).toMatch(/\bpriorSummary\?:string\b/);
+    expect(inputs).toMatch(/\btranscript:string\b/);
   });
 });

@@ -1,9 +1,27 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { pool } from "@neko/db";
 import { maybeDecryptSecret, maybeEncryptSecret } from "@neko/secret-crypt";
-import { readSecretsStore } from "@open-neko/plugin-install/secrets";
-import { buildPackAuthorizationUrl, exchangePackOAuthCode, fetchPackOAuthAccount, refreshPackOAuthToken, packConnectionHeader, type PackOAuthConnection, type PackOAuthTokens } from "@neko/packs/oauth-client";
+import { buildPackAuthorizationUrl, exchangePackOAuthCode, fetchPackOAuthAccount, refreshPackOAuthToken, packConnectionHeader, type PackOAuthConnection, type PackOAuthTokens } from "./pack-oauth-client";
 import { verifyGraphjinToken } from "./token";
+
+async function readPackSecrets(section: string): Promise<Record<string, string>> {
+  const configHome = process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
+  try {
+    const raw = JSON.parse(await readFile(join(configHome, "openneko", "secrets.json"), "utf8")) as Record<string, unknown>;
+    const bag = raw?.[section];
+    if (!bag || typeof bag !== "object" || Array.isArray(bag)) return {};
+    return Object.fromEntries(
+      Object.entries(bag as Record<string, unknown>)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        .map(([k, v]) => [k, maybeDecryptSecret(v)]),
+    );
+  } catch {
+    return {};
+  }
+}
 
 export type ConnectionActor = { orgId: string; userId: string };
 export type ConnectionBinding = { installId: string; connectionKey: string; revision: string };
@@ -29,7 +47,7 @@ async function installed(actor: ConnectionActor, packId: string) {
 }
 
 async function clientConfig(packId: string, connection: PackOAuthConnection) {
-  const secrets = (await readSecretsStore())[`pack.${packId}`] ?? {};
+  const secrets = await readPackSecrets(`pack.${packId}`);
   const clientId = secrets[`OAUTH_${envKey(connection.key)}_CLIENT_ID`] ?? "";
   const clientSecret = secrets[envKey(connection.clientSecret)] ?? "";
   return { clientId, clientSecret };

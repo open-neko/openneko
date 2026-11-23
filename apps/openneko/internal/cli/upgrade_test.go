@@ -60,6 +60,12 @@ func TestNormalizeUpgradeImageVersion(t *testing.T) {
 	}
 }
 
+func TestUpgradePullsTheStartStepImages(t *testing.T) {
+	if got := upgradePullArgs(); !reflect.DeepEqual(got, []string{"--profile", "steps", "pull"}) {
+		t.Fatalf("upgrade pull args = %v", got)
+	}
+}
+
 func TestUpgradeWaitsForEveryServiceReadinessCheck(t *testing.T) {
 	want := []string{
 		"up", "-d", "--wait", "--wait-timeout", "180",
@@ -190,8 +196,6 @@ func TestSeedRefusesNamedProductionInstance(t *testing.T) {
 		Mode:           "prod",
 		WebPort:        3101,
 		WebBindAddress: "127.0.0.1",
-		OpenShellPort:  18101,
-		DockerSubnet:   "10.224.1.0/24",
 	}
 	if err := os.MkdirAll(filepath.Dir(installation.Path(config.Dir(""))), 0o700); err != nil {
 		t.Fatal(err)
@@ -227,26 +231,33 @@ ghcr.io/open-neko/agent:<none>
 postgres:16-alpine
 ghcr.io/open-neko/plugin-base:v0.9.0
 ghcr.io/open-neko/plugin-base:v0.9.0
+ghcr.io/open-neko/neko-sandbox:v1.0.0
+ghcr.io/open-neko/neko-sandbox:v2.0.0
 `
 	want := []string{
 		"ghcr.io/open-neko/neko-web:v1.0.0",
 		"ghcr.io/open-neko/neko-worker:v1.0.0",
 		"ghcr.io/open-neko/records-graphjin:v1.0.0",
 		"ghcr.io/open-neko/plugin-base:v0.9.0",
+		"ghcr.io/open-neko/neko-sandbox:v1.0.0",
 	}
 	if got := oldOpenNekoImageRefs(in, "v2.0.0"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("oldOpenNekoImageRefs = %#v, want %#v", got, want)
 	}
 }
 
-func TestExtraUpgradeImageRefsDedupesOverrides(t *testing.T) {
-	t.Setenv("OPENNEKO_AGENT_IMAGE", "custom/agent:v1")
-	t.Setenv("OPENNEKO_PLUGIN_BASE_IMAGE", "custom/agent:v1")
-	t.Setenv("OPENNEKO_SUPERVISOR_IMAGE", "custom/agent:v1")
-	got := extraUpgradeImageRefs("v2.0.0")
-	want := []string{"custom/agent:v1"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("extraUpgradeImageRefs = %#v, want %#v", got, want)
+func TestOldOpenNekoImageRefsTakesDigestPulledImagesByID(t *testing.T) {
+	in := `
+ghcr.io/open-neko/neko-librarian:<none> 361fd46387e5
+ghcr.io/open-neko/agent:<none> 5f1c0a2b9d77
+ghcr.io/open-neko/neko-web:v2.0.0 0a1b2c3d4e5f
+ghcr.io/open-neko/neko-web:v1.0.0 9e8d7c6b5a43
+ghcr.io/nvidia/openshell/gateway:<none> 2fe4dad9118e
+<none>:<none> 77aa88bb99cc
+`
+	want := []string{"361fd46387e5", "5f1c0a2b9d77", "ghcr.io/open-neko/neko-web:v1.0.0"}
+	if got := oldOpenNekoImageRefs(in, "v2.0.0"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("oldOpenNekoImageRefs = %#v, want %#v", got, want)
 	}
 }
 
@@ -261,5 +272,12 @@ func stubComposeProjects(t *testing.T, running, all []string) {
 			return all, nil
 		}
 		return running, nil
+	}
+}
+
+func TestUpgradeMaintenanceRemovesDroppedServices(t *testing.T) {
+	want := []string{"down", "--remove-orphans"}
+	if got := upgradeMaintenanceArgs(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("upgradeMaintenanceArgs() = %v, want %v", got, want)
 	}
 }

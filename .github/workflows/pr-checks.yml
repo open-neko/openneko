@@ -20,33 +20,55 @@ jobs:
           go-version: "1.26.10"
           cache: false
       - run: go test -race ./...
-        working-directory: apps/lazy-service
+        working-directory: recipes/lazy-service
 
-  embedding-image:
-    name: Offline embedding service
+  sandbox:
+    name: Sandbox recipe
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - run: docker build --target embedding -t openneko-embedding:pr .
-      - run: docker run --rm --network none --memory 1g --cpus 1 --pids-limit 64 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=64m --entrypoint node openneko-embedding:pr /app/smoke.mjs
-
-  librarian-image:
-    name: Librarian image
-    runs-on: ubuntu-22.04
-    timeout-minutes: 25
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Run owned API contract tests
-        run: docker build --target librarian-test -f apps/librarian/Dockerfile .
-
-      - name: Build image with vendored models
-        run: docker build --target librarian -t openneko-librarian:pr -f apps/librarian/Dockerfile .
-
-      - name: Verify lazy extraction and idle restart offline
-        run: docker run --rm --network none --memory 4g --cpus 1 --pids-limit 256 --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:size=512m --mount type=volume,target=/var/lib/neko-librarian/results --entrypoint python3 openneko-librarian:pr /app/smoke.py
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache: false
+      - run: go vet ./... && go test -race ./...
+        working-directory: recipes/sandbox
+      - name: Test the sandbox skills in the image
+        working-directory: recipes/sandbox
+        run: |
+          set -euo pipefail
+          docker build --target skill-test -t openneko-sandbox:skill-test .
+          docker run --rm openneko-sandbox:skill-test | tee /tmp/skill-test.log
+          if ! grep -qx 'ℹ skipped 0' /tmp/skill-test.log; then
+            echo "a skill test skipped; this step must run every one" >&2
+            exit 1
+          fi
+      - name: Run the user-switching and ACL tests as root
+        working-directory: recipes/sandbox
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 go test -c -o /tmp/sandbox.test .
+          docker run --rm --init --tmpfs /tmp:exec,mode=1777 -v /tmp/sandbox.test:/sandbox.test:ro \
+            debian:bookworm-slim /sandbox.test -test.v -test.skip '^(TestDialHelper|TestEgressProof)$' | tee /tmp/sandbox-root.log
+          if grep -- '--- SKIP' /tmp/sandbox-root.log; then
+            echo "a root test skipped; this step must run every one" >&2
+            exit 1
+          fi
+      - name: Prove the egress controls with real containers
+        working-directory: recipes/sandbox
+        env:
+          OPENNEKO_EGRESS_PROOF_IMAGE: openneko-sandbox:proof
+          OPENNEKO_EGRESS_PROOF_REQUIRED: "1"
+          OPENNEKO_EGRESS_PROOF_HOST_PORT: "39187"
+        run: |
+          set -euo pipefail
+          docker build -t openneko-sandbox:proof .
+          docker pull -q pgvector/pgvector:0.8.6-pg16
+          go test -count=1 -run '^TestEgressProof$' -v -timeout 20m . | tee /tmp/egress-proof.log
+          if grep -- '--- SKIP' /tmp/egress-proof.log; then
+            echo "the egress proof skipped; it must run" >&2
+            exit 1
+          fi
 
   release-recovery-contract:
     name: Release recovery contract
@@ -57,6 +79,16 @@ jobs:
 
       - name: Verify failed-to-recovered release transitions
         run: bash scripts/check-release-recovery-contract.sh
+
+  trust-floors:
+    name: Runtime and CA bundle floors
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify runtimes and CA bundles carry the eMudhra fixes
+        run: bash scripts/check-trust-floors.sh
 
   design-system:
     name: Web design system
@@ -131,47 +163,14 @@ jobs:
           path: apps/web/test-results/
           if-no-files-found: error
 
-  records-recovery:
-    name: Records recovery
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Verify backup and database crash recovery
-        run: ./scripts/test-records-recovery.sh
-
   graphjin-integration:
     name: GraphJin integration
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
-    services:
-      records-postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: records
-          POSTGRES_PASSWORD: records-secret
-          POSTGRES_DB: records
-        ports:
-          - 5434:5432
-        options: >-
-          --health-cmd "pg_isready -U records"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     env:
-      GRAPHJIN_VERSION: "3.21.16"
-      RECORDS_GRAPHJIN_IMAGE: openneko/graphjin-integration:3.21.16
-      REQUIRE_GRAPHJIN_INTEGRATION: "1"
-      OPENNEKO_PG_ENV_OVERRIDE: "1"
-      RECORDS_PG_HOST: localhost
-      RECORDS_PG_PORT: "5434"
-      RECORDS_PG_USER: records
-      RECORDS_PG_PASSWORD: records-secret
-      RECORDS_PG_DATABASE: records
+      GRAPHJIN_VERSION: "3.21.18"
+      GRAPHJIN_IMAGE: openneko/graphjin-integration:3.21.18
 
     steps:
       - uses: actions/checkout@v6
@@ -194,34 +193,18 @@ jobs:
             --load \
             --platform linux/amd64 \
             --target graphjin-runtime \
-            --tag "$RECORDS_GRAPHJIN_IMAGE" \
+            --tag "$GRAPHJIN_IMAGE" \
             .
-          docker run --rm --entrypoint graphjin \
-            "$RECORDS_GRAPHJIN_IMAGE" version | grep -F "$GRAPHJIN_VERSION"
+          docker run --rm --entrypoint graphjin "$GRAPHJIN_IMAGE" version | grep -F "$GRAPHJIN_VERSION"
 
       - name: Validate shipped source-mode configs
         run: |
           for config in customer.sources.example.yml dev.sources.example.yml; do
             docker run --rm --entrypoint graphjin \
               --volume "$PWD/db/graphjin:/config:ro" \
-              "$RECORDS_GRAPHJIN_IMAGE" \
+              "$GRAPHJIN_IMAGE" \
               config --file "/config/$config" validate
           done
-
-      - name: Configure GraphJin-to-Postgres routing
-        run: |
-          gateway="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
-          test -n "$gateway"
-          echo "RECORDS_GRAPHJIN_DB_HOST=$gateway" >> "$GITHUB_ENV"
-
-      - name: Run live GraphJin compatibility tests
-        run: |
-          pnpm --filter @neko/records exec vitest run \
-            test/policy-graphjin.integration.test.ts \
-            test/schema-graphjin.integration.test.ts \
-            test/write-executor.integration.test.ts \
-            test/import-executor.integration.test.ts \
-            --no-file-parallelism
 
   test:
     name: Test
@@ -264,21 +247,13 @@ jobs:
 
       - name: Install graphjin CLI
         env:
-          GRAPHJIN_VERSION: "3.21.16"
+          GRAPHJIN_VERSION: "3.21.18"
         run: |
           curl -fsSL -o /tmp/graphjin.tgz \
             "https://github.com/dosco/graphjin/releases/download/v${GRAPHJIN_VERSION}/graphjin_${GRAPHJIN_VERSION}_linux_amd64.tar.gz"
           sudo tar -xzf /tmp/graphjin.tgz -C /usr/local/bin graphjin
           graphjin version
 
-
-      - name: Verify durable embedding queue
-        env:
-          PGPASSWORD: secret
-          EMBEDDING_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/embedding_jobs_test
-        run: |
-          createdb -h 127.0.0.1 -U neko embedding_jobs_test
-          pnpm --filter @neko/worker exec vitest run test/embedding-jobs.test.ts
 
       - name: Run migrations
         env:
@@ -303,6 +278,9 @@ jobs:
       - name: Build
         run: pnpm -r build
 
+      - name: Build the static web app
+        run: pnpm --filter @neko/web build:spa
+
       - name: Test
         env:
           LIBRARY_BROWSE_REQUIRE_DB: "1"
@@ -312,5 +290,4 @@ jobs:
           NEKO_PG_PASSWORD: secret
           NEKO_PG_DATABASE: neko
           AGENT_AUTO_MEMORY: "off"
-        # apps/web and apps/worker share Postgres; worker's reconciler scans processing_job globally and races with web's onboarding tests.
         run: pnpm -r --workspace-concurrency=1 test

@@ -13,8 +13,6 @@ type Access = { administrator: boolean; items: EffectiveItem[]; groupSlugs: stri
 const TYPE_LABELS: Record<string, string> = {
   skill: "Skills",
   workflow: "Workflows",
-  library_collection: "Library collections",
-  library_concept: "Library concepts",
   metric: "Metrics",
   dashboard: "Dashboards",
   watcher: "Watchers",
@@ -36,7 +34,7 @@ export function EffectiveAccessSheet({ userId, email }: { userId: string; email:
   useEffect(() => {
     if (!open) return;
     const timer = window.setTimeout(() => {
-      void adminApi<Access>(`/api/admin/users/${encodeURIComponent(userId)}/access`).then((result) =>
+      void adminApi<Access>(`/api/v1/admin/users/${encodeURIComponent(userId)}/access`).then((result) =>
         result.ok ? setAccess(result.body) : setError(result.error),
       );
     }, 0);

@@ -1,41 +1,162 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
+	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
+	"github.com/open-neko/neko/apps/openneko/internal/dockerproxy"
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 )
 
-// The worker already owns GraphJin preview/apply, credential sealing, the
-// shared config lock, persistence, and restart. Use that path from the host.
-const graphjinImportScript = `
-import { getOrgId } from "@neko/db";
-import { applyPackGraphjinConfig } from "./src/packs/graphjin-config.ts";
-let raw = "";
-for await (const chunk of process.stdin) raw += chunk;
-const update = JSON.parse(raw);
-await applyPackGraphjinConfig({
-  endpoint: "http://graphjin:8080/api/v1/graphql",
-  orgId: await getOrgId(),
-  configFile: process.env.OPENNEKO_GRAPHJIN_CONFIG,
-  update,
-  restartAfterPersist: true,
-});
-console.log("GraphJin configuration imported");
-`
+func newGraphjinServeCmd() *cobra.Command {
+	var file, addr string
+	var asChild bool
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run only the customer GraphJin, as openneko serve runs it",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" {
+				return fmt.Errorf("--config is required")
+			}
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			if asChild {
+				stdin := bufio.NewReader(os.Stdin)
+				if err := setHandedEnv(stdin); err != nil {
+					return err
+				}
+				go func() {
+					_, _ = io.Copy(io.Discard, stdin)
+					stop()
+				}()
+				return gjhost.Serve(ctx, file, addr, cmd.ErrOrStderr())
+			}
+			return (&gjhost.Supervisor{ConfigFile: file, Addr: addr, Log: cmd.ErrOrStderr(), Command: gjhost.SelfCommand(file), Secrets: gjhost.ChildSecrets(os.Environ())}).Run(ctx)
+		},
+	}
+	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml)")
+	cmd.Flags().StringVar(&addr, "addr", envOr("OPENNEKO_GRAPHJIN_ADDR", "127.0.0.1:8080"), "Listen address")
+	cmd.Flags().BoolVar(&asChild, "child", false, "Run one engine and exit when stdin closes; the supervisor uses it")
+	_ = cmd.Flags().MarkHidden("child")
+	return cmd
+}
+
+// setHandedEnv sets the variables of the line that the supervisor writes
+// first on the child's stdin. A variable set here is not in the environment
+// block that the OS shows to another process; GraphJin reads it through
+// os.Getenv.
+func setHandedEnv(r *bufio.Reader) error {
+	line, err := r.ReadBytes('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("read the GraphJin secrets on stdin: %w", err)
+	}
+	var values map[string]string
+	if err := json.Unmarshal(line, &values); err != nil {
+		return fmt.Errorf("read the GraphJin secrets on stdin: %w", err)
+	}
+	clear(line)
+	for k, v := range values {
+		if err := os.Setenv(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func newGraphjinCheckCmd() *cobra.Command {
+	var file string
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Load a GraphJin config file with the pinned loader and print what is wrong",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" {
+				return fmt.Errorf("--config is required")
+			}
+			if _, err := os.Stat(file); err != nil {
+				return err
+			}
+			if err := gjhost.CheckConfig(file); err != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: not valid for GraphJin %s: %v\n", file, gjhost.Version(), err)
+				return WithExit(1, nil)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: valid for GraphJin %s\n", file, gjhost.Version())
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "GraphJin config file to check")
+	return cmd
+}
+
+func newGraphjinStatusCmd() *cobra.Command {
+	var file string
+	var subs bool
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Print the state of the customer GraphJin that openneko serve runs",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if subs {
+				file = filepath.Join(subscriptionsDir(), gjhost.SubscriptionsConfig)
+			}
+			if file == "" {
+				return fmt.Errorf("--config is required")
+			}
+			st, err := gjhost.ReadState(file)
+			if err != nil {
+				return fmt.Errorf("no GraphJin state beside %s: %w", file, err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), describeGraphjinState(st))
+			if st.State != gjhost.StateRunning {
+				return WithExit(1, nil)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&file, "config", os.Getenv("OPENNEKO_GRAPHJIN_CONFIG"), "Customer GraphJin config file (agentic.yml)")
+	cmd.Flags().BoolVar(&subs, "subscriptions", false, "Print the state of the subscriptions GraphJin")
+	return cmd
+}
+
+func describeGraphjinState(st gjhost.State) string {
+	line := fmt.Sprintf("GraphJin %s since %s", st.State, st.Since.Format(time.RFC3339))
+	if st.Restarts > 0 {
+		line += fmt.Sprintf(", %d restarts", st.Restarts)
+	}
+	if st.Reason != "" {
+		line += ": " + st.Reason
+	}
+	return line
+}
 
 func newGraphjinCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "graphjin", Short: "Manage the customer GraphJin configuration"}
-	cmd.AddCommand(&cobra.Command{
+	cmd.AddCommand(newGraphjinServeCmd(), newGraphjinStatusCmd(), &cobra.Command{
+		Use:   "version",
+		Short: "Print the GraphJin version linked into this binary",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Fprintf(cmd.OutOrStdout(), "GraphJin %s\n", gjhost.Version())
+		},
+	})
+	cmd.AddCommand(newGraphjinCheckCmd(), &cobra.Command{
 		Use:   "import <customer-config.yml|->",
 		Short: "Import customer sources, tables, and relationships into the running instance",
 		Args:  cobra.ExactArgs(1),
@@ -54,31 +175,41 @@ func newGraphjinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			settings, installed, err := loadCurrentInstallation()
-			if err != nil {
+			if os.Getenv(dockerproxy.EnvMarker) != "1" {
+				settings, installed, err := loadCurrentInstallation()
+				if err != nil {
+					return err
+				}
+				if !installed || compose.Mode(settings.Mode) != compose.ModeProd {
+					return fmt.Errorf("graphjin import requires a selected production installation")
+				}
+				code, proxied := MaybeProxyToWeb(cmd, func(container string) int {
+					process := exec.CommandContext(cmd.Context(), "docker", "exec", "-i", "-e", dockerproxy.EnvMarker+"=1",
+						container, "openneko", "graphjin", "import", "-")
+					process.Stdin = bytes.NewReader(input)
+					process.Stdout = cmd.OutOrStdout()
+					process.Stderr = cmd.ErrOrStderr()
+					if err := process.Run(); err != nil {
+						var exit *exec.ExitError
+						if errors.As(err, &exit) {
+							return exit.ExitCode()
+						}
+						fmt.Fprintf(cmd.ErrOrStderr(), "openneko: graphjin import: %v\n", err)
+						return 1
+					}
+					return 0
+				})
+				if proxied {
+					if code != 0 {
+						return WithExit(code, nil)
+					}
+					return nil
+				}
+			}
+			if _, err := requestWebAdminAPI(cmd.Context(), "graphjin import", http.MethodPost, "/admin/graphjin/import", json.RawMessage(update), nil); err != nil {
 				return err
 			}
-			if !installed || compose.Mode(settings.Mode) != compose.ModeProd {
-				return fmt.Errorf("graphjin import requires a selected production installation")
-			}
-			var worker string
-			if code, proxied := MaybeProxyToWorker(cmd, func(container string) int {
-				worker = container
-				return 0
-			}); proxied && code != 0 {
-				return WithExit(code, nil)
-			}
-			if worker == "" {
-				return fmt.Errorf("graphjin import requires a running instance worker")
-			}
-			process := exec.CommandContext(cmd.Context(), "docker", "exec", "-i", worker,
-				"node", "--import", "tsx/esm", "--input-type=module", "--eval", graphjinImportScript)
-			process.Stdin = bytes.NewReader(update)
-			process.Stdout = cmd.OutOrStdout()
-			process.Stderr = cmd.ErrOrStderr()
-			if err := process.Run(); err != nil {
-				return fmt.Errorf("graphjin import: %w", err)
-			}
+			fmt.Fprintln(cmd.OutOrStdout(), "GraphJin configuration imported")
 			return nil
 		},
 	})

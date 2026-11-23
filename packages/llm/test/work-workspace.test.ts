@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   SKILL_ORIGIN_FILE,
   copySkillOverrides,
@@ -20,13 +20,18 @@ import {
   materializeBuiltinSkills,
   readSkillOrigin,
   resolveBuiltinSkillsRoot,
-  unmodifiedBuiltinSkills,
+  resolveSandboxSkillsRoot,
 } from "../src/work/workspace";
 
 const cleanupPaths: string[] = [];
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
+beforeEach(() => {
+  process.env.OPENNEKO_SANDBOX_URL = "unix:///run/openneko/sandbox.sock";
+});
+
 afterEach(async () => {
+  delete process.env.OPENNEKO_SANDBOX_URL;
   while (cleanupPaths.length > 0) {
     const path = cleanupPaths.pop();
     if (path) await rm(path, { recursive: true, force: true });
@@ -51,6 +56,33 @@ describe("work workspace", () => {
       ),
     ).toBe("/app/assets/builtin-skills");
   });
+
+  it("finds the sandbox skills beside the agent bundle, in the package assets, then in the recipe", () => {
+    const all = () => true;
+    expect(resolveSandboxSkillsRoot("file:///app/agent-entry.js", undefined, all)).toBe("/app/assets/sandbox-skills");
+    expect(
+      resolveSandboxSkillsRoot("file:///app/packages/llm/src/work/workspace.ts", undefined, (candidate) => candidate === "/app/packages/llm/assets/sandbox-skills"),
+    ).toBe("/app/packages/llm/assets/sandbox-skills");
+    expect(
+      resolveSandboxSkillsRoot("file:///repo/packages/llm/src/work/workspace.ts", undefined, (candidate) => candidate === "/repo/recipes/sandbox/skills"),
+    ).toBe("/repo/recipes/sandbox/skills");
+    expect(resolveSandboxSkillsRoot("file:///x/y.js", "/opt/skills", () => false)).toBe("/opt/skills");
+  });
+
+  it.each(["xlsx", "docx", "pptx"])("seeds the %s skill from the sandbox recipe without its packages or tests", async (name) => {
+    const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
+    cleanupPaths.push(home);
+    process.env.HOME = home;
+
+    const workspace = await ensureOrgWorkspace("org-test");
+    const recipe = join(__dirname, "..", "..", "..", "recipes", "sandbox", "skills", name);
+    const seeded = join(workspace.skillsRoot, name);
+    expect(await readFile(join(seeded, "SKILL.md"), "utf8")).toBe(await readFile(join(recipe, "SKILL.md"), "utf8"));
+    expect((await readdir(join(seeded, "scripts"))).sort()).toEqual(["lib", `${name}.cjs`].sort());
+    expect(await readdir(seeded)).not.toContain("node_modules");
+    expect(await readdir(workspace.skillsRoot)).not.toContain("node_modules");
+    expect(await readdir(workspace.skillsRoot)).not.toContain("test");
+  }, 30_000);
 
   it("supports an isolated agent home in explicit host-web development mode", async () => {
     const agentHome = await mkdtemp(join(tmpdir(), "neko-agent-home-"));
@@ -91,10 +123,7 @@ describe("work workspace", () => {
 
     const workspace = await ensureOrgWorkspace("org-test");
     const skills = await readdir(workspace.skillsRoot);
-    expect(skills).toContain("app-builder");
-    expect(skills).toContain("crm");
-    expect(skills).toContain("records");
-    expect(skills).toContain("support-desk");
+    expect(skills).not.toContain("records");
     expect(skills).toContain("skill-creator");
     expect(skills).toContain("pdf");
   }, 30_000);
@@ -137,21 +166,23 @@ describe("work workspace", () => {
       .toContain("Org override.");
   }, 30_000);
 
-  it("lists seeded built-in skills until someone edits one", async () => {
-    const skills = await mkdtemp(join(tmpdir(), "neko-builtin-skills-"));
-    cleanupPaths.push(skills);
-    await materializeBuiltinSkills(skills);
-    const seeded = await unmodifiedBuiltinSkills(skills);
-    expect(seeded).toContain("pdf");
-    expect(seeded).toContain("skill-creator");
+  it("leaves out the script skills when the install has no sandbox", async () => {
+    delete process.env.OPENNEKO_SANDBOX_URL;
+    const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
+    const stage = await mkdtemp(join(tmpdir(), "neko-skills-stage-"));
+    cleanupPaths.push(home, stage);
+    process.env.HOME = home;
+    const workspace = await ensureOrgWorkspace("org-test");
+    const seeded = await readdir(workspace.skillsRoot);
+    expect(seeded).toContain("graphjin-config");
+    for (const name of ["docx", "pdf", "pptx", "skill-creator", "xlsx"]) expect(seeded).not.toContain(name);
 
-    await writeFile(join(skills, "pdf", "SKILL.md"), "Edited by an admin.");
-    await mkdir(join(skills, "quarterly-review"), { recursive: true });
-    await writeFile(join(skills, "quarterly-review", "SKILL.md"), "Org skill.");
-    const after = await unmodifiedBuiltinSkills(skills);
-    expect(after).not.toContain("pdf");
-    expect(after).not.toContain("quarterly-review");
-    expect(after).toContain("skill-creator");
+    await mkdir(join(workspace.skillsRoot, "pdf"), { recursive: true });
+    await writeFile(join(workspace.skillsRoot, "pdf", "SKILL.md"), "Seeded before the sandbox went away.");
+    const stagedSkills = join(stage, "skills");
+    expect(await copySkillOverrides(workspace.skillsRoot, stagedSkills)).not.toContain("pdf");
+    await materializeBuiltinSkills(stagedSkills);
+    expect(await readdir(stagedSkills)).not.toContain("pdf");
   }, 30_000);
 
   it("stages and seeds only the skills the run's actor holds", async () => {
@@ -173,7 +204,7 @@ describe("work workspace", () => {
     expect((await readdir(stagedSkills)).sort()).toEqual(["pdf", "quarterly-review"]);
 
     const forced = join(stage, "forced");
-    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["records"], [])).toEqual(["records"]);
+    expect(await copySkillOverrides(workspace.skillsRoot, forced, ["pdf"], [])).toEqual(["pdf"]);
   }, 30_000);
 
   it("records a builtin seed origin and skips a stale unmodified seed", async () => {
@@ -183,20 +214,20 @@ describe("work workspace", () => {
     process.env.HOME = home;
 
     const workspace = await ensureOrgWorkspace("org-test");
-    const pdfDir = join(workspace.skillsRoot, "pdf");
-    const origin = await readSkillOrigin(pdfDir);
+    const seedDir = join(workspace.skillsRoot, "pdf");
+    const origin = await readSkillOrigin(seedDir);
     expect(origin?.kind).toBe("builtin");
-    expect(origin?.sourceHash).toBe(await fingerprintSkillTree(pdfDir));
+    expect(origin?.sourceHash).toBe(await fingerprintSkillTree(seedDir));
 
     await writeFile(
-      join(pdfDir, "SKILL.md"),
-      `${await readFile(join(pdfDir, "SKILL.md"), "utf8")}\nStale seed body.\n`,
+      join(seedDir, "SKILL.md"),
+      `${await readFile(join(seedDir, "SKILL.md"), "utf8")}\nStale seed body.\n`,
     );
     await writeFile(
-      join(pdfDir, SKILL_ORIGIN_FILE),
+      join(seedDir, SKILL_ORIGIN_FILE),
       `${JSON.stringify({
         kind: "builtin",
-        sourceHash: await fingerprintSkillTree(pdfDir),
+        sourceHash: await fingerprintSkillTree(seedDir),
       })}\n`,
     );
 
@@ -208,6 +239,45 @@ describe("work workspace", () => {
     expect(await readFile(join(stagedSkills, "pdf", "SKILL.md"), "utf8")).not.toContain(
       "Stale seed body.",
     );
+  }, 30_000);
+
+  it("removes unchanged copies of retired built-ins and keeps changed or unrecorded ones", async () => {
+    const home = await mkdtemp(join(tmpdir(), "neko-work-home-"));
+    cleanupPaths.push(home);
+    process.env.HOME = home;
+    const workspace = await ensureOrgWorkspace("org-test");
+    const seed = async (name: string, body: string, origin: boolean) => {
+      const dir = join(workspace.skillsRoot, name);
+      await rm(dir, { recursive: true, force: true });
+      await mkdir(join(dir, "scripts"), { recursive: true });
+      await writeFile(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: old\n---\n`);
+      await writeFile(join(dir, "scripts", "run.py"), body);
+      if (origin) {
+        const sourceHash = await fingerprintSkillTree(dir);
+        await writeFile(join(dir, SKILL_ORIGIN_FILE), `${JSON.stringify({ kind: "builtin", sourceHash })}\n`);
+      }
+    };
+    await seed("xlsx", "print(1)\n", true);
+    await seed("dcf-model", "print(1)\n", true);
+    await seed("docx", "print(1)\n", true);
+    await writeFile(join(workspace.skillsRoot, "docx", "SKILL.md"), "Edited by an admin.");
+    await seed("pptx", "print(1)\n", false);
+    await seed("quarterly-review", "print(1)\n", true);
+    await seed("document-extraction", "print(1)\n", true);
+    await seed("pdf", "print(1)\n", true);
+
+    await ensureOrgWorkspace("org-test");
+    const after = await readdir(workspace.skillsRoot);
+    expect(await readFile(join(workspace.skillsRoot, "xlsx", "SKILL.md"), "utf8")).toContain("# Excel workbooks");
+    expect(await readdir(join(workspace.skillsRoot, "xlsx", "scripts"))).not.toContain("run.py");
+    expect(after).not.toContain("dcf-model");
+    expect(await readFile(join(workspace.skillsRoot, "docx", "SKILL.md"), "utf8")).toBe("Edited by an admin.");
+    expect(await readdir(join(workspace.skillsRoot, "pptx", "scripts"))).toEqual(["run.py"]);
+    expect(after).toContain("quarterly-review");
+    expect(after).toContain("skill-creator");
+    expect(after).not.toContain("document-extraction");
+    expect(await readFile(join(workspace.skillsRoot, "pdf", "SKILL.md"), "utf8")).toContain("# PDF files");
+    expect(await readdir(join(workspace.skillsRoot, "pdf", "scripts"))).not.toContain("run.py");
   }, 30_000);
 
   it("creates an empty disposable tree for non-interactive agent jobs", async () => {

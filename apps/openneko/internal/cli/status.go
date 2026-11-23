@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,17 +41,13 @@ const (
 // failed setup step — degraded, not a downed stack. A genuinely fatal one (e.g.
 // neko-migrate) still surfaces as down: its dependents never start, and those
 // missing long-running services drive the verdict. Keep in sync with the
-// `restart: "no"` services in assets/compose/{core,demo,openshell}.yml.
+// `restart: "no"` services in assets/compose/{core,demo}.yml.
 var oneShotJobs = map[string]bool{
-	"neko-migrate":                 true,
-	"storage-reconcile":            true,
-	"adventureworks-init":          true,
-	"graphjin-config-init":         true,
-	"records-graphjin-config-init": true,
-	"neko-adventureworks-seed":     true,
-	"openshell-certgen":            true,
-	"openshell-reg":                true,
-	"openshell-ready":              true,
+	"neko-migrate":             true,
+	"storage-reconcile":        true,
+	"adventureworks-init":      true,
+	"openneko-serve-init":      true,
+	"neko-adventureworks-seed": true,
 }
 
 func newStatusCmd() *cobra.Command {
@@ -60,11 +57,11 @@ func newStatusCmd() *cobra.Command {
 		Short: "Is the stack serving, degraded, or down?",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := configureBackupEnvironment(); err != nil {
-				return err
+			if _, ok := nativeInstall(); ok {
+				return statusNative(cmd.Context(), cmd.OutOrStdout())
 			}
 			sup := compose.New(assets.ComposeFS)
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}
@@ -87,6 +84,14 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 			state, lines := classifyStack(services)
+			for _, name := range []string{"graphjin", "subscriptions"} {
+				if line, ok := graphjinStatus(project, files, services, name); line != "" {
+					lines = append(lines, line)
+					if !ok && state == serving {
+						state = degraded
+					}
+				}
+			}
 			writeStatus(cmd.OutOrStdout(), state, lines, probeWeb())
 			if state == serving {
 				return nil
@@ -178,7 +183,48 @@ func classifyStack(services []composeService) (health, []string) {
 			worst = down
 		}
 	}
+	for _, name := range []string{"web", "openneko-serve"} {
+		if !slices.ContainsFunc(services, func(s composeService) bool { return s.Service == name }) {
+			lines = append(lines, fmt.Sprintf("  ❌ %s — not created", name))
+			worst = down
+		}
+	}
 	return worst, lines
+}
+
+// graphjinStatus asks openneko serve for the state of a GraphJin child:
+// "graphjin" (customer data) or "subscriptions".
+func graphjinStatus(project string, files []string, services []composeService, name string) (string, bool) {
+	running := false
+	for _, s := range services {
+		running = running || (s.Service == "openneko-serve" && strings.EqualFold(strings.TrimSpace(s.State), "running"))
+	}
+	if !running {
+		return "", true
+	}
+	args := []string{"compose"}
+	if project != "" {
+		args = append(args, "-p", project)
+	}
+	for _, f := range files {
+		args = append(args, "-f", f)
+	}
+	args = append(args, "exec", "-T", "openneko-serve", "/openneko", "graphjin", "status")
+	if name == "subscriptions" {
+		args = append(args, "--subscriptions")
+	}
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	return graphjinStatusLine(name, strings.TrimSpace(string(out)), err == nil)
+}
+
+func graphjinStatusLine(name, out string, ok bool) (string, bool) {
+	if ok {
+		return "  ✅ " + name + " — " + strings.TrimPrefix(out, "GraphJin "), true
+	}
+	if out == "" {
+		out = "no answer from openneko serve"
+	}
+	return "  ⚠️  " + name + " — " + strings.TrimPrefix(out, "GraphJin ") + " — see `openneko logs openneko-serve`", false
 }
 
 func describeState(s composeService) string {

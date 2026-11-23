@@ -1,23 +1,14 @@
 /**
  * @neko/llm — shared LLM machinery: providers, agents, classifier.
  *
- * Both apps/web (sync RPC: classify, provider-test) and apps/worker (job
- * handlers: profiler, industry-researcher, bootstrap-metrics-writer,
- * metric-agent) consume this package. Keeping it shared lets the web app
- * call LLM functions in-process instead of round-tripping through the
- * worker over HTTP.
+ * apps/web and apps/worker consume this package.
  */
 
 export * from "./config";
 export * from "./llm";
+export { generate, hostProgram, type GenerateResult, type HostProgram } from "./inference";
 export * from "./classifier";
-export * from "./summarize-briefing";
-export * from "./metric-agent";
 export * from "./usage-normalization";
-export * from "./discovery-pathways";
-export * from "./profiler";
-export * from "./bootstrap-metrics-writer";
-export * from "./industry-researcher";
 export * from "./agent-backend";
 export { makeAgentBackend } from "./agent-runtime";
 export {
@@ -37,7 +28,7 @@ export {
 export { AX_HARNESS_BINARY } from "./agent-runtime-contract";
 export {
   ensureHostConfigProvisioned,
-  gatewayProviderName,
+  loadAgentModelKeys,
   provisionHostConfig,
   verifyAgentRuntimeReady,
 } from "./host-provision";
@@ -55,4 +46,4 @@ export * from "./library";
 export * from "./workflows";
 export * from "./graphjin";
 
-export { dispatchEmbeddingJobs, runEmbeddingIndexJob, type EmbeddingIndexPayload } from "./embedding-jobs";
+export { runEmbeddingIndexJob, type EmbeddingIndexPayload } from "./embedding-jobs";

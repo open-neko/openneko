@@ -2,32 +2,33 @@
 
 import { Check, Loader2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { RecordNewFieldsNotice } from "@/components/records/RecordActionDiff";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { createApprovalPasskeyAssertion, sendApproval, type PasskeyAssertionPayload } from "@/lib/passkey";
 import { ToolDetail } from "./work-tool-detail";
 import type { ApprovalItem, ToolItem } from "./work-types";
 
 type ActionRequestSnapshot = {
   status: string;
   result: ApprovalItem["result"];
-  payload: Record<string, unknown> | null;
+  facts: ApprovalItem["facts"];
 };
 
 async function fetchActionRequestSnapshot(
   actionRequestId: string,
   actionKind: string,
 ): Promise<ActionRequestSnapshot | null> {
-  const res = await fetch(`/api/action-requests/${actionRequestId}`, {
+  const res = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
     cache: "no-store",
   });
   if (!res.ok) return null;
   const body = (await res.json()) as {
     actionRequest?: {
       status?: string;
+      facts?: ApprovalItem["facts"];
       rejectionReason?: string | null;
       failureReason?: string | null;
-      payload?: Record<string, unknown> | null;
     };
     executions?: Array<{
       status?: string;
@@ -73,7 +74,7 @@ async function fetchActionRequestSnapshot(
         : {}),
     };
   }
-  return { status, result, payload: body.actionRequest?.payload ?? null };
+  return { status, result, facts: body.actionRequest?.facts ?? null };
 }
 
 export function ActionApprovalRow({
@@ -97,7 +98,7 @@ export function ActionApprovalRow({
   const [localStatus, setLocalStatus] = useState<string | null>(null);
   const [localResult, setLocalResult] =
     useState<ApprovalItem["result"]>(null);
-  const [localPayload, setLocalPayload] = useState<Record<string, unknown> | null>(null);
+  const [localFacts, setLocalFacts] = useState<ApprovalItem["facts"]>(null);
 
   useEffect(() => {
     if (approval.result) return;
@@ -109,9 +110,9 @@ export function ActionApprovalRow({
         approval.actionKind,
       );
       if (cancelled || !snapshot) return;
+      setLocalFacts(snapshot.facts);
       setLocalStatus(snapshot.status);
       setLocalResult(snapshot.result);
-      setLocalPayload(snapshot.payload);
       if (snapshot.status === "approved") {
         timer = setTimeout(() => void sync(), 1_000);
       }
@@ -128,10 +129,9 @@ export function ActionApprovalRow({
     localDecision,
   ]);
 
-  const headline =
-    approval.intent ??
-    approval.summary ??
-    `Agent wants to run "${approval.actionKind}".`;
+  const facts = approval.facts ?? localFacts;
+  const headline = facts?.headline ?? approvalActionLabel(approval.actionKind);
+  const agentText = approval.intent ?? approval.summary;
   const effectiveResult = approval.result ?? localResult;
   const pending =
     approval.decision === "pending_approval" &&
@@ -185,7 +185,7 @@ export function ActionApprovalRow({
     tool.end?.result !== undefined ||
     tool.end?.error !== undefined;
 
-  async function decide(decision: "approve" | "reject") {
+  async function decide(decision: "approve" | "reject", withPasskey = false) {
     if (!runId) {
       setLocalError("Run not ready yet — try again in a moment.");
       return;
@@ -193,20 +193,25 @@ export function ActionApprovalRow({
     setBusy(true);
     setLocalError(null);
     try {
-      const res = await fetch(
-        `/api/work/threads/${threadId}/runs/${runId}/approve-action`,
-        {
+      const send = (passkey?: PasskeyAssertionPayload) =>
+        fetch(`/api/v1/work/threads/${threadId}/runs/${runId}/approve-action`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             actionRequestId: approval.actionRequestId,
             decision,
+            ...(passkey ? { passkey } : {}),
             ...(decision === "reject" && rejectReason
               ? { rejectionReason: rejectReason }
               : {}),
           }),
-        },
-      );
+        });
+      const res =
+        decision !== "approve"
+          ? await send()
+          : withPasskey
+            ? await send(await createApprovalPasskeyAssertion(approval.actionRequestId))
+            : await sendApproval(approval.actionRequestId, send);
       if (!res.ok) {
         if (res.status === 409) {
           const snapshot = await fetchActionRequestSnapshot(
@@ -277,10 +282,19 @@ export function ActionApprovalRow({
               size="sm"
               variant="primary"
               disabled={busy}
-              onClick={() => decide("approve")}
+              onClick={() => void decide("approve")}
               className="work-action-button is-primary"
             >
               {busy ? "Approving…" : "Approve"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void decide("approve", true)}
+              className="work-action-button"
+            >
+              Approve with passkey
             </Button>
             <Button
               size="sm"
@@ -305,7 +319,27 @@ export function ActionApprovalRow({
         ) : null}
       </div>
 
-      {pending ? <RecordNewFieldsNotice kind={approval.actionKind} payload={localPayload} /> : null}
+      {facts && (facts.lines.length > 0 || facts.flags.length > 0) ? (
+        <div className="work-action-row-facts grid gap-1 px-3 pb-2 text-ui-caption">
+          {facts.flags.length > 0 ? (
+            <ul className="m-0 flex list-none flex-wrap gap-1 p-0" aria-label="What is unusual">
+              {facts.flags.map((flag) => (
+                <li key={flag}><Badge variant="watch">{flag}</Badge></li>
+              ))}
+            </ul>
+          ) : null}
+          {facts.lines.length > 0 ? (
+            <ul className="m-0 grid list-none gap-0.5 p-0 text-text2">
+              {facts.lines.map((line, index) => <li key={index} className="break-words">{line}</li>)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {agentText ? (
+        <p className="work-action-row-agent m-0 px-3 pb-2 text-ui-caption text-text3 break-words">
+          The agent&apos;s description: {agentText}
+        </p>
+      ) : null}
 
       {pending && rejectMode ? (
         <div className="work-action-row-decision">
@@ -352,8 +386,6 @@ export function ActionApprovalRow({
 
 function approvalActionLabel(kind: string): string {
   const known: Record<string, string> = {
-    plugin_install: "Install integration",
-    plugin_uninstall: "Remove integration",
     web_fetch: "Fetch from web",
     web_search: "Search the web",
     send_slack_message: "Send Slack message",

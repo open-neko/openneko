@@ -13,22 +13,23 @@ File an issue at [github.com/open-neko/openneko/issues](https://github.com/open-
 
 ## Setting up your dev environment
 
-Setup commands — Node deps, migrations, `pnpm dev`, the two GraphJin services (sample-data and metadata), the AdventureWorks dev variant, and the external CLI installer (`./scripts/install-clis.sh`) — live in [INSTALL.md → Developer Setup](INSTALL.md#developer-setup). Update / reset / troubleshooting are in the same file.
+Setup commands — workspace dependencies, migrations, `pnpm dev`, `openneko-serve` (customer and subscriptions GraphJin), the AdventureWorks dev variant, and the external CLI installer (`./scripts/install-clis.sh`) — live in [INSTALL.md → Developer Setup](INSTALL.md#developer-setup). Update / reset / troubleshooting are in the same file.
 
 ## Repository layout
 
 ```text
 apps/
-  web/                 Next.js UI and API routes
-  worker/              Background job runner, plugin registry, OpenShell runtime
-  openneko/            `openneko` CLI + stack supervisor (Go), distributed as a single binary
+  openneko/            `openneko` CLI, stack supervisor, `openneko web` HTTP/River/pack/turn server, and `openneko serve` (Go)
+  ax-harness/          Ax agent harness, inference gateway, embedding gateway, and sandbox client (Go)
+  web/                 React UI (built as a static SPA in `apps/web/dist` and served by `openneko web`)
 packages/
-  db/                  Drizzle ORM client, schema, migrations, job queue
-  llm/                 Providers, agents, classifier, GraphJin work support; document
-                       library + OKF tooling (src/library), bundled skills and starter
-                       knowledge packs (assets/)
-  plugin-install/      Manifest, secrets store, marketplace client, install orchestrator (TS — consumed by worker)
-  plugin-types/        Plugin RPC schemas (zod) + manifest types — shared with plugin authors
+  avatars/             Animated cat avatars (`@neko/avatars`)
+  contract/            Contract tests for every route in api/openapi.yaml; they run against any server
+  db/                  Drizzle ORM client, schema, migrations, job payloads
+  evals/               Agent harness evaluation core and result verifier (`@neko/evals`)
+  llm/                 Shared model catalog fixtures, GraphJin helpers, A2UI contract, bundled skills (assets/)
+  secret-crypt/        AES-256-GCM `enc:v1` cipher (`@neko/secret-crypt`)
+  telemetry/           OpenTelemetry and startup timing helpers (`@neko/telemetry`)
 db/
   migrations/          Metadata database migrations (mirrored into apps/openneko/assets/migrations/ for embedding)
   graphjin/            Sample GraphJin config
@@ -52,6 +53,23 @@ go test ./... -count=1
 # Integration tests (need docker on the host):
 go test -tags=integration -count=1 -timeout 10m ./internal/db/...
 ```
+
+For changes to an API route or to `api/openapi.yaml`, run the contract tests.
+They run through `openneko web`, as the web image does.
+They need a Postgres login that may create databases, Go, and the static web build:
+
+```bash
+pnpm --filter @neko/web build:spa
+OPENNEKO_CONTRACT_PG=postgres://neko:secret@127.0.0.1:5432/postgres \
+  pnpm --filter @neko/contract local
+```
+
+To test another server, point `OPENNEKO_DATABASE_URL_FILE` at its new,
+migrated database and run `pnpm --filter @neko/contract seed <file>`. The
+command writes two device tokens to the file. Sign-in must be on for that
+server. Then set `OPENNEKO_CONTRACT_URL` and the two tokens, and run
+`pnpm --filter @neko/contract contract`. The tests change data, so use a test
+server.
 
 Keep PRs focused — one change per PR makes review tractable. Include a short description of the user-visible behavior change, and link the issue it closes if there is one.
 

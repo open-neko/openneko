@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -127,5 +128,50 @@ func TestMCPNamesEffectsAndSchemas(t *testing.T) {
 	if tools["mcp_neko_records_find"].Description != "Find records." || len(tools["mcp_neko_huge"].Description) != 1000 ||
 		tools["mcp_neko_records_save"].Description != "records_save" {
 		t.Fatal("descriptions not bounded or defaulted")
+	}
+}
+
+type pipeStream struct {
+	io.Reader
+	io.Writer
+	closers []io.Closer
+}
+
+func (p pipeStream) Close() error {
+	for _, c := range p.closers {
+		_ = c.Close()
+	}
+	return nil
+}
+
+func TestHostCallCarriesAScriptDataAnswer(t *testing.T) {
+	ctx := context.Background()
+	answer := `{"data":{"a":"<\"` + strings.Repeat("x", 40<<20) + `"}}`
+	server := protocol.NewServer(&protocol.Implementation{Name: "bridge", Version: "1"}, nil)
+	server.AddTool(&protocol.Tool{Name: "script_data_query", InputSchema: json.RawMessage(`{"type":"object"}`)}, func(context.Context, *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
+		return &protocol.CallToolResult{Content: []protocol.Content{&protocol.TextContent{Text: answer}}}, nil
+	})
+	toServer, fromClient := io.Pipe()
+	toClient, fromServer := io.Pipe()
+	session, err := server.Connect(ctx, &protocol.IOTransport{Reader: toServer, Writer: fromServer}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	caps, caller, closeBridge, err := ConnectStream(ctx, pipeStream{toClient, fromClient, []io.Closer{toClient, fromClient}}, "mcp_neko_", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closeBridge() })
+	raw, err := caller(ctx, "script_data_query", json.RawMessage(`{"query":"{ a }"}`))
+	if err != nil {
+		t.Fatalf("a 40 MiB answer did not pass the host call: %v", err)
+	}
+	var result struct{ Content []string }
+	if err := json.Unmarshal(raw, &result); err != nil || len(result.Content) != 1 || result.Content[0] != answer {
+		t.Fatalf("the answer changed: %v", err)
+	}
+	if _, err := byName(caps)["mcp_neko_script_data_query"].Call(ctx, json.RawMessage(`{}`)); err == nil || !strings.Contains(err.Error(), "exceeds limit") {
+		t.Fatalf("a tool result for the model kept no 8 MiB cap: %v", err)
 	}
 }

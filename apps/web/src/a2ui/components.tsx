@@ -10,7 +10,7 @@
 
 import React from "react";
 import { ChevronRight, MessageSquare } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "@/lib/safe-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { CheckboxControl } from "@/components/ui/checkbox";
@@ -55,6 +55,7 @@ import type {
   ConditionalProps,
   LayoutProps,
   ManagedFileSourceInputProps,
+  SourceSecretInputProps,
   OpenApiSpecInputProps,
   TabsProps,
   TextFieldProps,
@@ -70,6 +71,8 @@ import "./answer-blocks";
 import "./answer-diagram";
 import "./answer-map";
 import "./answer-tool";
+import "./pack-setup";
+import "./source-check";
 
 // ─── Answer / Briefing root ───
 // The card frame for a conversational answer (Answer) and the dashboard's daily
@@ -718,6 +721,15 @@ registerComponent("Tabs", (comp: A2UIComponent, ctx: RenderContext) => (
   <TabsView props={comp as unknown as TabsProps & { id: string }} ctx={ctx} />
 ));
 
+function FieldError({ id, error }: { id: string; error?: unknown }) {
+  if (typeof error !== "string" || !error) return null;
+  return (
+    <span id={id} className="work-a2ui-field-error" role="alert">
+      {error}
+    </span>
+  );
+}
+
 registerComponent("TextField", (comp: A2UIComponent, ctx: RenderContext) => {
   const props = comp as unknown as TextFieldProps & { id: string };
   const path = bindingPath(ctx, props.id, "value");
@@ -727,10 +739,14 @@ registerComponent("TextField", (comp: A2UIComponent, ctx: RenderContext) => {
       : props.variant === "obscured"
         ? "password"
         : "text";
+  const errorId = `${ctx.surface.surfaceId}-${props.id}-error`;
+  const hasError = typeof props.error === "string" && props.error !== "";
   const common = {
     id: `${ctx.surface.surfaceId}-${props.id}`,
     className: "work-a2ui-input",
     placeholder: props.placeholder,
+    "aria-invalid": hasError || undefined,
+    "aria-describedby": hasError ? errorId : undefined,
     value: props.value == null ? "" : String(props.value),
     onChange: (
       event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -751,6 +767,7 @@ registerComponent("TextField", (comp: A2UIComponent, ctx: RenderContext) => {
       ) : (
         <Input {...common} type={inputType} />
       )}
+      <FieldError id={errorId} error={props.error} />
     </label>
   );
 });
@@ -804,6 +821,7 @@ registerComponent("ChoicePicker", (comp: A2UIComponent, ctx: RenderContext) => {
             </option>
           ))}
         </NativeSelect>
+        <FieldError id={`${ctx.surface.surfaceId}-${props.id}-error`} error={props.error} />
       </label>
     );
   }
@@ -840,6 +858,7 @@ registerComponent("ChoicePicker", (comp: A2UIComponent, ctx: RenderContext) => {
           );
         })}
       </div>
+      <FieldError id={`${ctx.surface.surfaceId}-${props.id}-error`} error={props.error} />
     </fieldset>
   );
 });
@@ -877,6 +896,14 @@ type ImportedOpenApiAsset = {
   checksumSha256: string;
 };
 
+function urlHost(value: string): string {
+  try {
+    return new URL(value.trim()).host;
+  } catch {
+    return "";
+  }
+}
+
 function OpenApiSpecInputView({
   props,
   ctx,
@@ -890,8 +917,9 @@ function OpenApiSpecInputView({
       ? (props.value as ImportedOpenApiAsset)
       : null;
   const [mode, setMode] = React.useState<"url" | "upload">("url");
-  const [url, setUrl] = React.useState("");
-  const [baseUrl, setBaseUrl] = React.useState("");
+  const [url, setUrl] = React.useState(typeof props.url === "string" ? props.url : "");
+  const [baseUrl, setBaseUrl] = React.useState(typeof props.baseUrl === "string" ? props.baseUrl : "");
+  const fetchHost = urlHost(url);
   const [file, setFile] = React.useState<File | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -904,7 +932,7 @@ function OpenApiSpecInputView({
       let response: Response;
       if (mode === "url") {
         if (!url.trim()) throw new Error("Enter the hosted OpenAPI URL.");
-        response = await fetch("/api/settings/openapi-specs", {
+        response = await fetch("/api/v1/settings/openapi-specs", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -917,7 +945,7 @@ function OpenApiSpecInputView({
         const body = new FormData();
         body.set("file", file);
         if (baseUrl.trim()) body.set("baseUrl", baseUrl.trim());
-        response = await fetch("/api/settings/openapi-specs", {
+        response = await fetch("/api/v1/settings/openapi-specs", {
           method: "POST",
           body,
         });
@@ -965,6 +993,9 @@ function OpenApiSpecInputView({
             placeholder="https://api.example.com/openapi.yaml"
             onChange={(event) => setUrl(event.target.value)}
           />
+          {fetchHost ? (
+            <span className="work-a2ui-label">OpenNeko fetches this file from {fetchHost} when you press Import.</span>
+          ) : null}
         </label>
       ) : (
         <label className="work-a2ui-field">
@@ -1110,7 +1141,7 @@ function ManagedFileSourceInputView({
       const body = new FormData();
       body.set("sourceName", sourceName);
       files.forEach((file) => body.append("files", file));
-      const response = await fetch("/api/settings/file-sources", {
+      const response = await fetch("/api/v1/settings/file-sources", {
         method: "POST",
         body,
       });
@@ -1205,6 +1236,130 @@ registerComponent(
   (comp: A2UIComponent, ctx: RenderContext) => (
     <ManagedFileSourceInputView
       props={comp as unknown as ManagedFileSourceInputProps & { id: string }}
+      ctx={ctx}
+    />
+  ),
+);
+
+export function sourceSecretName(sourceName: string): string {
+  const base = sourceName.trim().replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 110);
+  return base ? `${base}-password` : "";
+}
+
+export function secretPort(port: unknown, type: unknown): number {
+  const n = typeof port === "number" ? port : Number(typeof port === "string" ? port.trim() : NaN);
+  if (Number.isInteger(n) && n > 0) return n;
+  return type === "mysql" || type === "mariadb" ? 3306 : 5432;
+}
+
+function SourceSecretInputView({
+  props,
+  ctx,
+}: {
+  props: SourceSecretInputProps & { id: string };
+  ctx: RenderContext;
+}) {
+  const path = bindingPath(ctx, props.id, "value");
+  const sourceName =
+    typeof props.sourceName === "string" ? props.sourceName.trim() : "";
+  const saved = typeof props.value === "string" ? props.value : "";
+  const secretName = sourceSecretName(sourceName);
+  const host = typeof props.host === "string" ? props.host.trim() : "";
+  const port = secretPort(props.port, props.type);
+  const dbname = typeof props.dbname === "string" ? props.dbname.trim() : "";
+  const user = typeof props.user === "string" ? props.user.trim() : "";
+  const [password, setPassword] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function save() {
+    if (!path) return;
+    if (!secretName) {
+      setError("Enter a source name before you save the password.");
+      return;
+    }
+    if (!host) {
+      setError("Enter the host before you save the password. OpenNeko sends it only to that host and port.");
+      return;
+    }
+    if (!dbname || !user) {
+      setError("Enter the database and the login before you save the password. OpenNeko sends it only with that database and login.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/v1/settings/source-secrets", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: secretName,
+          value: password,
+          description: `Password for the ${sourceName} source`,
+          host,
+          port,
+          dbname,
+          user,
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        name?: string;
+        error?: string;
+      };
+      if (!response.ok || !result.name) {
+        throw new Error(result.error || "The password was not saved.");
+      }
+      setPassword("");
+      ctx.onDataChange?.(path, result.name);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "The password was not saved.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="work-openapi-import work-source-secret">
+      <label className="work-a2ui-field">
+        <span className="work-a2ui-label">{props.label ?? "Password"}</span>
+        <Input
+          className="work-a2ui-input"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <FieldError id={`${props.id}-error`} error={props.error} />
+      </label>
+      <Button
+        type="button"
+        className="work-a2ui-button"
+        disabled={busy || !password || !secretName}
+        onClick={() => void save()}
+      >
+        {busy ? "Saving…" : saved ? "Replace password" : "Save password"}
+      </Button>
+      {error ? (
+        <div className="work-openapi-error" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <div className="work-managed-files-note">
+        {saved
+          ? `Saved as "${saved}". OpenNeko encrypts it. Chat sees the name only.`
+          : "OpenNeko encrypts the password. Chat sees its name only."}
+      </div>
+    </div>
+  );
+}
+
+registerComponent(
+  "SourceSecretInput",
+  (comp: A2UIComponent, ctx: RenderContext) => (
+    <SourceSecretInputView
+      props={comp as unknown as SourceSecretInputProps & { id: string }}
       ctx={ctx}
     />
   ),

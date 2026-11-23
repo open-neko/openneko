@@ -1,14 +1,7 @@
-// Package dockerproxy detects a running openneko-*-worker-1 container and
-// re-executes plugin-op CLI subcommands inside it. The brew-installed openneko
-// on the host can't reach the worker's named-volume manifest or its baked
-// node_modules, so install/list/remove/secrets/marketplace operations have
-// to happen container-side. This package makes that transparent — operators
-// just run `openneko install …` and the proxy handles it.
-//
-// Source-build dev users (running the worker via `pnpm dev` on the host) get
-// no proxy because no openneko-*-worker-1 container exists; the same command
-// falls through to the local in-process implementation. `--local` on the
-// root command forces local even when a container is running.
+// Package dockerproxy finds the running web container of an OpenNeko
+// installation and re-executes a CLI command inside it, where the named
+// volumes (secrets, packs) and the web admin socket are. `--local` on the
+// root command runs the command on the host instead.
 package dockerproxy
 
 import (
@@ -23,30 +16,15 @@ import (
 )
 
 // EnvMarker is set on the proxied invocation so the inner openneko inside
-// the worker container doesn't try to detect-and-proxy itself recursively.
+// the container does not proxy again.
 const EnvMarker = "OPENNEKO_PROXIED"
 
-var ErrAmbiguousWorkers = errors.New("multiple OpenNeko workers are running")
+var ErrAmbiguousServices = errors.New("multiple OpenNeko installations are running")
 
-// FindRunningWorker returns a running OpenNeko worker container. When project
-// is non-empty it targets that exact named installation; without a project it
-// retains the legacy single-stack behavior and refuses ambiguous matches.
-func FindRunningWorker(project ...string) string {
-	target := ""
-	if len(project) > 0 {
-		target = strings.TrimSpace(project[0])
-	}
-	name, err := ResolveRunningWorker(target)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[openneko] %v\n", err)
-	}
-	return name
-}
-
-// ResolveRunningWorker is the error-reporting form used by the root CLI. An
-// ambiguous multi-stack host must fail closed instead of silently performing a
-// plugin operation in the caller's current directory.
-func ResolveRunningWorker(project string) (string, error) {
+// ResolveRunningService returns the running container of a Compose service.
+// With a project it targets that installation; without one it refuses an
+// ambiguous match.
+func ResolveRunningService(project, service string) (string, error) {
 	if os.Getenv(EnvMarker) == "1" {
 		return "", nil
 	}
@@ -58,47 +36,44 @@ func ResolveRunningWorker(project string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name, ambiguous := selectWorkerForProject(strings.Split(strings.TrimSpace(string(out)), "\n"), strings.TrimSpace(project))
+	name, ambiguous := selectServiceForProject(strings.Split(strings.TrimSpace(string(out)), "\n"), strings.TrimSpace(project), service)
 	if len(ambiguous) > 0 {
-		return "", fmt.Errorf("%w (%s); select one with --instance <name> or pass --local", ErrAmbiguousWorkers, strings.Join(ambiguous, ", "))
+		return "", fmt.Errorf("%w (%s); select one with --instance <name> or pass --local", ErrAmbiguousServices, strings.Join(ambiguous, ", "))
 	}
 	return name, nil
 }
 
-// selectWorker picks the single matching worker container from `docker ps`
-// output lines. With more than one match it returns "" plus the sorted
+// selectServiceForProject picks the single matching container from `docker
+// ps` output lines. With more than one match it returns "" plus the sorted
 // candidates so the caller can explain the refusal.
-func selectWorker(lines []string) (string, []string) {
-	return selectWorkerForProject(lines, "")
-}
-
-func selectWorkerForProject(lines []string, project string) (string, []string) {
-	var workers []string
+func selectServiceForProject(lines []string, project, service string) (string, []string) {
+	var matches []string
+	suffix := "-" + service + "-1"
 	target := ""
 	if project != "" {
-		target = project + "-worker-1"
+		target = project + suffix
 	}
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if target != "" && line == target {
 			return line, nil
 		}
-		if target == "" && strings.HasPrefix(line, "openneko-") && strings.HasSuffix(line, "-worker-1") {
-			workers = append(workers, line)
+		if target == "" && strings.HasPrefix(line, "openneko-") && strings.HasSuffix(line, suffix) {
+			matches = append(matches, line)
 		}
 	}
-	switch len(workers) {
+	switch len(matches) {
 	case 0:
 		return "", nil
 	case 1:
-		return workers[0], nil
+		return matches[0], nil
 	default:
-		sort.Strings(workers)
-		return "", workers
+		sort.Strings(matches)
+		return "", matches
 	}
 }
 
-// ProxyToWorker re-executes `openneko <args>` inside the named container,
+// ProxyTo re-executes `openneko <args>` inside the named container,
 // forwarding stdout/stderr and propagating the exit code.
 //
 // Stdin is attached only when it can carry useful input: an interactive TTY,
@@ -107,7 +82,7 @@ func selectWorkerForProject(lines []string, project string) (string, []string) {
 // as an argument — is NOT attached, because `docker exec -i` draining such a
 // stream can surface a spurious non-zero exit even when the inner command
 // succeeded. `-t` is added only for an interactive TTY.
-func ProxyToWorker(container string, args []string) int {
+func ProxyTo(container string, args []string) int {
 	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	attachStdin := isTTY
 	if !isTTY {

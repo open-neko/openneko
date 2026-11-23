@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
 import { Button } from "@/components/ui/button";
+import { signOut as handleSignOut } from "@/lib/sign-out";
 
 const MARKETING_URL = "https://openneko.app";
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
@@ -27,7 +28,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch("/api/version", { cache: "no-store" });
+        const res = await fetch("/api/v1/version", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as { version?: string };
         if (cancelled) return;
@@ -48,7 +49,7 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        const res = await fetch("/api/v1/auth/session", { cache: "no-store" });
         if (cancelled || !res.ok) return;
         const data = (await res.json()) as {
           user: { id: string; email: string; name: string | null } | null;
@@ -63,14 +64,6 @@ export default function AppHeader({ back, children }: AppHeaderProps) {
       cancelled = true;
     };
   }, []);
-
-  async function handleSignOut() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/signin";
-    }
-  }
 
   const updateAvailable =
     latestVersion !== null && latestVersion !== APP_VERSION;

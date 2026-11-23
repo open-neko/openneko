@@ -1,38 +1,30 @@
-import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../src/agent-backend";
 import { MODEL_PRICES_VERSION } from "../src/spend/model-prices";
 
-type Spawned = { command: string; env: NodeJS.ProcessEnv; stdin: string };
+type Spawned = { command: string; env: NodeJS.ProcessEnv; stdin: string; modelKey: string };
 const spawned: Spawned[] = [];
 let script: { lines: object[]; stderr?: string; code?: number } = { lines: [] };
 let queued: (typeof script)[] = [];
 
-vi.mock("node:child_process", async () => {
-  const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+vi.mock("../src/agent-backends/harness-turn", async () => {
+  const actual = await vi.importActual<typeof import("../src/agent-backends/harness-turn")>("../src/agent-backends/harness-turn");
   return {
     ...actual,
-    spawn: (command: string, _args: string[], options: { env: NodeJS.ProcessEnv }) => {
-      const child = new EventEmitter() as EventEmitter & Record<string, unknown>;
-      const stdin = new PassThrough();
-      const stdout = new PassThrough();
-      const stderr = new PassThrough();
-      const record: Spawned = { command, env: options.env, stdin: "" };
+    serveHarnessTurn: (opts: { socket: string; spec: { run_id: string }; env: NodeJS.ProcessEnv; modelKey: string }) => {
+      const record: Spawned = { command: opts.socket, env: opts.env, stdin: JSON.stringify(opts.spec), modelKey: opts.modelKey };
       spawned.push(record);
-      stdin.on("data", (c: Buffer) => (record.stdin += c.toString()));
-      Object.assign(child, { stdin, stdout, stderr, pid: undefined, exitCode: null, kill: () => true });
       const current = queued.shift() ?? script;
-      stdin.on("finish", () => {
-        const run = JSON.parse(record.stdin) as { run_id: string };
-        for (const line of current.lines) stdout.write(`${JSON.stringify({ version: 1, run_id: run.run_id, ...line })}\n`);
-        if (current.stderr) stderr.write(current.stderr);
-        stdout.end();
-        stderr.end();
-        child.exitCode = current.code ?? 0;
-        setImmediate(() => child.emit("close", current.code ?? 0));
-      });
-      return child;
+      const lines = current.lines.map((line) => JSON.stringify({ version: 1, run_id: opts.spec.run_id, ...line }));
+      return {
+        lines: (async function* () {
+          yield* lines;
+        })(),
+        exited: Promise.resolve(current.code ?? 0),
+        diagnostics: () => current.stderr ?? "",
+        stop: () => {},
+        running: false,
+      };
     },
   };
 });
@@ -53,6 +45,10 @@ const workspace = {
 };
 const config = { route: { provider: "anthropic" as const, model: "claude-sonnet-5-5", keyEnv: "ANTHROPIC_API_KEY" }, reasoningEffort: "high" as const };
 const finished = (result: object, sequence: number) => ({ sequence, type: "run.finished", result });
+
+beforeEach(() => {
+  vi.stubEnv("OPENNEKO_SERVE_SOCKET", "/run/openneko/serve.sock");
+});
 
 afterEach(() => {
   spawned.length = 0;
@@ -114,8 +110,8 @@ describe("AxBackend", () => {
   });
 
   it("gives the harness its model, limits and tools, and keeps credentials from it", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "openshell:resolve:env:MODEL_API_KEY");
-    vi.stubEnv("MODEL_API_KEY", "openshell:resolve:env:MODEL_API_KEY");
+    vi.stubEnv("ANTHROPIC_API_KEY", "org-stored-key");
+    vi.stubEnv("MODEL_API_KEY", "org-stored-key");
     vi.stubEnv("OPENNEKO_BROKER_TOKEN", "broker-secret");
     vi.stubEnv("OPENNEKO_MCP_BRIDGE", "/app/mcp-bridge.js");
     script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
@@ -125,25 +121,25 @@ describe("AxBackend", () => {
       timeoutMs: 120_000,
       maxToolIterations: 40,
       networkHosts: ["api.example.com"],
-      mcpServers: { neko_graphjin_agent: {}, neko_ui: {}, other: {} },
+      mcpServers: { neko_graphjin: {}, neko_ui: {}, other: {} },
       mcpBridgeEnv: { OPENNEKO_MCP_ORG_ID: "org-1", OPENNEKO_MCP_THREAD_ID: "t-1", OPENNEKO_MCP_SKILLS_ROOT: workspace.skillsRoot },
     });
-    const [{ command, env, stdin }] = spawned;
-    expect(command).toBe("/usr/local/bin/ax-harness");
+    const [{ command, env, stdin, modelKey }] = spawned;
+    expect(command).toBe("/run/openneko/serve.sock");
+    expect(modelKey).toBe("org-stored-key");
     expect(env).toMatchObject({
       HARNESS_MODEL_PROVIDER: "anthropic",
       HARNESS_MODEL: "claude-sonnet-5-5",
-      HARNESS_MODEL_API_KEY: "openshell:resolve:env:MODEL_API_KEY",
-      OPENNEKO_MCP_SERVERS: "neko_graphjin_agent",
+      OPENNEKO_MCP_SERVERS: "neko_graphjin",
       OPENNEKO_MCP_ORG_ID: "org-1",
       OPENNEKO_BROKER_TOKEN: "broker-secret",
       OPENNEKO_HARNESS_WORKSPACE_DIR: workspace.orgRoot,
-      OPENNEKO_HARNESS_SHELL: "1",
       OPENNEKO_HARNESS_SKILLS_READ: "1",
       OPENNEKO_HARNESS_UPLOADS_DIR: workspace.threadUploadsRoot,
       OPENNEKO_HARNESS_WEB_HOSTS: "api.example.com",
       OPENNEKO_HARNESS_TERMINAL_TIMEOUT_SECONDS: "180",
     });
+    expect(env.OPENNEKO_HARNESS_SHELL).toBeUndefined();
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.MODEL_API_KEY).toBeUndefined();
     expect(JSON.parse(stdin)).toMatchObject({
@@ -155,6 +151,16 @@ describe("AxBackend", () => {
       max_child_steps: 50,
       reasoning_effort: "high",
     });
+  });
+
+  it("offers the terminal only when the install has a sandbox", async () => {
+    script = { lines: [finished({ status: "completed", kind: "answer", answer: "ok" }, 1)] };
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    vi.stubEnv("OPENNEKO_SANDBOX_URL", "unix:///run/openneko/sandbox.sock");
+    await new AxBackend(config).run({ prompt: "p", workspace });
+    const [off, on] = spawned.map((s) => s.env);
+    expect(off!.OPENNEKO_HARNESS_SHELL).toBeUndefined();
+    expect(on!.OPENNEKO_HARNESS_SHELL).toBe("1");
   });
 
   it("asks the harness to rerank skill guides unless the deployment turns it off", async () => {
@@ -260,6 +266,15 @@ describe("AxBackend", () => {
     expect(result.error).toContain("code=2");
     expect(result.error).toContain("HARNESS_MODEL_API_KEY");
     expect(result.errorCode).toBe("exit");
+  });
+
+  it("runs no turn without the serve socket, because only serve confines the runner", async () => {
+    vi.stubEnv("OPENNEKO_SERVE_SOCKET", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "org-stored-key");
+    const result = await new AxBackend(config).run({ prompt: "p", workspace });
+    expect(result).toMatchObject({ status: "failed", errorCode: "agent_confinement_unavailable" });
+    expect(result.error).toContain("confined runner of openneko serve");
+    expect(spawned).toHaveLength(0);
   });
 
   it("refuses to run without a configured model", async () => {

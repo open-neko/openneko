@@ -49,7 +49,15 @@ func TestResponderDeltaArrivesBeforeProviderFinishes(t *testing.T) {
 	defer server.Close()
 	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", server.URL, "api_key", "synthetic", "model", "fixture"))
 	var deltas []string
+	streamed := map[uint64]bool{}
+	stages := map[string]string{}
 	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "stream", InputID: "input", Prompt: "Say hello", StreamResponses: true}, client, Tools{}, func(event Event) error {
+		if event.Type == "model.request.finished" {
+			streamed[event.CallID] = event.Streaming
+		}
+		if strings.HasPrefix(event.Type, "model.request.") {
+			stages[fmt.Sprintf("%s %d", strings.TrimPrefix(event.Type, "model.request."), event.CallID)] = event.Stage
+		}
 		if event.Type != "answer.delta" {
 			return nil
 		}
@@ -68,6 +76,19 @@ func TestResponderDeltaArrivesBeforeProviderFinishes(t *testing.T) {
 	})
 	if err != nil || result.Status != "completed" || result.Answer != "Hello world" || len(deltas) < 2 || calls.Load() != 3 {
 		t.Fatalf("result=%+v err=%v deltas=%q calls=%d", result, err, deltas, calls.Load())
+	}
+	if want := map[uint64]bool{1: false, 2: false, 3: true}; fmt.Sprint(streamed) != fmt.Sprint(want) {
+		t.Fatalf("streamed model requests = %v, want %v (only the responder streams)", streamed, want)
+	}
+	for _, kind := range []string{"started", "finished"} {
+		if stage := stages[kind+" 3"]; stage != "root/responder" {
+			t.Fatalf("%s event of the responder call has stage %q; all stages %v", kind, stage, stages)
+		}
+		for _, call := range []string{" 1", " 2"} {
+			if stage := stages[kind+call]; stage == "" || stage == "root/responder" {
+				t.Fatalf("%s event of call%s has stage %q; all stages %v", kind, call, stage, stages)
+			}
+		}
 	}
 }
 

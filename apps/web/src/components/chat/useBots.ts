@@ -30,7 +30,7 @@ export function BotsProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/bots")
+    fetch("/api/v1/bots")
       .then((res) => (res.ok ? res.json() : Promise.reject(res)))
       .then((data: { bots?: BotSummary[] }) => {
         if (!cancelled) setState({ bots: data.bots ?? [], failed: false });
@@ -65,7 +65,7 @@ export function BotsProvider({ children }: { children: React.ReactNode }) {
         ? { ...prev, bots: prev.bots.map((b) => (b.threadId === threadId ? { ...b, unread: false } : b)) }
         : prev,
     );
-    void fetch(`/api/bots/thread/${threadId}/seen`, { method: "POST" }).catch(() => {});
+    void fetch(`/api/v1/bots/thread/${threadId}/seen`, { method: "POST" }).catch(() => {});
   }, []);
   // The open chat started a run: show it in the list before the next refresh.
   const markRunning = useCallback((threadId: string) => {

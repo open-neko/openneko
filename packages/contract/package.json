@@ -1,0 +1,25 @@
+{
+  "name": "@neko/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run test/static.test.ts",
+    "contract": "vitest run test/contract.test.ts",
+    "seed": "tsx scripts/seed.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "local": "sh scripts/run-local.sh"
+  },
+  "dependencies": {
+    "@neko/db": "workspace:*",
+    "yaml": "^2.8.1",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.19.2",
+    "typescript": "^5",
+    "vitest": "^2.1.8",
+    "@types/pg": "^8.20.0"
+  }
+}

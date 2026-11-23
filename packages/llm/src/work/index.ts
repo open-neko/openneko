@@ -1,9 +1,6 @@
 export * from "./workspace";
 export * from "./artifacts";
-export * from "./sandbox-net";
-export * from "./behavior-monitor";
 export * from "./deployment-profile";
-export * from "./data-surface";
 export { buildCardsSection, buildWorkPrompt } from "./prompt";
 export { acquireAgentSlot, agentSlotUsage, ASK_DEFAULT_CONCURRENCY, setAgentSlotLimit } from "./agent-slots";
 export {
@@ -25,21 +22,16 @@ export {
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
-  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildGraphjinReadServer,
-  buildLibraryServer,
-  buildRecordsReadServer,
-  buildPluginActionServer,
+  buildFilesServer,
   buildPackActionServer,
-  buildPluginManagerServer,
   buildRenderCardsServer,
   buildSkillBuilderServer,
   buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildWorkMemoryServer,
   buildSkillSearchServer,
-  type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./tools";
 export {
@@ -54,7 +46,10 @@ export {
 export {
   InProcessControlPlane,
   inProcessControlPlane,
+  readSourceConfigView,
   type AgentControlPlane,
+  type SourceConfigPreviewResult,
+  type SourceConfigViewResult,
 } from "./control-plane";
 export {
   createAgentBroker,
@@ -69,6 +64,7 @@ export {
   type StartAgentBrokerOptions,
 } from "./broker";
 export {
+  WORK_SEMANTIC_STEP_ROWS_MAX_BYTES,
   WORK_SEMANTIC_TRACE_SCHEMA_VERSION,
   recordWorkSemanticHostEvent,
   registerWorkSemanticTraceSink,
@@ -76,7 +72,9 @@ export {
   traceAgentControlPlane,
   workSemanticDigest,
   type WorkSemanticHostEventInput,
+  type WorkSemanticContentCapture,
   type WorkSemanticMemoryEvidence,
+  type WorkSemanticStepContent,
   type WorkSemanticTraceBinding,
   type WorkSemanticTraceEvent,
   type WorkSemanticTraceSink,
@@ -94,12 +92,6 @@ export {
   type SkillOriginKind,
   type SkillUseSource,
 } from "./skill-usage";
-export { runSkillLearn, type SkillLearnResult } from "./skill-learn";
-export {
-  parseSkillLearnProposal,
-  proposeSkillLearn,
-  type SkillLearnLlm,
-} from "./skill-learn-propose";
 export {
   MAGENTO_LEARN_SKILLS,
   magentoScoreImproved,
@@ -107,13 +99,6 @@ export {
   type SkillLearnScore,
   type SkillLearnScoreSample,
 } from "./skill-learn-score";
-export {
-  getSkillLearnOrgSettings,
-  runSkillLearnForOrgSkill,
-  setSkillLearnOrgEnabled,
-  type SkillLearnOrgSettings,
-} from "./skill-learn-store";
-export { assertAdditiveLearnedBody, scanLearnedText } from "./skill-learn-scan";
 export {
   LEARNED_FILE,
   SKILL_OVERLAYS_DIR,
@@ -180,32 +165,8 @@ export type {
   RunChatTurnOptions,
   RunChatTurnResult,
 } from "./run-chat-turn";
-// Shared OpenShell sandbox launcher (worker channel runs + web interactive chat).
-export {
-  agentRuntimeDepsFromConfig,
-  agentRuntimeDepsFromEnv,
-  buildModelEgressArgs,
-  buildSandboxPolicy,
-  buildScopedEgressArgs,
-  deleteOpenShellProvider,
-  ensureOpenShellProvider,
-  verifyOpenShellGateway,
-  makeSandboxJobRunCore,
-  makeSandboxRunCore,
-  makeSandboxWorkflowRunCore,
-  sandboxAgentBackendForJob,
-  sandboxLauncherOptionsFromConfig,
-  stageSandboxWorkspace,
-  workflowRuntimeDepsFromConfig,
-  workflowRuntimeDepsFromEnv,
-  type AgentRuntimeLaunchConfig,
-  type AgentJobAccess,
-  type RunJobAgentBackendInput,
-  type StagedSandboxWorkspace,
-  type OpenShellSandboxPolicy,
-  type SandboxLauncherOptions,
-} from "./sandbox-launcher";
+export { sandboxConfig } from "./sandbox-service";
+export { orgTerminalSetting, sandboxForOrg } from "./sandbox-org";
 
 export { BOT_INSTRUCTIONS_MAX, getThreadBot, updateThreadBotInstructions, type ThreadBot } from "./bot";
-export { nameBackfilledBots } from "./bot-names";
 export { searchSkillsForRun, syncSkillIndex, type SkillSearchResult } from "./skill-index";

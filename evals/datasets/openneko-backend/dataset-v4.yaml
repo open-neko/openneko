@@ -52,8 +52,6 @@ capabilities:
   - action.rejection
   - channel.delivery
   - work.channel-exfiltration
-  - work.records
-  - records.blueprint
   - work.compaction
   - work.multi-turn-resume
   - state-machine

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,12 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/open-neko/neko/apps/openneko/assets"
 	"github.com/open-neko/neko/apps/openneko/internal/compose"
 	"github.com/open-neko/neko/apps/openneko/internal/config"
-	"github.com/open-neko/neko/apps/openneko/internal/plugin/marketplace"
 	"github.com/open-neko/neko/apps/openneko/internal/preflight"
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
 	"github.com/open-neko/neko/apps/openneko/internal/setup"
@@ -30,9 +28,11 @@ func newSetupCmd() *cobra.Command {
 		verbose        bool
 		skipOnboarding bool
 		webPort        int
-		openShellPort  int
 		webBindAddress string
-		dockerSubnet   string
+
+		// Retired with the OpenShell gateway; accepted and ignored.
+		openShellPort int
+		dockerSubnet  string
 
 		// Headless onboarding overrides. Setting any credential flag opts the
 		// run into headless mode (no prompts), so CI and the demo-install skill
@@ -46,6 +46,8 @@ func newSetupCmd() *cobra.Command {
 		researchProvider string
 		researchKey      string
 		noResearch       bool
+
+		databaseURLFlag string
 
 		skipPlugins bool
 		pluginsCSV  string
@@ -72,15 +74,11 @@ at the prompt) to finish at the web UI. Credential flags
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
 
-			settings, err := prepareSetupInstallation(ctx, cmd, mode, setupHostOptions{
-				webPort:             webPort,
-				webPortChanged:      cmd.Flags().Changed("port"),
-				openShellPort:       openShellPort,
-				openShellChanged:    cmd.Flags().Changed("openshell-port"),
-				webBindAddress:      webBindAddress,
-				webBindChanged:      cmd.Flags().Changed("bind-address"),
-				dockerSubnet:        dockerSubnet,
-				dockerSubnetChanged: cmd.Flags().Changed("docker-subnet"),
+			settings, err := prepareSetupInstallation(cmd, mode, setupHostOptions{
+				webPort:        webPort,
+				webPortChanged: cmd.Flags().Changed("port"),
+				webBindAddress: webBindAddress,
+				webBindChanged: cmd.Flags().Changed("bind-address"),
 			})
 			if err != nil {
 				return err
@@ -103,6 +101,9 @@ at the prompt) to finish at the web UI. Credential flags
 			// answers (re-running setup against a live install jumps straight
 			// to configuration). Port checks only run for a fresh bring-up,
 			// since a live OpenNeko legitimately holds those ports.
+			if alreadyUp && strings.TrimSpace(databaseURLFlag) != "" {
+				return fmt.Errorf("%s is already running; --database-url applies to a new install only", baseURL)
+			}
 			if alreadyUp {
 				ui.Info(out, "Existing OpenNeko detected — skipping preflight and bring-up.")
 				// The wizard configures WHATEVER stack answers on this port.
@@ -129,6 +130,9 @@ at the prompt) to finish at the web UI. Credential flags
 				}
 			} else {
 				if err := runPreflight(out); err != nil {
+					return err
+				}
+				if err := ensureSetupDatabaseURL(ctx, compose.New(assets.ComposeFS), m, databaseURLFlag, prompt.IsInteractive(), prompt.Hidden); err != nil {
 					return err
 				}
 				ui.Info(out, "Bringing up the stack…")
@@ -179,11 +183,8 @@ at the prompt) to finish at the web UI. Credential flags
 			// fall back to the stale bootstrap default. This must happen even
 			// when a LATER wizard step failed — the remote rotation has already
 			// committed by then, and dropping it here locked the host CLI out.
-			// The gateway itself is unaffected by the rotation — it runs on its
-			// dedicated `openshell` role (see ensureOpenShellGatewayRole), so no
-			// gateway restart is needed.
 			if outcome.PasswordSet != "" {
-				if err := config.WriteLocalDatabasePasswords("", outcome.PasswordSet, outcome.PasswordSet); err != nil {
+				if err := config.WriteLocalPgPassword("", outcome.PasswordSet); err != nil {
 					ui.Info(out, "warning: couldn't persist the DB password to the host config: %v", err)
 				}
 			}
@@ -192,11 +193,6 @@ at the prompt) to finish at the web UI. Credential flags
 			}
 
 			if outcome.Configured {
-				if !skipPlugins {
-					if err := offerPluginInstall(ctx, out, pluginsCSV, interactive && !cfg.Headless); err != nil {
-						return err
-					}
-				}
 				ui.CompletionBox(out,
 					ui.OK()+" Setup complete.",
 					"",
@@ -210,9 +206,14 @@ at the prompt) to finish at the web UI. Credential flags
 
 	cmd.Flags().StringVar(&mode, "mode", "prod", "Stack mode: prod|dev|demo")
 	cmd.Flags().IntVar(&webPort, "port", 0, "Host port for the web app (named instances auto-select when omitted)")
-	cmd.Flags().IntVar(&openShellPort, "openshell-port", 0, "Loopback host port for the OpenShell gateway (named instances auto-select when omitted)")
 	cmd.Flags().StringVar(&webBindAddress, "bind-address", "", "IPv4 address for the web listener (default 0.0.0.0; use 127.0.0.1 behind a reverse proxy)")
-	cmd.Flags().StringVar(&dockerSubnet, "docker-subnet", "", "Private IPv4 /24 for this instance (named instances auto-select when omitted)")
+	// The agent runtime no longer has a gateway port or a fixed subnet. Keep
+	// the old flags as no-ops so existing automation that passes them works.
+	cmd.Flags().IntVar(&openShellPort, "openshell-port", 0, "Deprecated: the agent runtime has no host port")
+	_ = cmd.Flags().MarkDeprecated("openshell-port", "the agent runtime has no host port; the flag is ignored")
+	cmd.Flags().StringVar(&dockerSubnet, "docker-subnet", "", "Deprecated: Docker assigns each instance's network")
+	_ = cmd.Flags().MarkDeprecated("docker-subnet", "Docker assigns each instance's network; the flag is ignored")
+	cmd.Flags().StringVar(&databaseURLFlag, "database-url", "", "Prod mode: postgres:// URL of OpenNeko's database, which you run")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Stream full image-pull output during bring-up")
 	cmd.Flags().BoolVar(&skipOnboarding, "skip-onboarding", false, "Bring up the stack only; finish configuration in the browser")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "", "Headless: admin database password")
@@ -225,8 +226,12 @@ at the prompt) to finish at the web UI. Credential flags
 	cmd.Flags().StringVar(&researchProvider, "research-provider", "", "Headless: research provider")
 	cmd.Flags().StringVar(&researchKey, "research-key", "", "Headless: research provider API key")
 	cmd.Flags().BoolVar(&noResearch, "no-research", false, "Headless: leave industry research disabled")
-	cmd.Flags().BoolVar(&skipPlugins, "skip-plugins", false, "Skip the optional first-party plugin step")
-	cmd.Flags().StringVar(&pluginsCSV, "plugins", "", "Install these first-party plugins non-interactively (comma-separated)")
+	// Plugins were replaced by solution packs. Keep the old flags as no-ops
+	// so existing automation that passes them doesn't break.
+	cmd.Flags().BoolVar(&skipPlugins, "skip-plugins", false, "Deprecated: setup no longer installs plugins")
+	_ = cmd.Flags().MarkDeprecated("skip-plugins", "plugins were replaced by solution packs; install packs from /admin/settings/packs")
+	cmd.Flags().StringVar(&pluginsCSV, "plugins", "", "Deprecated: setup no longer installs plugins")
+	_ = cmd.Flags().MarkDeprecated("plugins", "plugins were replaced by solution packs; install packs from /admin/settings/packs")
 	return cmd
 }
 
@@ -237,132 +242,6 @@ func validateLegacyAgentBackend(value string) error {
 	default:
 		return fmt.Errorf("unsupported --backend %q: Ax is the only agent runtime", value)
 	}
-}
-
-// offerPluginInstall lets the operator install (and configure) first-party
-// plugins from the official marketplace as a final, optional setup step. Each
-// install reuses `openneko install` via the binary itself, so it runs through
-// the worker proxy AND its env-prompt — selecting a plugin prompts for and
-// persists that plugin's API keys/tokens. csv (from --plugins) drives a
-// non-interactive selection; otherwise the operator picks from a list.
-func offerPluginInstall(ctx context.Context, out io.Writer, csv string, interactive bool) error {
-	preselected := splitCSV(csv)
-	if len(preselected) == 0 && !interactive {
-		return nil
-	}
-	var mp *marketplace.Marketplace
-	if err := ui.Spin("Loading the plugin marketplace", func() error {
-		var e error
-		mp, e = marketplace.NewClient().Fetch(ctx, marketplace.OfficialURL)
-		return e
-	}); err != nil {
-		ui.Info(out, "Skipping plugins — couldn't reach the marketplace: %v", err)
-		return nil
-	}
-	if mp == nil || len(mp.Plugins) == 0 {
-		return nil
-	}
-
-	var chosen []string
-	if len(preselected) > 0 {
-		chosen = matchPlugins(preselected, mp.Plugins)
-	} else {
-		opts := make([]huh.Option[string], len(mp.Plugins))
-		for i, p := range mp.Plugins {
-			label := p.Name
-			if p.Title != "" {
-				label = p.Name + " — " + p.Title
-			}
-			opts[i] = huh.NewOption(label, p.Name)
-		}
-		form := huh.NewForm(huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Install first-party plugins?").
-				Description("space toggles · enter confirms · each prompts for its own keys").
-				Options(opts...).
-				Value(&chosen),
-		)).WithTheme(ui.Theme())
-		if err := form.Run(); err != nil {
-			if errors.Is(err, huh.ErrUserAborted) {
-				return nil
-			}
-			return err
-		}
-	}
-	if len(chosen) == 0 {
-		return nil
-	}
-
-	self, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	for _, name := range chosen {
-		ui.Info(out, "Installing %s…", name)
-		ic := exec.CommandContext(ctx, self, "install", name)
-		ic.Stdin = os.Stdin
-		ic.Stdout = os.Stdout
-		ic.Stderr = os.Stderr
-		if err := ic.Run(); err != nil {
-			ui.Failure(out, "%s install failed: %v (continuing)", name, err)
-		}
-	}
-	return nil
-}
-
-func splitCSV(s string) []string {
-	var out []string
-	for t := range strings.SplitSeq(s, ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// resolvePluginSelection turns a user reply ("all", "1,3", or names) into a
-// list of plugin names.
-func resolvePluginSelection(sel string, plugins []marketplace.Plugin) []string {
-	sel = strings.TrimSpace(sel)
-	if sel == "" {
-		return nil
-	}
-	if strings.EqualFold(sel, "all") {
-		names := make([]string, len(plugins))
-		for i, p := range plugins {
-			names[i] = p.Name
-		}
-		return names
-	}
-	return matchPlugins(splitCSV(sel), plugins)
-}
-
-// matchPlugins resolves tokens (1-based indices or exact names) against the
-// catalog, de-duplicating and preserving order.
-func matchPlugins(tokens []string, plugins []marketplace.Plugin) []string {
-	var out []string
-	seen := map[string]bool{}
-	add := func(name string) {
-		if name != "" && !seen[name] {
-			seen[name] = true
-			out = append(out, name)
-		}
-	}
-	for _, tok := range tokens {
-		if n, err := strconv.Atoi(tok); err == nil {
-			if n >= 1 && n <= len(plugins) {
-				add(plugins[n-1].Name)
-			}
-			continue
-		}
-		for _, p := range plugins {
-			if p.Name == tok {
-				add(p.Name)
-				break
-			}
-		}
-	}
-	return out
 }
 
 // webBaseURL resolves the local web app URL from the published port (matching

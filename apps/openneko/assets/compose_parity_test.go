@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -17,35 +16,6 @@ import (
 type composeParityDocument struct {
 	Services map[string]composeParityService `yaml:"services"`
 	Volumes  map[string]any                  `yaml:"volumes"`
-}
-
-func TestOpenShellReleaseUsesOneVersion(t *testing.T) {
-	root := repoRootForTest(t)
-	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	versionMatch := regexp.MustCompile(`(?m)^ARG OPENSHELL_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$`).FindSubmatch(dockerfile)
-	if len(versionMatch) != 2 {
-		t.Fatal("Dockerfile must pin an OpenShell client version")
-	}
-	want := string(versionMatch[1])
-	defaultPattern := regexp.MustCompile(`\$\{OPENSHELL_VERSION:-([^}]+)\}`)
-	for _, name := range []string{"compose.openshell.yml", "apps/openneko/assets/compose/openshell.yml", ".github/workflows/release-binaries.yml"} {
-		raw, err := os.ReadFile(filepath.Join(root, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		matches := defaultPattern.FindAllSubmatch(raw, -1)
-		if len(matches) == 0 {
-			t.Fatalf("%s does not pin an OpenShell default", name)
-		}
-		for _, match := range matches {
-			if string(match[1]) != want {
-				t.Fatalf("%s defaults to OpenShell %s; Dockerfile CLI uses %s", name, match[1], want)
-			}
-		}
-	}
 }
 
 type composeParityService struct {
@@ -67,43 +37,23 @@ type composeParityService struct {
 	Ports       []string                           `yaml:"ports"`
 	Command     []string                           `yaml:"command"`
 	Healthcheck map[string]any                     `yaml:"healthcheck"`
+	Networks    any                                `yaml:"networks"`
 }
 
-func TestOpenShellReaperIsIsolatedAndPresentInBothComposeVariants(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.openshell.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/openshell.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, document := range map[string]composeParityDocument{
-		"source":   loadComposeParityDocument(t, rootRaw),
-		"packaged": loadComposeParityDocument(t, packagedRaw),
-	} {
-		reaper, ok := document.Services["neko-reaper"]
-		if !ok {
-			t.Fatalf("%s OpenShell overlay has no reaper", label)
-		}
-		if reaper.Image != "ghcr.io/open-neko/neko-cli:${OPENNEKO_VERSION:-latest}" ||
-			!reflect.DeepEqual(reaper.Command, []string{"reaper"}) ||
-			reaper.Restart != "unless-stopped" || !reaper.ReadOnly || reaper.NetworkMode != "none" ||
-			!reflect.DeepEqual(reaper.Volumes, []string{"/var/run/docker.sock:/var/run/docker.sock"}) {
-			t.Fatalf("%s reaper contract is incomplete: %+v", label, reaper)
-		}
-		if !strings.Contains(fmt.Sprint(reaper.Healthcheck["test"]), "reaper --check") {
-			t.Fatalf("%s reaper has no Docker socket healthcheck", label)
-		}
-		for _, consumer := range []string{"web", "worker"} {
-			if document.Services[consumer].DependsOn["neko-reaper"].Condition != "service_healthy" {
-				t.Fatalf("%s %s can start without a healthy reaper", label, consumer)
-			}
+func composeNetworkAliases(service composeParityService, network string) []string {
+	networks, _ := service.Networks.(map[string]any)
+	entry, _ := networks[network].(map[string]any)
+	raw, _ := entry["aliases"].([]any)
+	var aliases []string
+	for _, alias := range raw {
+		if s, ok := alias.(string); ok {
+			aliases = append(aliases, s)
 		}
 	}
+	return aliases
 }
 
-func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
+func TestEmbeddingIsBoundedAndLibrarianIsGone(t *testing.T) {
 	root := repoRootForTest(t)
 	sourceRaw, err := os.ReadFile(filepath.Join(root, "compose.yml"))
 	if err != nil {
@@ -118,182 +68,156 @@ func TestLibrarianIsVendoredBoundedAndRequired(t *testing.T) {
 		"source":   loadComposeParityDocument(t, sourceRaw),
 		"packaged": loadComposeParityDocument(t, packagedRaw),
 	} {
-		librarian, ok := document.Services["librarian"]
-		if !ok {
-			t.Fatalf("%s compose is missing librarian", label)
+		if _, ok := document.Services["librarian"]; ok {
+			t.Fatalf("%s compose still runs the retired librarian", label)
 		}
-		if !librarian.ReadOnly || librarian.CPUs != "${OPENNEKO_LIBRARIAN_CPUS:-1.0}" || librarian.MemLimit != "4g" || librarian.PidsLimit != 256 {
-			t.Fatalf("%s librarian limits are incomplete: %+v", label, librarian)
+		if _, ok := document.Services["worker"]; ok {
+			t.Fatalf("%s compose still runs the retired worker", label)
 		}
-		if !reflect.DeepEqual(librarian.CapDrop, []string{"ALL"}) {
-			t.Fatalf("%s librarian capability drop = %v", label, librarian.CapDrop)
+		if _, ok := document.Services["embedding"]; ok {
+			t.Fatalf("%s embedding is an external service, not a core service", label)
 		}
-		if len(librarian.Tmpfs) != 1 || !strings.Contains(librarian.Tmpfs[0], "/tmp:size=512m") {
-			t.Fatalf("%s librarian tmpfs = %v", label, librarian.Tmpfs)
-		}
-		for _, variable := range []string{"HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "DOCLING_ARTIFACTS_PATH"} {
-			if _, ok := librarian.Environment[variable]; !ok {
-				t.Fatalf("%s librarian is missing %s", label, variable)
-			}
-		}
-		if dependency := document.Services["worker"].DependsOn["librarian"]; dependency.Condition != "service_healthy" {
-			t.Fatalf("%s worker librarian dependency = %+v", label, dependency)
-		}
-		if !strings.Contains(fmt.Sprint(librarian.Healthcheck["test"]), "/health/ready") {
-			t.Fatalf("%s librarian healthcheck does not use readiness", label)
-		}
-		if librarian.Environment["OPENNEKO_SERVICE_IDLE_TIMEOUT"] != "${OPENNEKO_LIBRARIAN_IDLE_TIMEOUT:-5m}" {
-			t.Fatalf("%s librarian idle timeout is missing", label)
-		}
-		if !reflect.DeepEqual(librarian.Volumes, []string{"librarian-results:/var/lib/neko-librarian/results"}) {
-			t.Fatalf("%s librarian results must use a disk volume: %v", label, librarian.Volumes)
-		}
-		if librarian.Environment["NEKO_LIBRARIAN_RESULT_TTL_SECONDS"] != "${OPENNEKO_LIBRARIAN_RESULT_TTL_SECONDS:-900}" || librarian.Environment["NEKO_LIBRARIAN_RESULT_MAX_BYTES"] != "${OPENNEKO_LIBRARIAN_RESULT_MAX_BYTES:-536870912}" {
-			t.Fatalf("%s librarian result retention bounds are missing", label)
-		}
-		embedding := document.Services["embedding"]
-		if !embedding.ReadOnly || embedding.CPUs != "${OPENNEKO_EMBEDDING_CPUS:-1.0}" || embedding.MemLimit != "${OPENNEKO_EMBEDDING_MEMORY:-1g}" || len(embedding.Ports) != 0 {
-			t.Fatalf("%s embedding must be bounded and private: %+v", label, embedding)
-		}
-		if embedding.Environment["OPENNEKO_SERVICE_IDLE_TIMEOUT"] != "${OPENNEKO_EMBEDDING_IDLE_TIMEOUT:-5m}" || !strings.Contains(fmt.Sprint(embedding.Healthcheck["test"]), "/health/ready") {
-			t.Fatalf("%s embedding lazy lifecycle configuration is missing", label)
-		}
-		if document.Services["worker"].DependsOn["embedding"].Condition != "service_healthy" {
-			t.Fatalf("%s worker must wait for the embedding listener", label)
-		}
-		for _, consumer := range []string{"web", "worker"} {
-			if document.Services[consumer].Environment["NEKO_EMBEDDING_URL"] != "http://embedding:5003" {
-				t.Fatalf("%s %s embedding endpoint is missing", label, consumer)
+		for _, consumer := range []string{"web"} {
+			if document.Services[consumer].Environment["NEKO_EMBEDDING_URL"] != "${NEKO_EMBEDDING_URL:-}" {
+				t.Fatalf("%s %s embedding endpoint must come from the operator", label, consumer)
 			}
 		}
 	}
 
-	packaged := loadComposeParityDocument(t, packagedRaw).Services["librarian"]
-	if !strings.Contains(packaged.Image, "ghcr.io/open-neko/neko-librarian:") {
-		t.Fatalf("packaged librarian image = %q", packaged.Image)
-	}
 }
 
-func TestPackagedGraphJinReusesReleasedRuntime(t *testing.T) {
-	coreRaw, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	core := loadComposeParityDocument(t, coreRaw)
-	graphjin, ok := core.Services["graphjin"]
-	if !ok {
-		t.Fatal("packaged core is missing graphjin")
-	}
-	if !strings.Contains(graphjin.Image, "ghcr.io/open-neko/records-graphjin:") {
-		t.Fatalf("packaged graphjin image = %q, want the shared records-graphjin runtime", graphjin.Image)
-	}
-	entrypoint := strings.Join(graphjin.Entrypoint, "\n")
-	for _, required := range []string{
-		"/usr/local/bin/openneko-graphjin-supervisor.sh",
-		"/config/.openneko-graphjin-supervisor.sh",
-	} {
-		if !strings.Contains(entrypoint, required) {
-			t.Fatalf("packaged graphjin entrypoint does not include %s: %v", required, graphjin.Entrypoint)
-		}
-	}
-	wantHealthcheck := []string{
-		"CMD", "curl", "-sS", "-o", "/dev/null",
-		"http://127.0.0.1:8080/api/v1/graphql",
-	}
-	if got := composeHealthcheckTest(t, "packaged", "graphjin", graphjin); !reflect.DeepEqual(got, wantHealthcheck) {
-		t.Fatalf("packaged graphjin readiness check = %v, want %v", got, wantHealthcheck)
-	}
-	configInit, ok := core.Services["graphjin-config-init"]
-	if !ok {
-		t.Fatal("packaged core is missing graphjin-config-init")
-	}
-	assertGraphJinSupervisorRepair(t, "packaged core", configInit, "/app/scripts/graphjin-supervisor.sh")
-	assertGraphJinConfigVolumeMatches(t, "packaged core", configInit, graphjin)
-
-	demoRaw, err := ComposeFS.ReadFile("compose/demo.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	demo := loadComposeParityDocument(t, demoRaw)
-	demoConfigInit := demo.Services["graphjin-config-init"]
-	assertGraphJinSupervisorRepair(t, "packaged demo overlay", demoConfigInit, "/app/scripts/graphjin-supervisor.sh")
-	assertGraphJinConfigVolumeMatches(t, "packaged demo overlay", demoConfigInit, demo.Services["graphjin"])
-	if strings.Contains(string(demoRaw), "dosco/graphjin") {
-		t.Fatal("packaged demo restores the duplicate upstream GraphJin image")
-	}
-}
-
-func TestGraphJinSupervisorIsImageOwnedAndEverySourceOverlayRepairsOldVolumes(t *testing.T) {
+func TestCustomerGraphJinRunsInServe(t *testing.T) {
 	root := repoRootForTest(t)
-	dockerfile, err := os.ReadFile(root + "/Dockerfile")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		"COPY scripts/graphjin-supervisor.sh /usr/local/bin/openneko-graphjin-supervisor.sh",
-		"chmod +x /usr/local/bin/openneko-graphjin-supervisor.sh",
-	} {
-		if !strings.Contains(string(dockerfile), required) {
-			t.Fatalf("GraphJin runtime does not own its supervisor: missing %q", required)
+	read := func(path string) composeParityDocument {
+		var raw []byte
+		var err error
+		if strings.HasPrefix(path, "compose/") {
+			raw, err = ComposeFS.ReadFile(path)
+		} else {
+			raw, err = os.ReadFile(filepath.Join(root, path))
 		}
-	}
-
-	baseRaw, err := os.ReadFile(root + "/compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := loadComposeParityDocument(t, baseRaw)
-	if strings.Contains(base.Services["graphjin"].Image, "dosco/graphjin") {
-		t.Fatal("source graphjin uses the shell-less upstream image with a shell supervisor")
-	}
-	assertGraphJinSupervisorRepair(t, "source core", base.Services["graphjin-config-init"], "/seed/graphjin-supervisor.sh")
-	assertGraphJinConfigVolumeMatches(t, "source core", base.Services["graphjin-config-init"], base.Services["graphjin"])
-
-	for _, overlayName := range []string{"compose.adventureworks.yml", "compose.graphjin-agent.yml"} {
-		raw, err := os.ReadFile(root + "/" + overlayName)
 		if err != nil {
 			t.Fatal(err)
 		}
-		overlay := loadComposeParityDocument(t, raw)
-		initializer := overlay.Services["graphjin-config-init"]
-		if len(initializer.Command) != 0 {
-			t.Fatalf("%s appends a command that the inherited initializer entrypoint would ignore", overlayName)
-		}
-		assertGraphJinSupervisorRepair(t, overlayName, initializer, "/seed/graphjin-supervisor.sh")
+		return loadComposeParityDocument(t, raw)
 	}
-}
+	for _, path := range []string{"compose.yml", "compose.adventureworks.yml", "compose.dev.yml", "compose/core.yml", "compose/demo.yml"} {
+		doc := read(path)
+		for _, gone := range []string{"graphjin", "graphjin-config-init", "graphjin-secret-init", "worker"} {
+			if _, ok := doc.Services[gone]; ok {
+				t.Errorf("%s still defines the %s service; the customer GraphJin runs in openneko-serve", path, gone)
+			}
+		}
+		for name, service := range doc.Services {
+			for _, gone := range []string{"graphjin", "graphjin-secret-init", "worker"} {
+				if _, ok := service.DependsOn[gone]; ok {
+					t.Errorf("%s: %s waits for the removed %s service", path, name, gone)
+				}
+			}
+		}
+	}
 
-func assertGraphJinSupervisorRepair(t *testing.T, label string, service composeParityService, source string) {
-	t.Helper()
-	script := strings.Join(service.Entrypoint, "\n")
-	copyLine := "cp " + source + " /config/.openneko-graphjin-supervisor.sh.tmp"
-	for _, required := range []string{
-		copyLine,
-		"chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp",
-		"mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh",
-		"chown -R 1001:999 /config",
-		"find /config -type d -exec chmod 0700 {} +",
-		"find /config -type f -exec chmod 0600 {} +",
-		"chmod 0700 /config/.openneko-graphjin-supervisor.sh",
+	for _, path := range []string{"compose.yml", "compose/core.yml"} {
+		doc := read(path)
+		serve := doc.Services["openneko-serve"]
+		if got := serve.Environment["OPENNEKO_GRAPHJIN_CONFIG"]; got != "/config/graphjin/agentic.yml" {
+			t.Errorf("%s serve GraphJin config = %#v", path, got)
+		}
+		if got := serve.Environment["OPENNEKO_GRAPHJIN_ADDR"]; got != "0.0.0.0:8080" {
+			t.Errorf("%s serve GraphJin address = %#v", path, got)
+		}
+		if got := composeNetworkAliases(serve, "default"); !reflect.DeepEqual(got, []string{"graphjin"}) {
+			t.Errorf("%s serve must answer as graphjin for existing configs, aliases = %v", path, got)
+		}
+		volume := composeMountSourceAt(serve.Volumes, "/config/graphjin")
+		for _, name := range []string{"openneko-serve-init", "web"} {
+			if got := composeMountSourceAt(doc.Services[name].Volumes, "/config/graphjin"); got != volume || got == "" {
+				t.Errorf("%s: %s mounts %q at /config/graphjin, serve mounts %q", path, name, got, volume)
+			}
+		}
+		if got := doc.Services["openneko-serve-init"].Environment["OPENNEKO_GRAPHJIN_CONFIG"]; got != "/config/graphjin/agentic.yml" {
+			t.Errorf("%s serve-init seeds %#v", path, got)
+		}
+	}
+
+	demo := read("compose/demo.yml")
+	for _, name := range []string{"openneko-serve-init", "openneko-serve"} {
+		if got := composeMountSourceAt(demo.Services[name].Volumes, "/config/graphjin"); got != "graphjin-config" {
+			t.Errorf("demo %s mounts %q at /config/graphjin, want graphjin-config", name, got)
+		}
+	}
+	if got := demo.Services["openneko-serve-init"].Environment["OPENNEKO_GRAPHJIN_SEED"]; got != "/seed/dev.sources.yml" {
+		t.Errorf("demo seed = %#v", got)
+	}
+	if got := demo.Services["openneko-serve-init"].DependsOn["neko-adventureworks-seed"].Condition; got != "service_completed_successfully" {
+		t.Errorf("demo serve-init must run after the seed creates the demo org, got %q", got)
+	}
+
+	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, seed := range []string{
+		"COPY db/graphjin/customer.sources.example.yml /seed/customer.sources.yml",
+		"COPY db/graphjin/dev.sources.example.yml /seed/dev.sources.yml",
 	} {
-		if !strings.Contains(script, required) {
-			t.Fatalf("%s does not atomically repair an existing GraphJin supervisor volume: missing %q", label, required)
+		if !strings.Contains(string(dockerfile), seed) {
+			t.Errorf("the serve image lacks %q", seed)
 		}
 	}
-	if strings.Contains(script, "chmod -R a+rwX /config") {
-		t.Fatalf("%s makes GraphJin secrets writable by every container user", label)
-	}
-	if lastConditionalEnd := strings.LastIndex(script, "\nfi\n"); lastConditionalEnd >= 0 && strings.Index(script, copyLine) < lastConditionalEnd {
-		t.Fatalf("%s repairs the supervisor only on first install; upgrades must refresh it unconditionally", label)
+	if strings.Contains(string(dockerfile), "graphjin-supervisor.sh") {
+		t.Error("the Dockerfile still ships the shell GraphJin supervisor")
 	}
 }
 
-func assertGraphJinConfigVolumeMatches(t *testing.T, label string, initializer, graphjin composeParityService) {
-	t.Helper()
-	initSource := composeMountSourceAt(initializer.Volumes, "/config")
-	graphjinSource := composeMountSourceAt(graphjin.Volumes, "/config")
-	if initSource == "" || graphjinSource == "" || initSource != graphjinSource {
-		t.Fatalf("%s repairs GraphJin volume %q but serves volume %q", label, initSource, graphjinSource)
+func TestSubscriptionsGraphJinRunsInServe(t *testing.T) {
+	root := repoRootForTest(t)
+	read := func(path string) composeParityDocument {
+		var raw []byte
+		var err error
+		if strings.HasPrefix(path, "compose/") {
+			raw, err = ComposeFS.ReadFile(path)
+		} else {
+			raw, err = os.ReadFile(filepath.Join(root, path))
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return loadComposeParityDocument(t, raw)
+	}
+	for _, path := range []string{"compose.yml", "compose.adventureworks.yml", "compose.dev.yml", "compose/core.yml", "compose/demo.yml"} {
+		doc := read(path)
+		if _, ok := doc.Services["neko-graphjin"]; ok {
+			t.Errorf("%s still defines neko-graphjin; serve runs the subscriptions GraphJin", path)
+		}
+		for name, service := range doc.Services {
+			if _, ok := service.DependsOn["neko-graphjin"]; ok {
+				t.Errorf("%s: %s waits for the removed neko-graphjin service", path, name)
+			}
+		}
+	}
+	for _, path := range []string{"compose.yml", "compose/core.yml"} {
+		doc := read(path)
+		if got := doc.Services["openneko-serve"].Environment["OPENNEKO_SUBSCRIPTIONS_ADDR"]; got != "0.0.0.0:8089" {
+			t.Errorf("%s serve subscriptions address = %#v", path, got)
+		}
+		for _, name := range []string{"web"} {
+			if got := doc.Services[name].Environment["OPENNEKO_GRAPHJIN_URL"]; got != "http://openneko-serve:8089" {
+				t.Errorf("%s: %s subscribes at %#v, want http://openneko-serve:8089", path, name, got)
+			}
+		}
+	}
+	for _, gone := range []string{"scripts/neko-graphjin-entrypoint.sh", "db/graphjin/neko.yml", "apps/openneko/cmd/graphjin-config"} {
+		if _, err := os.Stat(filepath.Join(root, gone)); err == nil {
+			t.Errorf("%s is still in the repo", gone)
+		}
+	}
+	dockerfile, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(dockerfile), "AS neko-graphjin") {
+		t.Error("the Dockerfile still builds the neko-graphjin image")
 	}
 }
 
@@ -305,69 +229,6 @@ func composeMountSourceAt(mounts []string, target string) string {
 		}
 	}
 	return ""
-}
-
-func TestPackagedDemoInitializerHealsAnExistingVolumeMissingTheSupervisor(t *testing.T) {
-	root := repoRootForTest(t)
-	supervisorSource := filepath.Join(root, "scripts", "graphjin-supervisor.sh")
-	wantSupervisor, err := os.ReadFile(supervisorSource)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, composeFile := range []string{"core.yml", "demo.yml"} {
-		t.Run(composeFile, func(t *testing.T) {
-			raw, err := ComposeFS.ReadFile("compose/" + composeFile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			service := loadComposeParityDocument(t, raw).Services["graphjin-config-init"]
-			script := strings.Join(service.Entrypoint[2:], "\n")
-
-			configDir := t.TempDir()
-			persistedConfig := filepath.Join(configDir, "agentic.yml")
-			if err := os.WriteFile(persistedConfig, []byte("persisted: true\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			// This is the v2.33-v2.35 production state: config survived the
-			// upgrade, while the supervisor file was never installed.
-			missingSupervisor := filepath.Join(configDir, ".openneko-graphjin-supervisor.sh")
-			if err := os.Remove(missingSupervisor); err != nil && !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
-
-			script = strings.ReplaceAll(script, "/app/scripts/graphjin-supervisor.sh", supervisorSource)
-			script = strings.ReplaceAll(script, "/config", configDir)
-			// Docker Compose turns $$ into a literal $ before invoking the shell.
-			script = strings.ReplaceAll(script, "$$", "$")
-			cmd := exec.Command("/bin/sh", "-c", script)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("run %s initializer against existing volume: %v\n%s", composeFile, err, output)
-			}
-
-			gotSupervisor, err := os.ReadFile(missingSupervisor)
-			if err != nil {
-				t.Fatalf("repaired supervisor is missing: %v", err)
-			}
-			if !reflect.DeepEqual(gotSupervisor, wantSupervisor) {
-				t.Fatal("repaired supervisor does not match the released runtime artifact")
-			}
-			info, err := os.Stat(missingSupervisor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if info.Mode().Perm()&0o111 == 0 {
-				t.Fatalf("repaired supervisor mode = %o, want executable", info.Mode().Perm())
-			}
-			persisted, err := os.ReadFile(persistedConfig)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(persisted) != "persisted: true\n" {
-				t.Fatalf("initializer replaced existing datasource config: %q", persisted)
-			}
-		})
-	}
 }
 
 func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
@@ -382,16 +243,39 @@ func TestPostReleaseSmokeGatesRetainedDemoUpgrades(t *testing.T) {
 	workflow := string(raw)
 	for _, required := range []string{
 		"openneko start --mode demo --detach --pull never",
-		"librarian_pdf_async=ok",
-		"rm -f /config/.openneko-graphjin-supervisor.sh",
 		"openneko upgrade --stack-only --mode demo",
-		"test -x /config/.openneko-graphjin-supervisor.sh",
-		"{{.State.Health.Status}}",
+		"test ! -e /config/.openneko-graphjin-supervisor.sh",
+		"com.docker.compose.service=openneko-serve",
+		"{{.State.Status}}",
+		`docker exec "$web" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills`,
+		`grep -qx sandbox=ok <<<"$checks"`,
 		"authenticated_datasource_query=ok",
+		"serve_socket=ok",
+		`grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"`,
+		`grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"`,
+		`echo "OPENNEKO_SANDBOX_KEY=$key" >> "$GITHUB_ENV"`,
+		"recipes/sandbox/compose.yml > ~/.config/openneko/compose.override.yml",
+		"run: scripts/smoke-script-step.sh openneko-demo",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("post-release smoke no longer gates retained demo upgrades: missing %q", required)
 		}
+	}
+	if strings.Index(workflow, "compose.override.yml") > strings.Index(workflow, "openneko start --mode demo") {
+		t.Fatal("post-release smoke writes the sandbox override after the demo starts")
+	}
+	recipe, err := os.ReadFile(filepath.Join(repoRootForTest(t), "recipes", "sandbox", "compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(recipe), "build:") {
+		t.Fatal("the sandbox recipe builds from source; post-release smoke must run the published image")
+	}
+	if !executableInGit(t, "scripts/smoke-script-step.sh") {
+		t.Fatal("scripts/smoke-script-step.sh is missing or not executable")
+	}
+	if strings.Contains(workflow, "neko-worker") || strings.Contains(workflow, "service=worker") {
+		t.Fatal("post-release smoke still references the removed worker")
 	}
 }
 
@@ -408,24 +292,36 @@ func TestProductionDeployRequiresAuthenticatedDatasourceQuery(t *testing.T) {
 	for _, required := range []string{
 		"openneko upgrade --mode demo",
 		"OPENNEKO_PORT=80 openneko status",
-		"callGraphjinMcpTool",
+		"--filter label=com.docker.compose.service=web",
+		`docker exec "$WEB" openneko release-check --scheduler`,
+		`docker exec "$WEB" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills`,
+		`grep -qE '^sandbox=(off|ok|remote)$' <<<"$checks"`,
 		"authenticated_datasource_query=ok",
+		"serve_socket=ok",
+		`grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"`,
+		`grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"`,
 	} {
 		if !strings.Contains(workflow, required) {
-			t.Fatalf("production deploy no longer verifies the datasource upgrade: missing %q", required)
+			t.Fatalf("production deploy no longer verifies the upgrade: missing %q", required)
 		}
+	}
+	if strings.Contains(workflow, "127.0.0.1:3000") {
+		t.Fatal("production deploy calls port 3000; the stack listens on OPENNEKO_PORT=80 and the detail is on the admin socket")
 	}
 	if strings.Contains(workflow, "OPENNEKO_PORT=80 openneko status || true") {
 		t.Fatal("production deploy ignores an unhealthy upgraded stack")
 	}
+	if strings.Contains(workflow, "service=worker") {
+		t.Fatal("production deploy still references the removed worker")
+	}
 }
 
 func TestVendoredAgentBinaryCannotBeOverridden(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.openshell.yml")
+	rootRaw, err := os.ReadFile("../../../compose.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/openshell.yml")
+	packagedRaw, err := ComposeFS.ReadFile("compose/core.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +329,7 @@ func TestVendoredAgentBinaryCannotBeOverridden(t *testing.T) {
 		"source":   loadComposeParityDocument(t, rootRaw),
 		"packaged": loadComposeParityDocument(t, packagedRaw),
 	} {
-		for _, serviceName := range []string{"web", "worker"} {
+		for _, serviceName := range []string{"web"} {
 			if _, exists := document.Services[serviceName].Environment["OPENNEKO_AGENT_MODEL_BINARY"]; exists {
 				t.Fatalf("%s %s exposes an override for the vendored agent executable", label, serviceName)
 			}
@@ -458,31 +354,13 @@ func TestStorageReconciliationGatesEveryDatabaseConsumer(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s compose is missing storage-reconcile", label)
 		}
-		if want := []string{"storage", "reconcile"}; !reflect.DeepEqual(reconcile.Command, want) {
-			t.Fatalf("%s storage-reconcile command = %v, want %v", label, reconcile.Command, want)
+		if want := []string{"storage", "reconcile", "--report-only"}; !reflect.DeepEqual(reconcile.Command, want) {
+			t.Fatalf("%s storage-reconcile command = %v, want %v: an external database is reported on, not repaired", label, reconcile.Command, want)
 		}
-		for _, database := range []string{"neko-db", "records-db"} {
-			if reconcile.DependsOn[database].Condition != "service_healthy" {
-				t.Fatalf("%s storage-reconcile must wait for healthy %s", label, database)
-			}
+		if reconcile.Environment["OPENNEKO_DATABASE_URL_FILE"] != "/run/secrets/database-url" {
+			t.Fatalf("%s storage-reconcile does not read the database URL", label)
 		}
-		for _, key := range []string{
-			"NEKO_PG_HOST", "NEKO_PG_DATABASE", "RECORDS_PG_HOST", "RECORDS_PG_DATABASE",
-		} {
-			if _, ok := reconcile.Environment[key]; !ok {
-				t.Fatalf("%s storage-reconcile is missing %s", label, key)
-			}
-		}
-		migrate := document.Services["neko-migrate"]
-		if _, ok := migrate.Environment["OPENNEKO_OPENSHELL_DB_PASSWORD"]; !ok {
-			t.Fatalf("%s neko-migrate is missing the propagated OpenShell credential", label)
-		}
-		if got := migrate.Environment["OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD"]; got != "1" {
-			t.Fatalf("%s neko-migrate explicit-credential guard = %v, want 1", label, got)
-		}
-		for _, consumer := range []string{
-			"neko-migrate", "neko-backup", "records-graphjin", "records-watch-graphjin",
-		} {
+		for _, consumer := range []string{"neko-migrate"} {
 			if document.Services[consumer].DependsOn["storage-reconcile"].Condition != "service_completed_successfully" {
 				t.Fatalf("%s %s can start before storage reconciliation", label, consumer)
 			}
@@ -498,18 +376,23 @@ func TestDatabaseImagesEnforcePinnedGlibcStorageABI(t *testing.T) {
 	}
 	raw := string(dockerfile)
 	for _, required := range []string{
-		"FROM pgvector/pgvector:0.8.6-pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b AS postgres-runtime",
+		"FROM pgvector/pgvector:0.8.6-pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b AS neko-db",
 		`LABEL org.openneko.storage-contract="1"`,
 		`test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.36"`,
-		"FROM postgres-runtime AS neko-db",
-		"FROM postgres-runtime AS records-db",
 	} {
 		if !strings.Contains(raw, required) {
 			t.Fatalf("Dockerfile does not enforce storage ABI line %q", required)
 		}
 	}
-	if strings.Contains(raw, "FROM postgres:16-alpine AS postgres-runtime") {
+	if strings.Contains(raw, "postgres:16-alpine") {
 		t.Fatal("stateful database runtime regressed to Alpine/musl")
+	}
+	// neko-db is a plain pgvector Postgres: logical `openneko backup` dumps
+	// replaced the pgBackRest archiver and its custom entrypoint.
+	for _, retired := range []string{"pgbackrest", "pgBackRest", "AS records-db", "AS neko-backup", "AS records-graphjin", "packages/records"} {
+		if strings.Contains(raw, retired) {
+			t.Fatalf("Dockerfile still references retired %q", retired)
+		}
 	}
 }
 
@@ -594,16 +477,6 @@ func composeParityInventoryFor(service composeParityService) composeParityInvent
 	}
 }
 
-func withoutMount(mounts []string, ignored string) []string {
-	filtered := make([]string, 0, len(mounts))
-	for _, mount := range mounts {
-		if mount != ignored {
-			filtered = append(filtered, mount)
-		}
-	}
-	return filtered
-}
-
 func composeHealthcheckTest(t *testing.T, label, serviceName string, service composeParityService) []string {
 	t.Helper()
 	raw, ok := service.Healthcheck["test"].([]any)
@@ -642,112 +515,8 @@ func TestSourceAndPackagedComposeStateInventoryMatch(t *testing.T) {
 	for _, name := range sortedKeys(root.Services) {
 		got := composeParityInventoryFor(root.Services[name])
 		want := composeParityInventoryFor(packaged.Services[name])
-		if name == "graphjin-config-init" {
-			// Source compose reads immutable seeds from the checkout. Packaged
-			// compose reads the same paths baked into neko-worker, so it correctly
-			// has no host bind mounts for these inputs.
-			got.Mounts = withoutMount(
-				got.Mounts,
-				"./db/graphjin/customer.sources.example.yml:/seed/customer.sources.yml:ro",
-			)
-			got.Mounts = withoutMount(
-				got.Mounts,
-				"./scripts/graphjin-supervisor.sh:/seed/graphjin-supervisor.sh:ro",
-			)
-		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("service %s state/recovery inventory drifted:\nsource:   %#v\npackaged: %#v", name, got, want)
-		}
-	}
-}
-
-func TestDevelopmentDatabasesRecycleWALWithoutArchiving(t *testing.T) {
-	root := repoRootForTest(t)
-	sourceCore, err := os.ReadFile(filepath.Join(root, "compose.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sourceDev, err := os.ReadFile(filepath.Join(root, "compose.dev.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedCore, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedDev, err := ComposeFS.ReadFile("compose/dev.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, pair := range map[string]struct{ core, dev []byte }{
-		"source":   {sourceCore, sourceDev},
-		"packaged": {packagedCore, packagedDev},
-	} {
-		core := loadComposeParityDocument(t, pair.core)
-		dev := loadComposeParityDocument(t, pair.dev)
-		for _, name := range []string{"neko-db", "records-db"} {
-			production := strings.Join(core.Services[name].Command, " ")
-			development := strings.Join(dev.Services[name].Command, " ")
-			if !strings.Contains(production, "archive_mode=on") || !strings.Contains(production, "archive_timeout=60s") {
-				t.Errorf("%s %s lost its production archive policy: %s", label, name, production)
-			}
-			if !strings.Contains(development, "archive_mode=off") || strings.Contains(development, "archive_timeout") || strings.Contains(development, "archive_command") {
-				t.Errorf("%s %s development archive policy is unsafe: %s", label, name, development)
-			}
-		}
-	}
-}
-
-func TestRecordsGraphJinEndpointsRemainPrivate(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, document := range map[string]composeParityDocument{
-		"source":   loadComposeParityDocument(t, rootRaw),
-		"packaged": loadComposeParityDocument(t, packagedRaw),
-	} {
-		wantHealthcheck := []string{
-			"CMD", "curl", "-sS", "-o", "/dev/null",
-			"http://127.0.0.1:8090/api/v1/graphql",
-		}
-		for _, serviceName := range []string{"records-graphjin", "records-watch-graphjin"} {
-			service, ok := document.Services[serviceName]
-			if !ok {
-				t.Fatalf("%s compose is missing %s", label, serviceName)
-			}
-			if len(service.Ports) != 0 {
-				t.Errorf("%s %s must not publish host ports: %v", label, serviceName, service.Ports)
-			}
-			if service.User != "1001:999" {
-				t.Errorf("%s %s user = %q, want 1001:999", label, serviceName, service.User)
-			}
-			if got := composeHealthcheckTest(t, label, serviceName, service); !reflect.DeepEqual(got, wantHealthcheck) {
-				t.Errorf("%s %s healthcheck must accept an authenticated-error HTTP response as ready:\ngot:  %v\nwant: %v", label, serviceName, got, wantHealthcheck)
-			}
-		}
-	}
-}
-
-func TestCustomerGraphJinDoesNotOwnWorkerConfigAsRoot(t *testing.T) {
-	rootRaw, err := os.ReadFile("../../../compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packagedRaw, err := ComposeFS.ReadFile("compose/core.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for label, document := range map[string]composeParityDocument{
-		"source":   loadComposeParityDocument(t, rootRaw),
-		"packaged": loadComposeParityDocument(t, packagedRaw),
-	} {
-		if got := document.Services["graphjin"].User; got != "1001:999" {
-			t.Errorf("%s graphjin user = %q, want 1001:999", label, got)
 		}
 	}
 }
@@ -767,15 +536,7 @@ func TestPackagedDemoBootstrapsJWTBeforeServingWeb(t *testing.T) {
 		t.Fatalf("demo auth reconciliation = %#v, want 1", got)
 	}
 
-	worker := demo.Services["worker"]
-	if got := worker.DependsOn["neko-adventureworks-seed"].Condition; got != "service_completed_successfully" {
-		t.Fatalf("worker demo-seed dependency = %q, want service_completed_successfully", got)
-	}
-	web := demo.Services["web"]
-	if got := web.DependsOn["worker"].Condition; got != "service_healthy" {
-		t.Fatalf("web worker dependency = %q, want service_healthy", got)
-	}
-	for _, serviceName := range []string{"web", "worker"} {
+	for _, serviceName := range []string{"web"} {
 		if got := demo.Services[serviceName].Environment["OPENNEKO_STACK_MODE"]; got != "demo" {
 			t.Fatalf("%s stack mode = %#v, want demo", serviceName, got)
 		}
@@ -786,9 +547,116 @@ func TestPackagedDemoBootstrapsJWTBeforeServingWeb(t *testing.T) {
 		t.Fatal(err)
 	}
 	prod := loadComposeParityDocument(t, coreRaw)
-	for _, serviceName := range []string{"web", "worker"} {
+	for _, serviceName := range []string{"web"} {
 		if got, exists := prod.Services[serviceName].Environment["OPENNEKO_STACK_MODE"]; exists {
 			t.Fatalf("production %s unexpectedly sets OPENNEKO_STACK_MODE=%#v", serviceName, got)
 		}
 	}
+}
+
+func TestOpenShellIsGone(t *testing.T) {
+	root := repoRootForTest(t)
+	for _, name := range []string{
+		"Dockerfile",
+		"compose.yml",
+		"compose.dev.yml",
+		"apps/openneko/assets/compose/core.yml",
+		"apps/openneko/assets/compose/demo.yml",
+		"apps/openneko/assets/compose/dev.yml",
+		".github/workflows/release-binaries.yml",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			code := strings.TrimSpace(line)
+			if strings.HasPrefix(code, "#") {
+				continue
+			}
+			if strings.Contains(strings.ToLower(code), "openshell") || strings.Contains(code, "neko-reaper") {
+				t.Fatalf("%s still runs part of OpenShell: %s", name, code)
+			}
+		}
+	}
+	for _, name := range []string{"compose.openshell.yml", "compose.openshell-host.yml", "apps/openneko/assets/compose/openshell.yml"} {
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist: %v", name, err)
+		}
+	}
+}
+
+func TestPackagedDemoLoaderHasItsTools(t *testing.T) {
+	demo := loadComposeParityDocument(t, readEmbeddedCompose(t, "demo.yml"))
+	for _, svc := range []string{"adventureworks-init", "neko-adventureworks-seed"} {
+		if image := demo.Services[svc].Image; !strings.Contains(image, "/neko-cli:") {
+			t.Fatalf("demo %s image = %q, want neko-cli", svc, image)
+		}
+	}
+	root := repoRootForTest(t)
+	rawWorkspace, err := os.ReadFile(filepath.Join(root, "compose.adventureworks.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := loadComposeParityDocument(t, rawWorkspace)
+	for _, svc := range []string{"adventureworks-init", "neko-adventureworks-seed"} {
+		for file, doc := range map[string]composeParityDocument{"demo.yml": demo, "compose.adventureworks.yml": workspace} {
+			if got := doc.Services[svc].Environment["OPENNEKO_SEED_TARGET"]; got != "demo" {
+				t.Errorf("%s %s OPENNEKO_SEED_TARGET = %v, want demo", file, svc, got)
+			}
+		}
+	}
+	if want := []string{"seed", "adventureworks", "--load"}; !reflect.DeepEqual(demo.Services["adventureworks-init"].Command, want) {
+		t.Fatalf("demo adventureworks-init command = %v, want %v", demo.Services["adventureworks-init"].Command, want)
+	}
+	if want := []string{"seed", "adventureworks", "--org"}; !reflect.DeepEqual(demo.Services["neko-adventureworks-seed"].Command, want) {
+		t.Fatalf("demo neko-adventureworks-seed command = %v, want %v", demo.Services["neko-adventureworks-seed"].Command, want)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dockerfile := string(raw)
+	for _, removed := range []string{" AS init-tools", " AS adventureworks-loader"} {
+		if strings.Contains(dockerfile, removed) {
+			t.Errorf("Dockerfile still defines removed Node one-shot stage %q", strings.TrimSpace(removed))
+		}
+	}
+}
+
+func TestBundledDatabaseGatesStorageReconciliation(t *testing.T) {
+	sourceRaw, err := os.ReadFile(filepath.Join(repoRootForTest(t), "compose.db.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, raw := range map[string][]byte{
+		"source":   sourceRaw,
+		"packaged": readEmbeddedCompose(t, "bundled-db.yml"),
+	} {
+		reconcile := loadComposeParityDocument(t, raw).Services["storage-reconcile"]
+		if reconcile.DependsOn["neko-db"].Condition != "service_healthy" {
+			t.Fatalf("%s storage-reconcile must wait for healthy neko-db", label)
+		}
+		if want := []string{"storage", "reconcile"}; !reflect.DeepEqual(reconcile.Command, want) {
+			t.Fatalf("%s storage-reconcile command = %v, want %v: the bundled database is repaired", label, reconcile.Command, want)
+		}
+		for _, key := range []string{"NEKO_PG_HOST", "NEKO_PG_DATABASE"} {
+			if _, ok := reconcile.Environment[key]; !ok {
+				t.Fatalf("%s storage-reconcile is missing %s", label, key)
+			}
+		}
+	}
+}
+
+// executableInGit reads the mode from the git index, because a Windows
+// checkout keeps no executable bit.
+func executableInGit(t *testing.T, path string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "-s", "--", path)
+	cmd.Dir = repoRootForTest(t)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files %s: %v", path, err)
+	}
+	return strings.HasPrefix(string(out), "100755 ")
 }

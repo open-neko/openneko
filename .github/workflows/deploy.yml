@@ -2,7 +2,7 @@ name: Deploy to VM
 
 # Deploy only after the release images and post-release smoke pass. A main
 # supervisor can include Compose commands missing from the previous release's
-# images, which left web and worker stopped when the reaper was first added.
+# images, which once left web stopped after a stale CLI started.
 on:
   workflow_run:
     workflows: ["post-release smoke"]
@@ -103,101 +103,38 @@ jobs:
             # idle older versions up front is what actually prevents that.
             reclaim_disk
 
-            # upgrade force-recreates one-shot init containers as well as the
-            # long-running services, which is required for the one-time move
-            # from the legacy default network to the fixed runtime network.
+            # upgrade runs the start steps in fresh containers and
+            # force-recreates the services, which a project network change
+            # between releases needs.
             OPENNEKO_VERSION="$DEPLOY_IMAGE_TAG" OPENNEKO_PORT=80 \
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
             OPENNEKO_PORT=80 openneko status
 
-            REAPER=$(docker ps -q \
+            WEB=$(docker ps -q \
               --filter label=com.docker.compose.project=openneko-demo \
-              --filter label=com.docker.compose.service=neko-reaper | head -1)
-            test -n "$REAPER"
-            test "$(docker inspect -f '{{.State.Health.Status}}' "$REAPER")" = healthy
+              --filter label=com.docker.compose.service=web | head -1)
+            test -n "$WEB"
 
-            WORKER=$(docker ps -q \
-              --filter label=com.docker.compose.project=openneko-demo \
-              --filter label=com.docker.compose.service=worker | head -1)
-            test -n "$WORKER"
+            # Container health is not enough for a data source deployment:
+            # the signed web -> GraphJin -> AdventureWorks path must return a
+            # real row, web must reach the agent socket of openneko serve, and the
+            # pack catalog must list the built-in packs, and web must find the
+            # bundled skills.
+            checks=$(docker exec "$WEB" openneko release-check --datasource adventureworks --serve-socket --sandbox --packs --skills)
+            echo "$checks"
+            grep -qx authenticated_datasource_query=ok <<<"$checks"
+            grep -qx serve_socket=ok <<<"$checks"
+            grep -qE '^sandbox=(off|ok|remote)$' <<<"$checks"
+            grep -qE '^builtin_packs=[1-9][0-9]*$' <<<"$checks"
+            grep -qE '^bundled_skills=[1-9][0-9]*$' <<<"$checks"
 
-            # Container health is insufficient for a datasource deployment:
-            # require the authenticated worker -> GraphJin -> AdventureWorks
-            # path to return a real row before accepting the rollout.
-            docker exec "$WORKER" node --import tsx/esm --input-type=module --eval '
-              import { mintGraphjinToken, callGraphjinMcpTool } from "@neko/llm";
-              const token = mintGraphjinToken({
-                orgId: "adventureworks",
-                userId: null,
-                role: "service",
-              });
-              const response = await callGraphjinMcpTool({
-                baseUrl: "http://graphjin:8080/api/v1/mcp",
-                headers: { authorization: "Bearer " + token },
-                signal: AbortSignal.timeout(10_000),
-              }, {
-                name: "execute_graphql",
-                arguments: {
-                  query: "query { soh(limit: 1, order_by: { id: desc }) { id } }",
-                },
-              });
-              const text = response.content
-                .map((item) => item.type === "text" ? item.text : "")
-                .join("");
-              const payload = JSON.parse(text);
-              if (response.isError ||
-                  !Array.isArray(payload.data?.soh) ||
-                  payload.data.soh.length !== 1) {
-                throw new Error("authenticated datasource query failed");
-              }
-              console.log("authenticated_datasource_query=ok");
-            '
-
-            # Exercise the path that ordinary HTTP health checks missed in
-            # PR #208: a supervisor inside a fresh sandbox must call back to
-            # the containerised gateway and reach Ready.
-            trap 'docker exec "$WORKER" openshell sandbox delete --gateway openneko neko-deploy-smoke >/dev/null 2>&1 || true' EXIT
-            docker exec -i "$WORKER" sh -c 'cat > /tmp/openneko-smoke-policy.yaml' <<'POLICY'
-          version: 1
-          filesystem_policy:
-            include_workdir: true
-            read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
-            read_write: [/sandbox, /tmp, /dev/null]
-          landlock:
-            compatibility: best_effort
-          process:
-            run_as_user: sandbox
-            run_as_group: sandbox
-          network_policies: {}
-          POLICY
-            docker exec "$WORKER" openshell sandbox create \
-              --gateway openneko --name neko-deploy-smoke \
-              --from "ghcr.io/open-neko/agent:$DEPLOY_IMAGE_TAG" \
-              --policy /tmp/openneko-smoke-policy.yaml \
-              --detach --no-tty --no-auto-providers -- sleep infinity
-            docker exec "$WORKER" openshell sandbox exec \
-              --gateway openneko -n neko-deploy-smoke --no-tty -- \
-              node /app/entry.js --preflight
-            docker exec "$WORKER" openshell sandbox delete \
-              --gateway openneko neko-deploy-smoke
-            trap - EXIT
-
-            # Process liveness used to pass while pg-boss's schedule polling
-            # had silently stopped. Require a successful durable scheduler DB
-            # transaction after this worker boot before accepting the deploy.
+            # Process liveness used to pass while schedule polling had
+            # silently stopped. Require a successful durable scheduler DB
+            # transaction after this web boot before accepting the deploy.
+            # The detail is on the web admin socket, not the public port.
             scheduler_ok=false
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if docker exec "$WORKER" node -e '
-                fetch("http://127.0.0.1:4100/health/scheduler")
-                  .then(async (response) => {
-                    const health = await response.json();
-                    if (!response.ok || health.status !== "ok" || !health.lastSuccessAt) {
-                      throw new Error(JSON.stringify(health));
-                    }
-                    console.log(`[deploy] scheduler healthy at ${health.lastSuccessAt}`);
-                  })
-                  .catch((error) => { console.error(error.message); process.exit(1); });
-              '; then
+              if docker exec "$WEB" openneko release-check --scheduler; then
                 scheduler_ok=true
                 break
               fi

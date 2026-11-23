@@ -51,8 +51,6 @@ export * from "./watchers";
 export * from "./audit-chain";
 export * from "./api-contract";
 export * from "./api-access";
-export * from "./api-admission";
-export * from "./api-batch";
 export {
   buildRuleBuilderServer,
   type RuleBuilderContext,
@@ -65,8 +63,6 @@ export {
 export {
   buildWorkflowOutputServer,
   handleWorkflowOutput,
-  setWorkflowOutputDeliveryHook,
-  type WorkflowOutputDeliveryHook,
 } from "./output-server";
 export { buildWorkflowRunnerPrompt } from "./runner-prompt";
 export {
@@ -76,15 +72,11 @@ export {
 export {
   DEFAULT_DISPATCH_LEASE_MS,
   DEFAULT_REPLAY_LIMIT,
-  DEFAULT_RUN_LEASE_MS,
   WORKFLOW_SCHEDULER_HEALTH_ID,
   WORKFLOW_SCHEDULER_LOCK_KEY,
   advanceWorkflowSchedule,
   applyWorkflowDailyBudget,
-  claimWorkflowScheduleFiring,
-  completeWorkflowScheduleFiring,
   leasePendingWorkflowFirings,
-  linkWorkflowScheduleFiringRun,
   markWorkflowFiringEnqueued,
   materializeDueWorkflowFirings,
   nextWorkflowFireAt,
@@ -92,37 +84,18 @@ export {
   recordWorkflowSchedulerSuccess,
   recoverStaleWorkflowScheduleFirings,
   releaseWorkflowFiringDispatch,
-  releaseWorkflowScheduleFiringRun,
-  cancelWorkflowScheduleFiring,
   type LeasedWorkflowFiring,
   type MaterializeScheduleResult,
   type ScheduleAdvance,
   type WorkflowCatchUpPolicy,
 } from "./durable-scheduler";
 export {
-  sweepStaleWorkflowOutputs,
-  type SweepStaleOutputsResult,
-} from "./ttl-sweep";
-export {
-  prepareWorkflowRun,
-  loadPreparedWorkflowRun,
-  runWorkflowTurn,
-  WorkflowNeedsInputError,
-  type PrepareWorkflowRunOptions,
-  type PreparedWorkflowRun,
-  type RunWorkflowTurnOptions,
-  type RunWorkflowTurnResult,
-  type WorkflowTriggerKind,
-} from "./run-workflow-turn";
-export {
   appendWorkflowRunSourceWrite,
-  countSubscriptionsMatchingOutput,
   countWorkflowRunsForSubscription,
   countWorkflowRunsSince,
   createObservation,
   createSubscription,
   createWorkflowRun,
-  deleteSubscription,
   emitWorkflowOutput,
   deleteWorkflow,
   finishWorkflowRun,
@@ -131,23 +104,16 @@ export {
   getWorkflow,
   getWorkflowRun,
   getWorkflowByOrgName,
-  getWorkflowRunChainDepth,
-  hasRecentSourceWriteForWorkflow,
   linkOutputSourceObservations,
   listRecentOutputsByWorkflow,
   listCronWorkflows,
-  reEnablePausedWorkflows,
   listEnabledSubscriptions,
   listObservationsByConsumerWorkflow,
   listObservationsForOutput,
   listSubscriptionsByWorkflow,
   listWorkflows,
-  adoptWorkflowForTeam,
-  personalWorkflowFiles,
   saveWorkflow,
-  setSubscriptionEnabled,
   startOfTodayUtc,
-  writeSourceChangeLog,
   type CreateObservationInput,
   type CreateSubscriptionInput,
   type CreateWorkflowRunInput,
@@ -166,34 +132,13 @@ export {
   type WorkflowTriggers,
 } from "./store";
 export {
-  buildSourceChangeDryRunQuery,
-  buildSubscriptionQuery,
   parseSourceChangeFilter,
-  parseSourceChangeMatch,
-  parseWorkflowOutputMatch,
-  type JsonScalar,
   type SourceChangeFilter,
-  type SourceChangeMatch,
-  type SubscriptionQueryPayload,
-  type WorkflowOutputFilter,
-  type WorkflowOutputMatch,
 } from "./subscription-query";
 export {
-  startSubscriptionManager,
-  type SubscriptionManagerHandle,
-  type SubscriptionManagerOptions,
-  type SubscriptionMatchEvent,
-  type SubscriptionTransport,
-  type ResolveTransport,
-} from "./subscription-manager";
-export {
   handleExternalEventMatch,
-  handleSourceChangeMatch,
-  handleSubscriptionMatch,
   type ExternalEventMatch,
   type HandleExternalEventMatchOptions,
-  type HandleSourceChangeMatchOptions,
-  type HandleSubscriptionMatchOptions,
   type MatchHandlerDecision,
 } from "./match-handler";
 export {
@@ -203,13 +148,7 @@ export {
   type DispatchExternalEventResult,
 } from "./external-events";
 export {
-  checkSubscriptionWouldLoop,
   detectMutationLoop,
-  isWorkflowInAncestorChain,
-  outputMatchesFilter,
-  SubscriptionSelfLoopError,
-  type CheckSubscriptionWouldLoopOptions,
-  type FilterableOutput,
   type MutationLoopCheck,
 } from "./cycle-detection";
 export {
@@ -255,15 +194,12 @@ export {
 export {
   evaluateActionPolicy,
   seedDefaultActionPolicies,
-  seedPluginActionPolicies,
-  type PluginActionSeed,
   type PolicyDecision,
   type PolicyRequestSubject,
 } from "./policy-engine";
 export {
   deriveActionTargets,
   getActionTargetSpec,
-  syncPluginActionTargetSpecs,
   withActionTargets,
   type ActionTargetSpec,
 } from "./action-targets";

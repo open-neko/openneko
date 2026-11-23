@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Dialog } from "radix-ui";
-import { ArrowRight, CornerDownLeft, MessageCircle, MonitorPlay, Plus, Search, Settings, User } from "lucide-react";
+import { CornerDownLeft, MessageCircle, MonitorPlay, Plus, Search, Settings, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ALL_NAV, hideAppChrome } from "@/lib/nav";
@@ -34,7 +34,7 @@ const SETTINGS: Array<{ href: string; label: string }> = [
   { href: "/admin/settings/security", label: "Security" },
   { href: "/admin/settings/packs", label: "Solution packs" },
   { href: "/admin/users", label: "Users" },
-  { href: "/admin/plugins", label: "Plugins" },
+  { href: "/admin/settings/channels", label: "Channels" },
   { href: "/admin/rules", label: "Rules" },
 ];
 
@@ -78,7 +78,7 @@ export default function CommandBar() {
   useEffect(() => {
     if (!open || workflows.length > 0) return;
     let cancelled = false;
-    void fetch("/api/workflows", { cache: "no-store" })
+    void fetch("/api/v1/workflows", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : { workflows: [] }))
       .then((data: { workflows?: WorkflowSummary[] }) => {
         if (!cancelled) setWorkflows(data.workflows ?? []);
@@ -119,7 +119,6 @@ export default function CommandBar() {
         icon: item.icon,
         run: () => go(item.href),
       })),
-      { id: "nav:/apps", label: "Apps", group: "Go to", icon: ArrowRight, run: () => go("/apps") },
       { id: "nav:/profile", label: "Your account", hint: "Profile and display", group: "Go to", icon: User, run: () => go("/profile") },
     ];
     const flows: Command[] = [

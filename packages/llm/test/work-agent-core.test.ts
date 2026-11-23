@@ -28,7 +28,7 @@ const workspace: AgentWorkspace = {
 const controlPlane = {} as AgentControlPlane;
 
 describe("runAgentBackend", () => {
-  it("mounts actor-scoped native records tools for MCP-capable chat agents", async () => {
+  it("mounts the brokered tool servers for MCP-capable chat agents", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
       id: "ax",
@@ -52,7 +52,6 @@ describe("runAgentBackend", () => {
       runId: "run-1",
       workspace,
       controlPlane,
-      pluginActions: [],
       emit: async () => {},
     });
 
@@ -60,7 +59,6 @@ describe("runAgentBackend", () => {
       expect.objectContaining({
         neko_interaction: expect.anything(),
         neko_graphjin: expect.anything(),
-        neko_records: expect.anything(),
       }),
     );
     expect(captured?.mcpBridgeEnv).toMatchObject({
@@ -71,7 +69,35 @@ describe("runAgentBackend", () => {
     });
   });
 
-  it("mounts pack actions separately from plugin actions", async () => {
+  it("mounts the source-config tools only when the run may use them", async () => {
+    const mounted: Array<AgentRunOptions["mcpServers"]> = [];
+    const backend: AgentBackend = {
+      id: "ax",
+      capabilities: { mcpTools: true, sessionResume: false, nativeDelegation: "ax-worker" },
+      async run(opts) {
+        mounted.push(opts.mcpServers);
+        return { status: "completed", finalText: "done" };
+      },
+    };
+    for (const sourceConfigEnabled of [false, true]) {
+      await runAgentBackend({
+        backend,
+        prompt: "prompt",
+        userMessage: "show the GraphJin config",
+        orgId: "org-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        workspace,
+        controlPlane,
+        sourceConfigEnabled,
+        emit: async () => {},
+      });
+    }
+    expect(mounted[0]).not.toHaveProperty("neko_source_config_manager");
+    expect(mounted[1]).toHaveProperty("neko_source_config_manager");
+  });
+
+  it("mounts pack actions and no plugin action server", async () => {
     let captured: AgentRunOptions | undefined;
     const backend: AgentBackend = {
       id: "ax",
@@ -101,7 +127,6 @@ describe("runAgentBackend", () => {
       runId: "run-1",
       workspace,
       controlPlane,
-      pluginActions: [],
       packActions,
       emit: async () => {},
     });
@@ -113,7 +138,7 @@ describe("runAgentBackend", () => {
     expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_PACK_ACTIONS).toBe(
       JSON.stringify(packActions),
     );
-    expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_PLUGIN_ACTIONS).toBe("[]");
+    expect(captured?.mcpBridgeEnv).not.toHaveProperty("OPENNEKO_MCP_PLUGIN_ACTIONS");
   });
 
   it("applies and serializes the same per-run GraphJin policy", async () => {
@@ -140,7 +165,6 @@ describe("runAgentBackend", () => {
       runId: "run-1",
       workspace,
       controlPlane,
-      pluginActions: [],
       graphjinToolPolicy: GRAPHJIN_DIRECT_GOVERNED_POLICY,
       emit: async () => {},
     });
@@ -151,129 +175,5 @@ describe("runAgentBackend", () => {
     expect(captured?.mcpBridgeEnv?.[GRAPHJIN_TOOL_POLICY_ENV]).toBe(
       "direct-governed",
     );
-  });
-
-  it.each(["ax"] as const)("mounts only GraphJin's agent on the agent path for %s", async (id) => {
-    let captured: AgentRunOptions | undefined;
-    const backend: AgentBackend = {
-      id,
-      capabilities: { mcpTools: true, sessionResume: false },
-      async run(opts) {
-        captured = opts;
-        return { status: "completed", finalText: "done" };
-      },
-    };
-
-    await runAgentBackend({
-      backend,
-      prompt: "prompt",
-      userMessage: "How many orders?",
-      orgId: "org-1",
-      threadId: "thread-1",
-      runId: "run-1",
-      workspace,
-      controlPlane,
-      pluginActions: [],
-      graphjinDataPath: "agent",
-      emit: async () => {},
-    });
-
-    expect(captured?.mcpServers).toHaveProperty("neko_graphjin_agent");
-    expect(captured?.mcpServers).not.toHaveProperty("neko_graphjin");
-  });
-
-  it("does not mount customer data-source tools in records mode", async () => {
-    let captured: AgentRunOptions | undefined;
-    const backend: AgentBackend = {
-      id: "ax",
-      capabilities: {
-        mcpTools: true,
-        sessionResume: false,
-        nativeDelegation: "ax-worker",
-      },
-      async run(opts) {
-        captured = opts;
-        return { status: "completed", finalText: "done" };
-      },
-    };
-
-    await runAgentBackend({
-      backend,
-      prompt: "prompt",
-      userMessage: "most urgent activity",
-      orgId: "org-1",
-      threadId: "thread-1",
-      runId: "run-1",
-      workspace,
-      controlPlane,
-      pluginActions: [],
-      sourceConfigEnabled: true,
-      dataSurface: "records",
-      backendState: {
-        recordContext: {
-          surface: "list",
-          appId: "crm",
-          appLabel: "CRM",
-          objectApiName: "activity",
-          objectLabel: "Activities",
-        },
-      },
-      emit: async () => {},
-    });
-
-    expect(Object.keys(captured?.mcpServers ?? {})).toEqual([
-      "neko_interaction",
-      "neko_records",
-    ]);
-    expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_RECORD_SCOPE).toBe(
-      JSON.stringify({ appId: "crm", objectApiName: "activity" }),
-    );
-  });
-
-  it("uses app ownership as context without narrowing the actor's records grants", async () => {
-    let captured: AgentRunOptions | undefined;
-    const backend: AgentBackend = {
-      id: "ax",
-      capabilities: {
-        mcpTools: true,
-        sessionResume: false,
-        nativeDelegation: "ax-worker",
-      },
-      async run(opts) {
-        captured = opts;
-        return { status: "completed", finalText: "done" };
-      },
-    };
-
-    await runAgentBackend({
-      backend,
-      prompt: "prompt",
-      userMessage: "include this account's support tickets",
-      orgId: "org-1",
-      threadId: "thread-1",
-      runId: "run-1",
-      workspace,
-      controlPlane,
-      pluginActions: [],
-      dataSurface: "records",
-      backendState: {
-        appContext: { appId: "crm", appLabel: "CRM" },
-        recordContext: {
-          surface: "detail",
-          appId: "crm",
-          appLabel: "CRM",
-          objectApiName: "account",
-          objectLabel: "Account",
-          recordId: "account-1",
-        },
-      },
-      emit: async () => {},
-    });
-
-    expect(Object.keys(captured?.mcpServers ?? {})).toEqual([
-      "neko_interaction",
-      "neko_records",
-    ]);
-    expect(captured?.mcpBridgeEnv?.OPENNEKO_MCP_RECORD_SCOPE).toBeUndefined();
   });
 });

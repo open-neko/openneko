@@ -1,15 +1,14 @@
-import { connection } from "next/server";
-import { AdminDenied } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { getProviderSettingsPayload } from "@/lib/provider-settings";
+"use client";
+
+import AdminLoad from "@/app/admin/AdminLoad";
 import ResearchForm from "./ResearchForm";
 
-export default async function SettingsResearchPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type Initial = Parameters<typeof ResearchForm>[0]["initial"];
 
-  const providers = await getProviderSettingsPayload((await getOrgId()));
-  return <ResearchForm initial={providers} />;
+export default function SettingsResearchPage() {
+  return (
+    <AdminLoad title="Industry research" paths={["/api/v1/settings/provider"]}>
+      {([initial]) => <ResearchForm initial={initial as Initial} />}
+    </AdminLoad>
+  );
 }

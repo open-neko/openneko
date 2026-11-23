@@ -1,0 +1,89 @@
+# Adds the sandbox to the stack in compose.yml:
+#   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml run --rm openneko-serve-init
+#   docker compose -f compose.yml -f compose.db.yml -f recipes/sandbox/compose.yml up -d
+# The sandbox keeps each run's files in its own volume and shares one volume
+# with web and serve: openneko-sandbox-socket, which holds only its socket.
+# Web and serve read the key from the sandbox-key secret of the core file.
+x-sandbox-env: &sandbox-env
+  OPENNEKO_SANDBOX_URL: unix:///run/openneko-sandbox/sandbox.sock
+
+services:
+  openneko-sandbox:
+    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?set OPENNEKO_VERSION to the release tag, for example v6.0.0 (a source build in OPENNEKO_SANDBOX_IMAGE may set any value)}}
+    command: ["--listen", "unix:///run/openneko-sandbox/sandbox.sock"]
+    restart: unless-stopped
+    environment:
+      OPENNEKO_SANDBOX_WORKSPACES: /var/lib/openneko/sandbox-runs
+      OPENNEKO_SANDBOX_HOMES: /var/lib/openneko/sandbox-homes
+      OPENNEKO_SANDBOX_GID: "1001"
+      OPENNEKO_SANDBOX_EGRESS_PROXY: openneko-egress:3128
+      OPENNEKO_SANDBOX_EGRESS_CONTROL: unix:///run/openneko-egress/control.sock
+      OPENNEKO_SANDBOX_KEY: ${OPENNEKO_SANDBOX_KEY:?set OPENNEKO_SANDBOX_KEY to a random key of at least 32 characters, for example from openssl rand -hex 32}
+    volumes:
+      - openneko-sandbox-socket:/run/openneko-sandbox
+      - openneko-sandbox-runs:/var/lib/openneko/sandbox-runs
+      - openneko-sandbox-homes:/var/lib/openneko/sandbox-homes
+      - openneko-egress-control:/run/openneko-egress
+    networks:
+      - openneko-sandbox
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - KILL
+      - SETGID
+      - SETUID
+      # Only while the sandbox sets its firewall at start; it then drops both.
+      - NET_ADMIN
+      - SETPCAP
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1024
+
+  # The only way out of the sandbox network: each run's commands reach the
+  # hosts on the organization's egress list through it, and nothing else.
+  openneko-egress:
+    image: ${OPENNEKO_SANDBOX_IMAGE:-ghcr.io/open-neko/neko-sandbox:${OPENNEKO_VERSION:?set OPENNEKO_VERSION to the release tag, for example v6.0.0 (a source build in OPENNEKO_SANDBOX_IMAGE may set any value)}}
+    command: ["egress", "--listen", ":3128", "--control", "unix:///run/openneko-egress/control.sock"]
+    restart: unless-stopped
+    volumes:
+      - openneko-egress-control:/run/openneko-egress
+    networks:
+      - openneko-sandbox
+      - openneko-egress
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+
+  openneko-serve:
+    environment: *sandbox-env
+    volumes:
+      - openneko-sandbox-socket:/run/openneko-sandbox
+    depends_on:
+      openneko-sandbox:
+        condition: service_started
+  web:
+    environment: *sandbox-env
+    # The web image's group is 999; the sandbox gives its socket to group 1001.
+    group_add:
+      - "1001"
+    volumes:
+      - openneko-sandbox-socket:/run/openneko-sandbox
+
+volumes:
+  openneko-sandbox-socket:
+  openneko-sandbox-runs:
+  openneko-sandbox-homes:
+  openneko-egress-control:
+
+# internal: no route out and no external DNS, so commands reach nothing
+# outside this network.
+networks:
+  openneko-sandbox:
+    internal: true
+  openneko-egress:

@@ -5,18 +5,16 @@ import {
   type ServerResponse,
 } from "node:http";
 import { randomUUID } from "node:crypto";
-import { graphjinAgentEnabledForOrg } from "@neko/db";
+import { withRunTraceContext } from "@neko/telemetry";
 import type { AgentEvent } from "../agent-backend";
 import { inProcessControlPlane, type AgentControlPlane } from "./control-plane";
-import { sandboxBrokerHost } from "./sandbox-net";
 import {
   traceActionPolicy,
   traceGraphjinQuery,
   traceGraphjinToolCall,
   traceGraphjinToolsList,
-  traceLibrarySearch,
+  traceFileSearch,
   traceMemorySearch,
-  traceRecordBlueprints,
   traceWorkflowList,
   unwrapWorkSemanticTraceControlPlane,
 } from "./semantic-trace";
@@ -67,11 +65,7 @@ export interface AgentBrokerDeps {
   /** Host-side event sink: scrub + persist. Scrubbing stays here so a
    *  sandboxed agent can't leak a secret it was never given. */
   onEvents(binding: RunBinding, events: AgentEvent[]): Promise<void>;
-  /** True when the org reaches GraphJin only through its server-side agent. */
-  graphjinAgentOnly?(orgId: string): Promise<boolean>;
 }
-
-const DIRECT_GRAPHJIN_ROUTES = new Set(["/v1/graphjin/query", "/v1/graphjin/tools/list", "/v1/graphjin/tools/call"]);
 
 /**
  * Localhost HTTP/JSON broker — the ONLY channel a sandboxed agent turn has
@@ -104,7 +98,15 @@ async function handle(
   const binding = deps.resolveRun(token);
   if (!binding) return send(res, 401, { error: "unauthorized" });
   if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
+  return withRunTraceContext(binding.runId, () => handleRunRequest(deps, req, res, binding));
+}
 
+async function handleRunRequest(
+  deps: AgentBrokerDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+  binding: RunBinding,
+): Promise<void> {
   const body = (await readJson(req)) as Record<string, unknown>;
   const path = (req.url ?? "").split("?")[0];
   // A trusted in-process eval may pass an already-decorated control plane.
@@ -116,10 +118,6 @@ async function handle(
   // identity (human principal + agent backend). Best-effort — auditing
   // must never fail the call itself.
   void auditControlPlaneCall(binding, path);
-
-  if (DIRECT_GRAPHJIN_ROUTES.has(path) && await (deps.graphjinAgentOnly ?? graphjinAgentEnabledForOrg)(binding.orgId).catch(() => false)) {
-    return send(res, 403, { error: "This organization reaches its data through the GraphJin agent." });
-  }
 
   switch (path) {
     case "/v1/policy/evaluate":
@@ -253,27 +251,50 @@ async function handle(
         }),
       );
     }
-    case "/v1/library/search": {
-      // Same rule as memory: the personal layer comes from the bound
-      // run's owner, never from agent-supplied identity.
-      delete body.userId;
+    case "/v1/files/search": {
       const query = String(body.query ?? "");
       const limit = typeof body.limit === "number" ? body.limit : undefined;
       return send(
         res,
         200,
-        await traceLibrarySearch({
+        await traceFileSearch({
           binding,
           request: { query, ...(limit !== undefined ? { limit } : {}) },
           execute: () =>
-            cp.searchLibraryForRun({
-              ...body,
+            cp.searchFilesForRun({
               orgId: binding.orgId,
               runId: binding.runId,
-            } as Parameters<AgentControlPlane["searchLibraryForRun"]>[0]),
+              query,
+              ...(limit !== undefined ? { limit } : {}),
+            }),
         }),
       );
     }
+    case "/v1/files/read": {
+      const offset = typeof body.offset === "number" ? body.offset : undefined;
+      const maxChars = typeof body.maxChars === "number" ? body.maxChars : undefined;
+      return send(
+        res,
+        200,
+        await cp.readFileForRun({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          path: String(body.path ?? ""),
+          ...(offset !== undefined ? { offset } : {}),
+          ...(maxChars !== undefined ? { maxChars } : {}),
+        }),
+      );
+    }
+    case "/v1/files/sql":
+      return send(
+        res,
+        200,
+        await cp.queryFileTablesForRun({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          sql: String(body.sql ?? ""),
+        }),
+      );
     case "/v1/graphjin/query": {
       const query = String(body.query ?? "");
       const variables =
@@ -333,124 +354,6 @@ async function handle(
               ...(binding.kind === "agent-job" ? {} : { runId: binding.runId }),
               name,
               ...(args !== undefined ? { arguments: args } : {}),
-            }),
-        }),
-      );
-    }
-    case "/v1/graphjin/agent":
-      return send(
-        res,
-        200,
-        await cp.askGraphjinDataAgent({
-          orgId: binding.orgId,
-          // A job has no work_run row, so it carries no run entitlements.
-          ...(binding.kind === "agent-job" ? {} : { runId: binding.runId }),
-          instruction: String(body.instruction ?? ""),
-          ...(typeof body.dataSourceId === "string"
-            ? { dataSourceId: body.dataSourceId }
-            : {}),
-          ...(typeof body.maxSteps === "number"
-            ? { maxSteps: body.maxSteps }
-            : {}),
-        }),
-      );
-    case "/v1/records/catalog":
-      return send(
-        res,
-        200,
-        await cp.listRecordCatalog({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          ...(typeof body.appId === "string" ? { appId: body.appId } : {}),
-        }),
-      );
-    case "/v1/records/find":
-      return send(
-        res,
-        200,
-        await cp.findRecords({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          ...(typeof body.first === "number" ? { first: body.first } : {}),
-          ...(typeof body.after === "string" ? { after: body.after } : {}),
-          ...(typeof body.search === "string" ? { search: body.search } : {}),
-          ...(Array.isArray(body.filters)
-            ? {
-                filters: body.filters as Parameters<
-                  AgentControlPlane["findRecords"]
-                >[0]["filters"],
-              }
-            : {}),
-          ...(body.sort && typeof body.sort === "object"
-            ? {
-                sort: body.sort as NonNullable<
-                  Parameters<AgentControlPlane["findRecords"]>[0]["sort"]
-                >,
-              }
-            : {}),
-          ...(typeof body.myRecords === "boolean"
-            ? { myRecords: body.myRecords }
-            : {}),
-        }),
-      );
-    case "/v1/records/get":
-      return send(
-        res,
-        200,
-        await cp.getRecord({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          recordId: String(body.recordId ?? ""),
-          ...(typeof body.allFields === "boolean"
-            ? { allFields: body.allFields }
-            : {}),
-        }),
-      );
-    case "/v1/records/recycle/find":
-      return send(
-        res,
-        200,
-        await cp.findRecycledRecords({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          ...(typeof body.first === "number" ? { first: body.first } : {}),
-          ...(typeof body.after === "string" ? { after: body.after } : {}),
-          ...(typeof body.search === "string" ? { search: body.search } : {}),
-        }),
-      );
-    case "/v1/records/recycle/get":
-      return send(
-        res,
-        200,
-        await cp.getRecycledRecord({
-          orgId: binding.orgId,
-          runId: binding.runId,
-          appId: String(body.appId ?? ""),
-          objectApiName: String(body.objectApiName ?? ""),
-          recordId: String(body.recordId ?? ""),
-        }),
-      );
-    case "/v1/records/blueprints": {
-      const blueprintId =
-        typeof body.blueprintId === "string" ? body.blueprintId : undefined;
-      return send(
-        res,
-        200,
-        await traceRecordBlueprints({
-          binding,
-          request: {
-            ...(blueprintId !== undefined ? { blueprintId } : {}),
-          },
-          execute: () =>
-            cp.listRecordBlueprints({
-              orgId: binding.orgId,
-              ...(blueprintId !== undefined ? { blueprintId } : {}),
             }),
         }),
       );
@@ -519,8 +422,6 @@ async function handle(
           limit: typeof body.limit === "number" ? body.limit : undefined,
         }),
       );
-    case "/v1/plugins/list":
-      return send(res, 200, await cp.listPlugins({ orgId: binding.orgId }));
     case "/v1/users/list":
       return send(res, 200, await cp.listUsers({ orgId: binding.orgId }));
     case "/v1/groups/list":
@@ -568,20 +469,30 @@ async function handle(
           limit: typeof body.limit === "number" ? body.limit : undefined,
         }),
       );
-    case "/v1/source-config/agent":
+    case "/v1/source-config/describe":
       return send(
         res,
         200,
-        await cp.askSourceConfigAgent({
+        await cp.describeSourceConfig({
           orgId: binding.orgId,
           runId: binding.runId,
           dataSourceId:
             typeof body.dataSourceId === "string"
               ? body.dataSourceId
               : undefined,
-          instruction: String(body.instruction ?? ""),
-          maxSteps:
-            typeof body.maxSteps === "number" ? body.maxSteps : undefined,
+        }),
+      );
+    case "/v1/source-check":
+      return send(
+        res,
+        200,
+        await cp.checkSource({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          answers:
+            body.answers && typeof body.answers === "object"
+              ? (body.answers as Record<string, unknown>)
+              : {},
         }),
       );
     case "/v1/source-config/preview":
@@ -763,7 +674,8 @@ export async function startAgentBroker(
   await new Promise<void>((resolve, reject) => {
     const onErr = (e: Error) => reject(e);
     server.once("error", onErr);
-    server.listen(opts.port, "0.0.0.0", () => {
+    // Only the run's runner, a child of this process, dials the broker.
+    server.listen(opts.port, "127.0.0.1", () => {
       server.removeListener("error", onErr);
       resolve();
     });
@@ -771,7 +683,7 @@ export async function startAgentBroker(
 
   const addr = server.address();
   const port = typeof addr === "object" && addr ? addr.port : opts.port;
-  const host = opts.hostAlias ?? "host.openshell.internal";
+  const host = opts.hostAlias ?? "127.0.0.1";
 
   return {
     url: `http://${host}:${port}`,
@@ -800,11 +712,9 @@ export async function startAgentBroker(
 
 /**
  * Lazily start the per-process agent broker, bound to the in-process control
- * plane. SEC9: OpenShell is the only agent runtime, so every control-plane
- * host runs a broker. Packaged sandboxes dial the container's private Compose
- * IP; host-mode setups use host.openshell.internal.
- * Idempotent — one broker per process, shared by runWorkRun (channel runs)
- * and the web chat route.
+ * plane. Every control-plane host runs a broker; each run's runner, a child
+ * of this process, dials it on loopback.
+ * Idempotent — one broker per process.
  */
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
   if (brokerState.singleton) return Promise.resolve(brokerState.singleton);
@@ -812,20 +722,18 @@ export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
     const pinned = Number(process.env.OPENNEKO_BROKER_PORT) || 0;
     brokerState.starting = startAgentBroker({
       controlPlane: inProcessControlPlane,
-      hostAlias: sandboxBrokerHost(),
       port: pinned || 4199,
       onEvents: routeBrokerEvents,
     })
       .catch((e: NodeJS.ErrnoException) => {
         // Unpinned default only: web + worker on one host (dev) both reach
-        // for 4199 — fall back to an ephemeral port; sandboxes get the real
+        // for 4199 — fall back to an ephemeral port; runners get the real
         // port via the handle URL. A pinned port must fail loudly because the
-        // sandbox policy and Compose exposure both expect that exact port.
+        // operator asked for that exact port.
         if (pinned || e.code !== "EADDRINUSE") throw e;
         return startAgentBroker({
           controlPlane: inProcessControlPlane,
-          hostAlias: sandboxBrokerHost(),
-          port: 0,
+              port: 0,
           onEvents: routeBrokerEvents,
         });
       })

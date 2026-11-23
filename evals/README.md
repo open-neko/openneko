@@ -4,7 +4,7 @@
 > observation contract, durable resume journal, deterministic rescoring,
 > PR-safe result verifier, CLI (including the `oracles` ground-truth
 > extraction command), semantic registry, a 40-case authored AdventureWorks
-> corpus (`adventureworks-40q`), direct and delegated GraphJin paths,
+> corpus (`adventureworks-40q`), the direct GraphJin path,
 > optional OTLP tracing in worker and web execution, persisted production
 > summaries, latency/token/cost aggregates, the first executable watcher/action
 > lifecycle pack, and backend eval v4 assertion attribution, typed security
@@ -76,13 +76,13 @@ pnpm openneko eval resume --config evals/configs/adventureworks-smoke.yaml --run
 pnpm openneko eval run --config evals/configs/adventureworks-smoke.yaml --restart
 pnpm openneko eval rescore --config evals/configs/adventureworks-smoke.yaml --run <run-id>
 
-# Product lifecycle coverage needs only the migrated OpenNeko test database;
-# it makes no provider/model calls.
+# Product lifecycle coverage needs the migrated OpenNeko test database and Go;
+# it starts its own eval install and makes no provider calls.
 pnpm openneko eval run --config evals/configs/openneko-lifecycle-smoke.yaml --no-promote
 
 # Seeded-memory retrieval/isolation, the memory ablation twin, and the skill
 # install round-trip — the first phase-keyed oracle-bundle suite; also
-# provider-free.
+# provider-free, and it starts its own eval install.
 pnpm openneko eval run --config evals/configs/openneko-work-memory-smoke.yaml --no-promote
 ```
 
@@ -95,31 +95,63 @@ pnpm openneko eval verify --result evals/results/<config-id>/<run-id>
 pnpm openneko eval report --result evals/results/<config-id>/<run-id>
 ```
 
-The metric adapter supports Ax across model providers, direct GraphJin and
-the read-only delegated GraphJin server agent, independent outer/inner
-provider-model identities, and dataset/config variation. The lifecycle adapter
-executes watcher and approval-governed mutation state machines against isolated
-test organizations with deterministic clocks, query responses, and action
-effects.
+The metric adapter supports Ax across model providers, direct GraphJin, and
+dataset/config variation. The lifecycle adapter
+runs each case on its own eval install (`openneko web` and `openneko serve` on a
+new database, as the backend driver does). The Go sweep runs by `openneko jobs
+run workflow_cron_sweep` with a fixed clock against a GraphQL source in the
+driver process. A scripted model drives the workflow builder in a chat turn and
+`neko_action` in a manual workflow run. Approvals go through
+`PATCH /api/v1/action-requests/{id}`, and River runs the execution against an
+in-memory action adapter. Case w02 v2 pauses the workflow with
+`PATCH /api/v1/workflows/{id}`, which also turns its watchers off; v1 also
+reset a watcher, which no product path does.
+
+An eval install keeps its episode folders and its `openneko` build under the
+temporary folder, in names keyed to the Postgres host and port. At start it
+deletes the leftovers of its own server only, so two eval runs on two servers
+(the provider eval and the worker tests, for example) leave each other alone.
+A manual workflow run acts as the service, and no route lets the operator stop
+it. So the backend driver gives each workflow case a turn time 90 s shorter
+than the case timeout, no continuations, and a tool-call limit one above the
+variant's `max_tool_calls`: the run ends on its own before the episode does.
+
+The work-memory adapter runs each phase on its own eval install. A scripted
+model saves and searches memories through `neko_memory` in a chat turn, and
+writes skills through `neko_skills`. The adapter reads the stored memories and
+skills from the work routes, archives a memory with
+`DELETE /api/v1/work/memories/{id}`, and runs the cross-org search as an
+admin of a second org. Two checks have no product path: the duplicate check
+calls the Node `findConflictingWorkMemories`, and the skill dependency checks
+read the Node manifest in `skill-deps.ts`.
 
 AdventureWorks metric episodes start at the same natural-language seam as an
 ad-hoc production request: a case supplies only `question` and `role`, the
-production classifier derives `slug`/`title`/`why`/`chartHint`, and the metric
-agent receives both the exact user question and that derived metadata. Tables,
+classifier derives `slug`/`title`/`why`/`chartHint`, and the metric job
+receives both the exact user question and that derived metadata. Tables,
 columns, formulas, anchor details, and expected current/baseline values remain
-in the host-only SQL oracle. Episode token, cost, and latency measurements
-include classification as well as metric-agent execution.
+in the host-only SQL oracle.
+
+Each episode runs on its own eval install, as the work adapters do. The
+adapter writes a `processing_job` row with the question payload and queues
+the Go `metric_refresh` job on River with one attempt. `openneko web` runs the
+job, the same code that production runs. The adapter then reads the snapshot
+from `metric_snapshot` and the job's usage from `spend_ledger`. The ledger
+keeps total tokens and a priced cost per row, so the episode reports total
+tokens and cost, with no input and output split. The episode measurements add
+the classifier's usage. The classifier has had no product caller since the
+briefing routes went; the adapter still calls it in Node.
 
 ### Production OpenTelemetry
 
-The worker and Node.js web execution paths export metadata-only traces when an
-OTLP endpoint is configured.
-Export remains off by default and never carries prompts, queries, tool
-arguments/results, model output, database content, or exporter credentials.
+Only `openneko serve` exports traces: the metadata-only spans of its GraphJin
+servers (default service name `openneko-graphjin`), when an OTLP endpoint is
+set. `openneko web` runs the agent turns and exports no traces, so a run's
+GraphJin calls do not join a run trace. INSTALL.md, "Traces", says what each
+span holds.
 
 ```sh
 export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://collector:4318/v1/traces
-export OTEL_SERVICE_NAME=openneko-worker # use openneko-web for the web service
 # Optional standard OTel exporter setting; keep it in the environment only.
 export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer ...'
 ```
@@ -171,8 +203,7 @@ able to vary and attribute at least these factors:
 | Product path | metric refresh, business profiling, bootstrap metrics, `/work` chat, workflow build/run, actions, source configuration |
 | Agent runtime | Ax |
 | Outer provider/model | any valid Ax provider/model |
-| Data path | direct GraphJin query, delegated GraphJin agent, later planner-then-host-execute |
-| Inner provider/model | GraphJin agent provider/model, independent from the outer model |
+| Data path | direct GraphJin query, later planner-then-host-execute |
 | Dataset | AdventureWorks first; later other databases, files, OpenAPI sources, and multi-source packs |
 | Prompt and contracts | prompt version, output schema, role/persona, validation/repair loop |
 | Discovery context | knowledge-pack version, catalog mode, discovery pathways, schema freshness |
@@ -184,8 +215,8 @@ able to vary and attribute at least these factors:
 | Infrastructure state | cold/warm sandbox and caches, network latency, provider throttling, tool faults, service restarts |
 
 Not every factor should be crossed with every other factor. The runner validates
-capabilities and compatibility before execution. For example, a delegated
-GraphJin arm requires an enabled GraphJin server agent.
+capabilities and compatibility before execution. For example, the metric
+adapter accepts only the direct GraphJin data path.
 
 Two comparison tracks are necessary:
 
@@ -403,14 +434,6 @@ variants:
       model: ${OPENNEKO_EVAL_GEMINI_MODEL}
       credential_ref: env:GEMINI_API_KEY
     data_path: graphjin-direct
-
-  - id: ax-gemini-delegated
-    extends: ax-gemini-direct
-    data_path: graphjin-agent
-    inner_model:
-      provider: google-gemini
-      model: ${OPENNEKO_EVAL_GRAPHJIN_MODEL}
-      credential_ref: env:GEMINI_API_KEY
 
   - id: ax-anthropic-direct
     backend: ax
@@ -826,7 +849,10 @@ cost coverage marked unavailable.
 `work_run` records backend, status, timestamps, and error, while non-chat agent
 work is represented by `processing_job`. The implemented v1 stores the compact
 summary as a `telemetry` work-run event and under `processing_job.result.telemetry`.
-This makes it available through existing client APIs without a migration. A
+A chat run and a manual workflow run in `openneko web` (Go) write a smaller
+summary: the schema version, the run id and the usage of the run's last outer
+usage event. The chat run writes it as the `telemetry` event; the manual run
+writes it as that event and to `workflow_run.telemetry_summary`. This makes it available through existing client APIs without a migration. A
 future common `harness_run` table can unify retention and fleet queries across
 `work_run`, `processing_job`, and `workflow_run`.
 
@@ -944,7 +970,7 @@ work is deliberately visible:
   growing the read/calculation corpus toward several hundred cases;
 - add resettable watcher/reactive and mutation/action packs with pre-state,
   readiness, post-state, collateral, audit, and idempotency oracles;
-- cover Ax across selected providers, direct/delegated GraphJin, and
+- cover Ax across selected providers, direct GraphJin, and
   provider/model variants with compatibility validation;
 - run repeated, counterbalanced baselines;
 - check in compact scored results through a PR;
@@ -966,8 +992,8 @@ work is deliberately visible:
 - A hard process kill during a run reuses every verified completed slot and
   safely reconstructs the in-flight mutation/watcher fixture instead of
   restarting or trusting ambiguous state.
-- The same case runs through Ax with at least two providers, and through
-  direct and delegated GraphJin data paths.
+- The same case runs through Ax with at least two providers on the direct
+  GraphJin data path.
 - Adding another dataset requires a dataset pack, not runner edits.
 - Every result identifies exact code/config/dataset/scorer/model provenance and
   telemetry coverage.

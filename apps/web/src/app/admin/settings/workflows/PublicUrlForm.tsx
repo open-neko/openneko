@@ -18,7 +18,7 @@ export default function PublicUrlForm({ initial }: { initial: Setting }) {
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/admin/public-url", {
+      const response = await fetch("/api/v1/admin/public-url", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),

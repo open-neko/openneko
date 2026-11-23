@@ -5,8 +5,19 @@ What you're installing, feature by feature, in plain language: **[FEATURES.md](F
 
 ## Requirements
 
-- Docker Desktop on macOS, or Docker Engine + Docker Compose on Linux
-- An API key for at least one supported model provider
+- Linux, macOS or Windows, on amd64 or arm64. What each system runs:
+
+  | Install | Linux | macOS | Windows |
+  |---|---|---|---|
+  | Docker stack (`openneko setup`, `openneko start`) | Docker Engine + Docker Compose | Docker Desktop | no |
+  | [Native install](#run-without-docker-native) for your own user, no Docker | yes | yes | yes |
+  | [Server install](#server-install-systemd) with systemd and one system user | yes | no | no |
+
+- PostgreSQL 16 or later with the `vector` extension (pgvector 0.6.0 or later) for production and native installs (`--mode demo` and `--mode dev` run a bundled Postgres container)
+- An API key for at least one supported model provider, or the URL of a model server that speaks the OpenAI chat API (Ollama, vLLM, LM Studio)
+- On Linux, for agent turns: kernel 5.13 or later with `landlock` in the active security modules, and seccomp. Without them, OpenNeko starts but refuses every agent turn. See [Agent confinement](#agent-confinement-linux).
+- On macOS, for agent turns: the system call `sandbox_init`, which macOS 15 has. Without it, OpenNeko starts but refuses every agent turn. See [Agent confinement (macOS)](#agent-confinement-macos).
+- On Windows, for agent turns: Windows 10 1809, Windows Server 2019 or later, which run Unix sockets in app containers. Without them, OpenNeko starts but refuses every agent turn. See [Agent confinement (Windows)](#agent-confinement-windows).
 
 ## Install
 
@@ -18,7 +29,7 @@ openneko setup --mode demo
 
 The installer picks the right path for your platform — Homebrew on macOS, a checksum-verified release binary on Linux — and checks for Docker. `openneko setup` then runs preflight (Docker daemon up, host supported, ports free), brings up the stack, and configures it (see [Setup](#setup)).
 
-`--mode demo` pulls pinned images and loads AdventureWorks sample data with three example watchers. For your own data, use `--mode prod` ([Use your own data](#use-your-own-data)).
+`--mode demo` pulls pinned images and loads AdventureWorks sample data with four example workflows. For your own data, use `--mode prod` ([Use your own data](#use-your-own-data)).
 
 ### Manual install
 
@@ -26,6 +37,7 @@ Prefer to manage the binary yourself:
 
 - **macOS (Homebrew):** `brew install open-neko/tap/openneko`
 - **Linux:** download `openneko_<version>_linux_<arch>.tar.gz` from the [latest release](https://github.com/open-neko/openneko/releases/latest), verify it against `checksums.txt`, and put `openneko` on your `PATH`.
+- **Windows:** the Docker stack does not run on Windows. Use the [native install](#run-without-docker-native) with `install-native.ps1`.
 
 Then run `openneko setup` (guided), or `openneko start` to bring the stack up without the guided flow.
 
@@ -33,15 +45,24 @@ Then run `openneko setup` (guided), or `openneko start` to bring the stack up wi
 
 `openneko setup` walks through the steps below **in the terminal**. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`, or just run `openneko start`) and open [http://localhost:3000](http://localhost:3000) for the same wizard. Either way:
 
-1. Choose an admin database password.
-2. Confirm the pre-filled GraphJin URL (`--mode demo`) or enter your own (`--mode prod`).
-3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). The agent (Ax) runs inside the OpenShell sandbox with the full tool set, including the chat-first management tools.
-4. Add your provider API key.
+1. With the bundled database (`--mode demo` or `--mode dev`), choose an admin database password. In prod mode, setup asks for [OpenNeko's database](#opennekos-database) URL before it starts the stack.
+2. Confirm the pre-filled GraphJin URL, `http://graphjin:8080`. It names the GraphJin that runs inside `openneko-serve`. Change it only when you run a GraphJin of your own.
+3. Pick the model provider the agent should use (Anthropic / OpenAI / Google / Ollama / others). For any other server that speaks the OpenAI chat API, pick **OpenAI-compatible URL** and enter its Base URL, the model name and, when the server needs one, a key. For a model server on this host, give `127.0.0.1` or `localhost`. In a Docker install, OpenNeko then calls `host.docker.internal`. A [native install](#run-without-docker-native) calls `127.0.0.1`. Every model call, the agent's and the app's own, runs in `openneko serve`. The agent (Ax) runs there with the full tool set, including the chat-first management tools. It gets a terminal only when you connect a [sandbox](#sandbox-optional).
+4. Add your provider API key. To use other models for some tasks, or a fallback model when a provider is down, add them later at Admin, Settings, Models.
 5. Add an industry research provider, or skip.
 
 Both paths drive the same web endpoints with the same validation (a live provider-key test, a data-source connectivity check), and each step persists independently — so you can start in the terminal and finish in the browser, or vice versa. For unattended installs (CI), pass `--admin-password`, `--provider`, `--provider-key`, etc. to run setup headless.
 
-As a final optional step, `openneko setup` offers to install **first-party plugins** from the [official marketplace](https://open-neko.github.io/plugins/) — Slack, Shopify, Telegram, Google Workspace, web search, SSO. Pick from the list and each plugin prompts for its own configuration (API keys, tokens), saved into the sandbox. Skip it with `--skip-plugins`, or pre-select non-interactively with `--plugins @open-neko/plugin-slack,@open-neko/plugin-shopify`.
+Integrations come from **solution packs**, installed after setup from **Admin → Settings → Solution packs** or with `openneko pack install`. Slack, Telegram and the HUD are built-in channels that turn on when an admin saves their settings under **Admin → Settings → Channels**; sign-in (Scalekit SSO or email link) is configured under **Admin → Settings**. Email-link sign-in requires `OPENNEKO_PUBLIC_URL` or a saved public URL (`localhost` works for a local install). (`--skip-plugins` and `--plugins` are still accepted by `setup` but do nothing.)
+
+`openneko web` decides for each request whether the sign-in cookies are `Secure`. The public URL saved under **Admin → Settings** comes first, then `OPENNEKO_PUBLIC_URL`. When that URL is `https`, the cookies are `Secure`. In production mode, a request that came over https is `Secure` too: TLS on the port, or a TLS proxy that sends `X-Forwarded-Proto: https`. Only a plain-http request with no `https` public URL gets cookies that are not `Secure`, so SSO sign-in and pack OAuth work on `http://<LAN host>:3000`. When the public URL is `http` on a host other than loopback, `openneko web` logs one warning line at start. Put a TLS proxy in front and use an `https` public URL for any install that people reach over a network.
+
+Until a sign-in provider is set up, every request acts as the first admin. For this reason, OpenNeko keeps the web port on the loopback address until then:
+
+- A native install listens on `127.0.0.1` and prints one line that says so. `openneko web --addr 0.0.0.0:3000` refuses to start.
+- `openneko start` on Docker asks the web image whether sign-in is set up (`openneko sign-in-state`), and publishes the web port on `127.0.0.1` when it is not.
+
+Open `http://localhost:3000` on the host, or through an SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`), and set up sign-in under **Admin → Settings**. Then run `openneko start` again (`openneko stop` first on a native install). OpenNeko then listens on the address in `installation.json`.
 
 The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, fiscal year `July`, seats `CEO`/`CFO`/`COO`, priorities `Defend wholesale margins` / `Grow DTC in Europe`). Otherwise fill it in at `/onboarding`.
 
@@ -49,22 +70,19 @@ The AdventureWorks seed pre-fills business onboarding (`AdventureWorks Cycles`, 
 
 Give every customer a stable lowercase instance name. A named installation gets
 its own Compose project, databases and named volumes, encrypted config and
-secrets, OpenShell PKI/state, backup namespace, runtime markers, and Docker
-subnet.
+secrets, backup namespace, runtime markers, and Docker network.
 
 ```bash
 # Bind customer apps to loopback when Caddy, nginx, or another TLS proxy is
-# the public entry point. Ports and the subnet are persisted by setup.
+# the public entry point. Setup persists the port.
 openneko --instance acme setup \
   --mode prod \
   --port 3101 \
-  --openshell-port 18101 \
   --bind-address 127.0.0.1
 
 openneko --instance globex setup \
   --mode prod \
   --port 3102 \
-  --openshell-port 18102 \
   --bind-address 127.0.0.1
 ```
 
@@ -82,12 +100,11 @@ globex.example.com {
 ```
 
 Only the reverse proxy needs public `80`/`443` firewall access. The customer web
-ports above and each OpenShell gateway stay on host loopback; databases,
-GraphJin, brokers, and backup services stay inside their private Docker
-networks.
+ports above stay on host loopback. Databases, GraphJin, brokers, the file
+service and the agent runtime stay inside their private Docker networks.
 
-For named instances, omitting `--port`, `--openshell-port`, or
-`--docker-subnet` makes setup choose an available value and persist it. Inspect
+For named instances, omitting `--port` makes setup choose an available port
+and persist it. Inspect
 the resulting inventory with:
 
 ```bash
@@ -100,13 +117,13 @@ Target every later operation explicitly:
 openneko --instance acme status
 openneko --instance acme logs -f
 openneko --instance acme upgrade
-openneko --instance acme backup now
+openneko --instance acme backup
 openneko --instance acme stop
 ```
 
 Named settings live under
-`~/.config/openneko/instances/<name>/installation.json`; durable runtime and
-OpenShell state live under
+`~/.config/openneko/instances/<name>/installation.json`; durable runtime state
+lives under
 `${XDG_STATE_HOME:-$HOME/.local/state}/openneko/instances/<name>/`. Do not reuse
 an instance name for two customers on the same Docker daemon. Each customer is
 still a complete OpenNeko stack, so size VM memory, disk, and backup retention
@@ -122,18 +139,170 @@ isolation.
 
 ```bash
 mkdir -p ~/openneko && cd ~/openneko
-openneko setup --mode prod
+openneko setup --mode prod --database-url 'postgres://neko:PASSWORD@db.example.com:5432/neko?sslmode=verify-full'
 ```
 
-Enter your GraphJin base URL when setup asks for it (terminal or browser). If GraphJin runs on your host, use `http://host.docker.internal:8080` — OpenNeko appends the GraphQL and MCP paths automatically.
+Prod mode runs no database of its own. Give it [OpenNeko's database](#opennekos-database)
+with `--database-url`, or enter the URL when setup asks for it. Keep the pre-filled GraphJin URL.
 
-## Plugins
+Then connect your data from chat. As an admin, ask the assistant to connect a database, and it shows a card for a PostgreSQL, MySQL or MariaDB source: where the database runs, the read-only login and its password. **Check connection** tests each step and lists the tables the login can read. You approve the change in the card, and OpenNeko writes the GraphJin config. For a system with a pack, such as Magento or Shopify, the assistant shows the pack's setup card. You enter the address and the login only. See [Solution packs and skills](#solution-packs-and-skills).
+
+If you run your own GraphJin on the host, give setup `http://host.docker.internal:8080`. OpenNeko adds the GraphQL and MCP paths.
+
+## OpenNeko's database
+
+OpenNeko keeps its own data in Postgres 16 or later, with pgvector 0.6.0 or
+later for the `vector` extension. In
+prod mode you run that Postgres server, and OpenNeko connects to it by one URL.
+Dev and demo modes run a Postgres container (`neko-db`) for you.
+
+```text
+postgres://neko:PASSWORD@db.example.com:5432/neko?sslmode=verify-full&sslrootcert=/etc/openneko/db-ca.pem
+```
+
+`openneko setup --database-url` stores the URL in
+`~/.config/openneko/config.json`, encrypted with the host secret key. You can
+also put the URL in a file that only the OpenNeko account can read, and set
+`OPENNEKO_DATABASE_URL_FILE` to its path. The URL replaces the `NEKO_PG_*`
+settings. In prod mode, `openneko start` stops with a message when it finds no
+URL.
+
+`openneko start` gives the URL to the containers as a Compose secret, a file
+at `/run/secrets/database-url`. It does not go into their environment.
+`openneko-serve` does not get it. The URL host must be one that the containers
+can reach: `localhost` names the container itself, so setup refuses it. For a
+Postgres server on the same host, use `host.docker.internal` or the host's
+name.
+
+- `sslmode=verify-full` checks the server certificate and its host name.
+  `verify-ca` checks only the certificate, and `require` encrypts without
+  checking it. Use one of these three. With `prefer` or `allow`, `openneko web`
+  connects without TLS.
+- `sslrootcert` names the CA file. Without it, OpenNeko uses its default CA
+  list. `sslcert` and `sslkey` name a client certificate and its key, for a
+  server that asks for one. Give paths on the host where you run `openneko`.
+  `openneko start` copies each file into the containers that connect to the
+  database, `openneko-serve` included, as a Compose secret readable only by
+  user 1001, and points the URL at the copy. Serve's two
+  [role logins](#the-serve-roles) use the same files.
+- Give OpenNeko a database of its own and a login of its own. Restore drops
+  every object that the login owns in that database (see
+  [Backup and restore](#backup-and-restore)). The `neko` role needs `CREATE`
+  on that database and on schema `public`, and `CREATEROLE`. It does not need to own
+  the database, so a managed Postgres service works. The migrations create
+  the `vector` extension, and each start creates the
+  [serve roles](#the-serve-roles).
+- Postgres 16 is the oldest version that OpenNeko supports. The storage check
+  needs Postgres 15, CI and the bundled database run 16, and
+  `openneko database move` restores a Postgres 16 dump. pgvector 0.6.0 is the
+  oldest version tested with every migration.
+
+Before the other start steps, `openneko start` and `setup` run
+`openneko database check` in a container. It connects with the URL, reports
+the Postgres and pgvector versions and the TLS mode. It checks that the login
+can create schemas in the database and tables in schema `public`, can create
+the `vector` extension (or finds it), and can create the two roles or set
+their passwords. When a version is too old or a right is missing, start stops
+and prints what to do, for example:
+
+```text
+  FAIL  neko cannot create schemas in neko. The start steps and the job queue create their own schemas
+        Run this SQL as a superuser, in database neko:
+          GRANT CREATE ON DATABASE "neko" TO "neko";
+```
+
+Run the SQL, then run `openneko start`. A URL without `sslmode=verify-full`
+gives a warning, and start goes on. The check also warns when the login owns
+objects that OpenNeko did not make: objects that no OpenNeko migration names,
+outside the `pgboss`, `river` and `openneko_internal` schemas. A restore stops on them.
+- With a URL, setup skips its database password step. Change the password
+  where the database is managed, then update the URL.
+
+The next start step, `storage-reconcile`, only reports on a database that you
+run. It prints the collation provider and version. When the version changed
+since the database recorded it, for example after an operating system upgrade
+on the database server, it prints the `REINDEX DATABASE` and
+`ALTER DATABASE ... REFRESH COLLATION VERSION` lines to run. It changes
+nothing. With the bundled `neko-db`, it rebuilds the indexes itself.
+
+### The serve roles
+
+`openneko-serve` connects to the database with two narrow roles. Each role
+has the database name in it, so two installs can use two databases on one
+Postgres server:
+
+- `neko_files_<database>` can read and write the file index tables.
+- `neko_subscriptions_<database>` can read `workflow_output`.
+
+Postgres keeps 63 bytes of a role name. When the name does not fit, or the
+database name has a character other than `a` to `z`, `0` to `9` or `_`,
+OpenNeko changes each other character to `_`, keeps the start of the name and
+adds 8 hex characters of the database name's SHA-256. For example, database
+`My-Shop` gets `neko_files_my_shop_` and 8 hex characters.
+`openneko database check` prints the two names.
+
+The start step `openneko-serve-init` runs at each start. It creates the two
+roles when they are missing, grants their rights again and sets their
+passwords, which it derives from the secret key. The `neko` login needs
+`CREATEROLE` for this. Without it, a superuser can create the roles and
+give the login `ADMIN` on them:
+
+```sql
+CREATE ROLE "neko_files_neko" NOLOGIN;
+GRANT "neko_files_neko" TO "neko" WITH ADMIN OPTION;
+```
+
+Releases before this one used two roles for the whole server, `neko_files`
+and `neko_subscriptions`. An upgraded install gets the new roles at its next
+start, with the same rights. The old roles stay, because an install on the
+same server that runs an older release may still use them.
+`openneko database check` names each old role it finds and prints the SQL to
+drop it. Run that SQL when no install on the server runs an older release.
+
+### The bundled database of an older release
+
+Releases before this one ran `neko-db` in prod mode too. When a prod install
+has the `neko-db-data` volume and no database URL, `openneko start` and
+`openneko upgrade` keep running `neko-db` with that volume, so the data stays
+where it is. A new prod install never gets `neko-db`.
+
+To move such an install to a database that you run, prepare the database as
+in [OpenNeko's database](#opennekos-database), with the stack running. Then:
 
 ```bash
-openneko install @open-neko/plugin-parallel-search
+openneko database move --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full' --confirm MOVE
 ```
 
-Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github.io/plugins/). `openneko doctor` checks your host can run sandboxed plugins. Full sandbox model in **[PLUGINS.md](PLUGINS.md)**.
+The command does these steps in order:
+
+1. It checks the new database. It stops when the URL's login already owns
+   tables there.
+2. It stops `web` and `openneko-serve`, and runs the start steps on the
+   new database.
+3. It takes a backup of `neko-db` into the usual backup folder.
+4. It removes the `neko-db` container and restores the backup into the new
+   database.
+5. It starts the stack on the new database and stores the URL.
+
+The new database gets serve roles with its own name, and the restore skips
+the grants of the old ones ([the serve roles](#the-serve-roles)).
+
+Until step 5, the install still uses `neko-db`. When a step fails, fix the
+cause and run `openneko start -d` to go back, or run the move again. The
+`neko-db-data` volume stays. Remove it when you no longer need it; the command
+prints its name.
+
+## Solution packs and skills
+
+```bash
+openneko pack list
+openneko pack install magento
+openneko install https://github.com/<owner>/<repo>#<path/to/skill>   # community skill (admin opt-in)
+```
+
+Packs add sources, actions, workflows and skills, and can turn on the built-in Slack, Telegram and HUD channels. See **[PACKS.md](PACKS.md)**. `openneko doctor` checks your host can run the stack.
+
+`openneko pack` calls `openneko web` on its admin socket, so OpenNeko must be running. The socket has mode 600 and no other check: only the user that runs `openneko web`, or root, can use it. In a Docker install the command runs inside the `web` container (`/tmp/openneko-web-admin.sock`). A native install uses `web-admin.sock` in its data folder; on a server install, run `sudo openneko pack`.
 
 ---
 
@@ -143,28 +312,44 @@ Browse the marketplace at [open-neko.github.io/plugins](https://open-neko.github
 
 ```bash
 openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
-  [--openshell-port N] [--bind-address IPv4] [--docker-subnet IPv4/24]
+  [--bind-address IPv4] [--database-url postgres://...]
 openneko instances                 # configured host installations
 openneko start [--mode prod|dev|demo] [--detach]
+openneko start --native [--database-url URL] [--web-dir DIR] [--detach]  # no Docker; see "Run without Docker"
 openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo]
-openneko status                    # docker compose ps proxy
-openneko logs [service…] [-f]
-openneko stop [--volumes]          # --volumes wipes data
-openneko migrate                   # apply pending migrations against running neko-db
+openneko upgrade [--version V | --from <release folder>] [--skip-backup]   # native install
+openneko status                    # serving, degraded or down
+openneko logs [service…] [-f] [--tail N]
+openneko stop [--volumes]          # --volumes wipes data (Docker only)
+openneko migrate                   # apply pending migrations to OpenNeko's database
+openneko migrate config-repo --dry-run   # list what moving an old config repository to plain folders writes
+openneko migrate library          # move the Library documents of an older release into openneko serve
+openneko jobs run workflow_cron_sweep --org ID [--at TIME]  # run one sweep now and print the result as JSON
+openneko serve [--agent-socket path]  # user files and file search; agent turns on a Unix socket when set (runs as the openneko-serve container)
+openneko files copy-to-bucket      # copy user files from the files folder to OPENNEKO_FILES_BUCKET
 openneko seed adventureworks       # one-shot demo data load (already done by --mode demo)
 openneko [--instance name] graphjin import <customer-config.yml|->
-openneko reset [--all]             # tear down + clear local config (--all also wipes secrets/marketplaces)
-openneko doctor                    # host check, docker daemon, manifest state
+openneko graphjin check [--config file]  # load a GraphJin config with the pinned loader; exit 1 and the reason when it is not valid
+openneko source check --type postgres|mysql|mariadb --host H [--port N] \
+  --database D --user U (--secret NAME | --password-stdin) [-o json]
+openneko reset [--all]             # tear down + clear local config (--all also wipes secrets)
+openneko doctor                    # host check, docker daemon, stack health
 openneko version
 ```
 
 Modes:
 
-- **`prod`** (default) — the production control, records, customer-data,
-  backup/storage, and OpenShell services. Ten containers remain running after
-  the four startup jobs complete.
-- **`dev`** — source-checkout workflow: use `pnpm dev:setup` for Docker-only dependencies plus AdventureWorks demo data, then `pnpm dev` for hot-reloaded web/worker from source.
-- **`demo`** — core + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
+- **`prod`** (default) — the production control, customer-data, file, and
+  agent runtime services. `openneko start` runs five start steps in order,
+  then starts two containers: `openneko-serve` and `web`.
+  OpenNeko's database is yours, by URL. The `openneko` CLI reaches
+  `openneko web` on its admin Unix socket (`/tmp/openneko-web-admin.sock` in
+  the `web` container, `OPENNEKO_WEB_ADMIN_SOCKET`). The socket has no
+  network port.
+- **`dev`** — source-checkout workflow: use `pnpm dev:setup` for the Docker backing services plus AdventureWorks demo data, then `pnpm dev` to run `openneko web` and `openneko serve` on the host from source.
+- **`demo`** — core + `neko-db` + AdventureWorks: `adventureworks-db`, `adventureworks-init`, `neko-adventureworks-seed`. The full live-trial flow (continuous order trickle + scenario injector) lives in `compose.adventureworks.yml` and needs the [Build from source](#build-from-source-advanced) path.
+
+The seed steps `openneko seed adventureworks --load` and `--org` write to the database that the environment names. They run only when the installation in this config folder is in demo mode. With no installation here, they need `OPENNEKO_SEED_TARGET=demo`. The demo steps set it, and so does `pnpm dev:seed` for a development database.
 
 `~/.config/openneko/compose.override.yml` is auto-applied if present (last `-f` to docker compose).
 
@@ -173,15 +358,77 @@ Modes:
 production installation, validates the change through GraphJin, seals source
 credentials, and preserves OpenNeko-managed authentication and keystore settings.
 
+`source check` tests one customer database before you connect it, in this
+order: the host resolves, the port answers, TLS, the login, the rights to read
+the schema, and read-only rights. A failed step gives one sentence and, where
+SQL fixes it, the SQL for the database administrator, for example how to create
+a read-only login. A passed check lists the tables the login can read, with
+row estimates. A saved password goes only to the host and port saved with it.
+The check sends a password only over TLS whose certificate verifies, unless an
+admin allowed an unverified certificate for that saved password, and never to
+a server that asks for it in clear text. `--secret` names a password saved in Admin settings, GraphJin
+config; `--password-stdin` reads it from standard input. The check runs in
+`openneko web` on its admin socket, so OpenNeko must be running. It exits 1 when a step fails. It checks
+PostgreSQL, MySQL and MariaDB, and says so for any other type.
+
+`graphjin check` loads a GraphJin config file with the GraphJin version built
+into `openneko` and runs the checks GraphJin runs at start. It prints the first
+problem and exits 1, or prints "valid" and exits 0. The default file is
+`OPENNEKO_GRAPHJIN_CONFIG`.
+
+`jobs run` runs one job body once, in the command's own process, with the
+main database login, and prints what it did as JSON. Today it runs
+`workflow_cron_sweep`: the behavior thresholds, then the condition watchers
+of the organization that `--org` names. A watcher that fires queues its
+workflow, as the minute job does. `--at` sets the job's clock (RFC 3339), so
+you can rerun the sweep for a minute that a stopped web missed. The command
+does not stop the scheduled job.
+
+Admin settings, GraphJin config shows this file read-only, with secrets and
+comments hidden, and says whether GraphJin is running. Edit the file on the
+server, then run `openneko graphjin check`.
+
 ### Audit logging failure alerts
 
 Every failed tamper-evident audit append emits a structured
-`security.audit_logging_failure` event to stderr. The worker also exposes
-process-local state at `GET /health/security`; monitor for
-`status: "degraded"` or `auditLogging.healthy: false`.
+`security.audit_logging_failure` event to stderr. `openneko web` also keeps the
+state in its process: `GET /health/security` gives `status: "degraded"` and
+`auditLogging.healthy: false` after a failure, with `auditLogging.failureCount`,
+`lastFailureAt` and `lastError`. Monitor that route for `status: "degraded"`.
+`GET /health` follows the workflow scheduler, not the audit log.
+
+On the public port, `/health/scheduler` and `/health/security` give only
+`status`. A signed-in admin gets the detail there. The web admin socket
+(`OPENNEKO_WEB_ADMIN_SOCKET`) always gives it. `openneko release-check
+--scheduler`, run in the web container, uses that socket and fails until the
+scheduler has finished a database tick. `openneko release-check --packs`
+reads the pack catalog on that socket and fails when it lists no built-in
+pack. `openneko release-check --skills` prints `bundled_skills=<count>`. It
+fails when `openneko web` finds no built-in skill or lacks a sandbox skill
+(`docx`, `pdf`, `pptx`, `skill-creator`, `xlsx`). `openneko release-check
+--bundled-packs` prints `bundled_packs=<count>` from the folder and needs no
+running web. `openneko release-check
+--sandbox` prints `sandbox=off`, `ok` or
+`remote`. It fails when the sandbox socket is in the folder of serve's
+sockets, or when nothing answers on it. With a sandbox set, it also prints
+`sandbox_egress=closed`, `open` or `unknown`. `closed` means the sandbox's
+firewall is in place, its network has no route out, and its last probe as
+a run user reached nothing. For `open` or `unknown` it fails, and the Sandbox
+card on the status page shows as failing. Run the sandbox from
+`recipes/sandbox` on its internal network (see [Sandbox](#sandbox-optional)).
+With `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` it also prints
+`sandbox_egress_by_operator=on` and does not fail.
+
+To check a Docker install with a sandbox, run
+`scripts/smoke-script-step.sh <compose project> <web URL>` from a checkout.
+It fails when the first organization does not list every bundled skill.
+It then runs a workflow whose script step uses the `xlsx` skill in the
+sandbox, and fails unless that step succeeds within 150 seconds. The step
+runs before the agent turn, so the check needs no model provider. The
+post-release smoke runs it with the sandbox of `recipes/sandbox`.
 
 For immediate delivery independent of PostgreSQL, configure an HTTPS webhook
-on both processes that can write audit events:
+on `web`:
 
 ```yaml
 # ~/.config/openneko/compose.override.yml
@@ -190,38 +437,638 @@ services:
     environment:
       OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL: https://alerts.example/audit-failure
       OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN: ${OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN}
-  worker:
-    environment:
-      OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL: https://alerts.example/audit-failure
-      OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN: ${OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN}
 ```
 
-The token is optional and is sent as a bearer token. Webhook delivery has a
-two-second timeout, is fire-and-forget, and never blocks the governed operation.
-Alert delivery failures are themselves emitted as structured critical stderr
-events.
+The URL must be `https`; `http` works only for `localhost`, `127.0.0.1` and
+`::1`. The token is optional and is sent as a bearer token. Webhook delivery has
+a two-second timeout, does not follow a redirect, and never blocks the governed
+operation. A refused URL, a network error and a reply other than 2xx are
+delivery failures. Each one writes a critical
+`security.audit_logging_failure_webhook_error` event to stderr and counts in
+`auditLogging.failureCount` on `GET /health/security`, with `lastError`
+starting `audit failure webhook (<host>):`. OpenNeko logs only the host of the
+URL, because the path or the query can hold a token.
 
-### Agent & plugin sandboxing
+At start, `openneko web` writes one warning when the rule refuses the URL.
+For an admin, `GET /health/security` also gives `auditWebhook`: `state` is
+`off`, `ok` or `refused`, with `host` and `error`. A refused URL sets
+`status: "degraded"`.
 
-The agent loop **and** plugins always run inside OpenShell policy
-sandboxes — default-deny egress, and the model API key never enters the
-sandbox (the gateway's egress proxy injects it on the wire; the box only
-ever holds an opaque placeholder). The containerized OpenShell gateway is
-part of the stack and the agent image is pre-pulled at install (never on
-the first chat). State dir is handled per-platform automatically (under
-`$HOME` on macOS/OrbStack, `/var/lib/openneko/openshell` on Linux). Needs
-Docker — already required to run OpenNeko.
+### Agent runtime
 
+**Admin → Settings → Agent → Concurrent jobs** sets how many agent turns one
+`openneko web` runs at the same time. The default is 3, and a value must be a
+number from 1 to 1000. A save applies at once in the `openneko web` that took
+it, with no restart. Every other `openneko web` on the same database reads the
+setting again within 30 seconds. `OPENNEKO_AGENT_CONCURRENCY` overrides the
+setting. Slack and Telegram messages run as `work_run` jobs, at most 3 at once
+in each `openneko web`, so a setting above 3 does not run more channel turns.
+
+**Admin → Settings → Agent → Answer effort** sets how much the model thinks
+before it writes the answer from what the agent found: `low` (the default),
+`medium` or `high`. The agent's own steps keep the effort of the model record.
+A save applies from the next run. Ax maps the level to each provider's own
+setting; a provider with no lower level keeps its usual one.
+
+At start, `openneko web` logs one warning line when no model provider is set,
+or when it cannot read or check the stored credential of a provider. A turn
+route to an enabled model under **Admin → Settings → Models** counts as a
+provider. A model key in the environment only does not count, because each
+turn uses the stored key. `openneko web` still starts, so an admin can fix the
+setting.
+
+`openneko web` runs chat, channel and workflow agent turns in Go. It stages each
+run's files in a private folder under `OPENNEKO_AGENT_RUNS_DIR` and sends the
+turn to `openneko serve` over a Unix socket (`OPENNEKO_SERVE_SOCKET`). With no
+socket set, agent turns are off. The model keys stay in
+`openneko web` ([Model keys](#model-keys)). The agent reads and writes files in its run folder and reaches data only through
+`openneko web`'s tool handlers. The agent has a terminal only when a sandbox is
+connected.
+
+### Agent confinement (Linux)
+
+On Linux, each agent turn runs in an `openneko agent-runner` process that
+confines itself with Landlock and a seccomp filter before agent code runs
+([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-runner-confines-itself-linux)).
+Without both, `openneko serve` still starts, unconfined, and refuses every
+agent turn. The web app, data reads, host model calls, embeddings and
+workflows without an agent step still work. No mode, setting, flag or
+variable runs agent turns without the confinement, also in development mode.
+
+The lowest kernel is Linux 5.13 (Landlock ABI 1). A newer kernel closes two
+small gaps: rename and link between folders (Linux 5.19) and ioctl on a
+device (Linux 6.10). On every kernel, the runner can read the metadata (size,
+times, extended attributes) of a path that it names. `openneko doctor` prints
+the active security modules and the state.
+
+The network part of serve opens sockets, and Landlock below ABI 9 cannot
+refuse a connect to a named socket. On a desktop login this includes the
+session bus, `/run/user/UID/bus`, through which `systemd --user` can start a
+program outside the confinement. `openneko doctor` lists it as a gap when
+the bus exists. A server install runs as the system user `openneko`, which
+has no login session and so no session bus. Keep it that way: do not turn
+on lingering for it with `loginctl enable-linger`. From ABI 9, the network
+part reaches only its own socket folders, and serve refuses to start a part
+whose socket folder holds the session bus.
+
+On RHEL 8 and any other kernel without Landlock, no agent turn runs, but
+the rest of serve runs unconfined. On a server install, the network part
+of serve (the files service and both GraphJin engines) then runs as the
+same system user as web, with only the database roles between them. The
+6.0.0 pre-releases put serve under a second system user; the one-account
+install has no such boundary. Use the Docker install where you need it.
+
+To check by hand:
+
+```bash
+cat /sys/kernel/security/lsm   # must hold landlock
+```
+
+| System | Kernel | Landlock by default |
+|---|---|---|
+| RHEL 8 | 4.18 | no: the kernel has no Landlock. Agent turns are off. |
+| RHEL 9 | 5.14 | from kernel `5.14.0-568.el9` (RHEL 9.6): `CONFIG_LSM` starts with `landlock`. Earlier RHEL 9 kernels have it off. |
+| Ubuntu 22.04 | 5.15 (HWE 6.8) | yes: `CONFIG_LSM="landlock,lockdown,yama,integrity,apparmor"` |
+| Ubuntu 24.04 | 6.8 | yes, the same list |
+| Debian 12 | 6.1 | yes: `CONFIG_LSM` starts with `landlock` |
+
+Sources: the kernel configs of each distribution (Ubuntu `debian.master`
+annotations, Debian `kernel-team/linux` `debian/config/config`, CentOS
+Stream 9 commit `33f5f63cc5`, RHEL-8810). The Ubuntu 22.04 HWE kernel and
+the RHEL 9.6 release were not checked on a running system.
+
+When `landlock` is missing from the list on a kernel that has it, add
+`lsm=landlock,` followed by the current list to the kernel command line.
+
+Inside a container, the engine's default seccomp profile must allow the
+three `landlock_*` calls and `seccomp`. The lowest versions whose default
+profile allows them:
+
+| Engine | Lowest version | Change |
+|---|---|---|
+| Docker Engine | 20.10.18 | moby PR #43991 (backport of #43199, in 23.0.0) |
+| containerd | 1.6.0 | containerd PR #6494 |
+| Podman | 4.2.0 | containers/common 0.49 (PR #1081) |
+
+An older engine refuses the calls. `openneko doctor` and the start line
+then say "the container engine blocks Landlock". Update the engine, or give
+the container a seccomp profile that allows the calls. A distribution
+package may ship its own `/usr/share/containers/seccomp.json`; check that
+file for `landlock_create_ruleset`.
+
+### Agent confinement (macOS)
+
+On macOS, each agent turn runs in an `openneko agent-runner` process that
+confines itself with a Seatbelt profile before agent code runs
+([AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-runner-confines-itself-macos)).
+The runner applies the profile to itself with `sandbox_init`, the call
+behind `/usr/bin/sandbox-exec`. It needs no cgo and runs no other program.
+The proof tests run on macOS 15 on every push.
+
+Apple marks `sandbox_init` and `sandbox-exec` as deprecated, but macOS 15
+still has both. If a later macOS removes the call, `openneko serve` refuses
+every agent turn, in every mode, with one line: "agent confinement:
+off. macOS <version> has no sandbox_init, the call that confines an agent
+runner, so agent turns are off". The same applies when macOS refuses the
+profile. The web app, data reads and workflows without an agent step still
+work. `openneko doctor` shows the state, and `openneko release-check
+--serve-socket` fails.
+
+On macOS, the network part of `openneko serve` (the files service and the
+GraphJin engines) confines itself with a Seatbelt profile too. It keeps its
+network and its own folders, and it cannot read the config folder or the
+serve credentials. The part that starts the agent runners is not confined,
+because macOS does not let a confined process start a runner that confines
+itself ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
+
+On macOS, a confined runner or network part can still read the arguments
+and environment of every process of the same account: Seatbelt does not
+check that read. So no OpenNeko process keeps a secret there:
+
+- `openneko start` replaces itself with the supervisor, which has neither
+  `--database-url` in its arguments nor a secret-named variable of the
+  shell in its environment. It gets them on stdin.
+- Web and serve get their secrets on stdin at each start. The network part
+  gets the bucket login and the AWS login in its start line, and the
+  customer GraphJin gets the secret `GJ_*` and `OTEL_*` header variables on
+  its stdin.
+- A variable counts as secret by its name (a key, token, password, database
+  URL or webhook URL, such as `OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL`) or by its
+  value: a URL with a login, or with a key, token, signature or password in
+  its query, whatever the variable's name.
+
+Other programs that you run as the OpenNeko account are not covered. Run
+OpenNeko as an account of its own on a shared Mac.
+
+### Agent confinement (Windows)
+
+On Windows, `openneko serve` starts each agent turn in an `openneko
+agent-runner` process inside an app container of its own, with no
+capabilities. Each turn gets a new app container. Serve deletes it when the
+turn ends, and at its next start it deletes the app containers that an
+earlier serve left. The runner:
+
+- has no network: no TCP, no UDP and no name lookup;
+- reads and writes only the folders of its turn, and cannot change their
+  access lists;
+- cannot open serve, web, another runner or a named pipe of your account;
+- reaches serve only on two sockets in a folder of its own, and serve
+  takes a connection on them only from the runner's process.
+
+A job object holds the runner. It refuses a second process, ends the runner
+when serve ends and holds the runner to 8 GiB of memory and the turn's CPU
+time. It also closes the clipboard, the desktop and global atoms to the
+runner. Before each turn, serve removes each junction and symbolic link in
+the turn's folders, and it refuses a turn whose folders are outside the
+agent runs folder.
+
+Windows 10 1809, Windows Server 2019 or later is needed. On an older
+Windows, serve starts and refuses every agent turn with one line: "agent
+confinement: off. Windows <version> has no Unix sockets for app
+containers". `openneko doctor` and the status page show the same line.
+The Windows Firewall service (MpsSvc) must run: its filters keep the app
+container off the network. When it does not run, serve refuses every agent
+turn with one line that names it. Start it with `sc start MpsSvc`.
+The runner can still read what Windows opens to every app container, such
+as the system folders. The network part of serve (files and GraphJin) is
+not confined on Windows.
+
+### Model keys
+
+`openneko web` keeps every model key, fallback key and embedding key. Serve
+never gets one. For each turn, host call and embedding call, web gives serve
+a token for that call only. Serve sends the model calls to web's key door
+over a Unix socket, `keydoor.sock`, beside serve's socket. The door checks
+the token, puts the real key on the call and forwards it to the provider.
+[AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-key-door) tells how the door works
+for each provider.
+
+Give model keys only to web: in Admin, Settings, Models, and
+`NEKO_EMBEDDING_API_KEY` in the environment of `openneko start`, which
+gives it to web as the secret file `/run/secrets/embedding-api-key`. Give `openneko-serve` no
+`*_API_KEY` variable, no cloud credential, no database URL and no
+`NEKO_SECRET_KEY`. Serve removes each such variable at start and logs a
+warning that names it. [AGENT_RUNTIME.md](AGENT_RUNTIME.md#the-key-door)
+lists the names. `openneko release-check --serve-socket` fails when
+serve started with one, or when serve runs with `OPENNEKO_ENV=development`.
+In production, serve refuses a turn that carries a real key.
+
+On Linux and macOS, serve also confines itself at start: it cannot read
+the config folder, `secrets.json`, the serve credentials or the web admin
+socket token, and it cannot run a file that it wrote. `openneko
+release-check --serve-socket` prints `serve_confinement=` and
+`serve_network_confinement=`, and fails when a part of serve runs
+unconfined ([AGENT_RUNTIME.md](AGENT_RUNTIME.md#serve-confines-itself-linux-and-macos)).
+
+The model calls now leave from web. A firewall that let only serve reach
+the model APIs must let web reach them.
+
+No set-up puts a model key in the process that runs the agent loop.
+`openneko web` with no `OPENNEKO_SERVE_SOCKET` refuses agent turns, and the
+`ax-harness` binary refuses a turn. The one-user native install starts
+serve with no key, token, password or database URL from your shell, but web
+and serve run as one OS user there. Use it for development and demos only.
+
+### External services
+
+OpenNeko uses four services outside the core. Each one has a URL and a key.
+Each one has a health check. Admin, Administration, External services shows
+each service as On, Off or Failing, with what the check found.
+
+| Service | URL | Key | Health check | When it is off |
+|---|---|---|---|---|
+| Inference | the default model at Admin, Settings, Models | the model's key | one short prompt to the default model | agent turns and summaries stop |
+| Embedding | `NEKO_EMBEDDING_URL` and `NEKO_EMBEDDING_MODEL` | `NEKO_EMBEDDING_API_KEY` | one short text through the embedding gateway | search uses Postgres full-text search |
+| Sandbox | `OPENNEKO_SANDBOX_URL` | `OPENNEKO_SANDBOX_KEY` | `GET /v2/check` with the key | no terminal and no script skills |
+| File store | `OPENNEKO_FILES_BUCKET` on `openneko-serve` | `OPENNEKO_FILES_BUCKET_KEY_ID` and `_SECRET` | `openneko serve` checks the bucket | files stay in the local folder |
+
+The inference and embedding checks each make one small paid call. The page
+keeps the results for one minute. "Check again" runs every check at once. No
+key appears in a result: a URL shows only its scheme and host.
+
+### Sandbox (optional)
+
+OpenNeko runs no command for the agent. To give the agent a terminal, and to
+turn on workflow script steps and the bundled skills that run scripts
+(`xlsx`, `docx`, `pptx`, `pdf` and `skill-creator`), connect
+a sandbox service.
+Give `web` and `openneko-serve` its URL, set `OPENNEKO_SANDBOX_KEY` to a
+long random string in the environment of `openneko start`, then run
+`openneko stop` and `openneko start`. Web and serve read the key from the
+secret file `/run/secrets/sandbox-key`, not from their environment:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+x-sandbox: &sandbox
+  OPENNEKO_SANDBOX_URL: unix:///run/openneko-sandbox/sandbox.sock   # or http(s)://host:port
+services:
+  openneko-serve:
+    environment: *sandbox
+    volumes: [openneko-sandbox-socket:/run/openneko-sandbox]
+  web:
+    environment: *sandbox
+    group_add: ["1001"]
+    volumes: [openneko-sandbox-socket:/run/openneko-sandbox]
+volumes:
+  openneko-sandbox-socket:
+```
+
+Run the sandbox in the same file with the `openneko-sandbox` service of
+`recipes/sandbox/compose.yml`. Each release publishes its image as
+`ghcr.io/open-neko/neko-sandbox` with the release's tag. Keep the recipe's
+`image:` line, so `openneko start` and `openneko upgrade` pull the image of
+the CLI's release, and the upgrade removes the older tags. The recipe has no
+`build:` line. To run a source build, build the image from `recipes/sandbox`
+and set `OPENNEKO_SANDBOX_IMAGE` to its name. Docker Compose v2 also needs
+`OPENNEKO_VERSION` then, with any value; Compose v5 does not. The service mounts `openneko-sandbox-socket` at
+`/run/openneko-sandbox` and gives its socket to group 1001. Keep its
+`openneko-sandbox` network with `internal: true`: that network has no route
+out and no DNS for external names. The sandbox also sets its own firewall
+at start, so the agent's commands reach only the egress proxy, also when
+the network has a route out. Run the `openneko-egress` service of the same file beside it.
+It is the only way out: it joins the sandbox network and the
+`openneko-egress` network, and lets a run reach only the hosts on its
+organization's list. With an
+`https://` URL, leave out the `volumes` and `group_add` lines.
+
+Without a URL the agent has no terminal, the script skills are hidden from
+every run, and a workflow script step fails with a message. Each command
+carries the files of the run that changed since the last command, and the
+sandbox returns the files that the command changed. The sandbox keeps its
+own copy of each run and needs no file folder of the stack, so it can run on
+another host: use an `https://` URL and a key. The compose recipe
+(`recipes/sandbox/compose.yml`) runs it beside the stack. The sandbox shares
+one volume with web and serve, `openneko-sandbox-socket`, which holds only
+`sandbox.sock`. It does not mount `openneko-run`, the folder of serve's
+sockets (`serve.sock`, `check/check.sock`). It never gets a model key,
+the broker token, the run's job file or a database password. The first
+sandbox service is `recipes/sandbox`; see `recipes/sandbox/README.md`.
+
+Earlier releases put `sandbox.sock` in `openneko-run`, beside serve's
+sockets. To move an existing install, take the new recipe or the override
+above and run `docker compose up -d` (or `openneko stop` and
+`openneko start`). Compose creates the `openneko-sandbox-socket` volume and
+starts the sandbox, web and serve again with it. The old socket file stays
+in `openneko-run` with nothing listening on it. An install that keeps the
+old URL still works. `openneko serve` then logs a warning at each start:
+the sandbox socket is in the folder of serve's socket. An old override can
+also keep `openneko-run` mounted in the sandbox with the new URL. `openneko
+start` then prints a warning with the names of the services, other than web
+and serve, that mount `openneko-run`. Remove that mount.
+
+With a sandbox connected, each organization has a **Terminal** setting at
+Admin, Settings, Agent. It is on by default. An admin who turns it off
+takes the terminal, the script skills and workflow script steps away from
+that organization's runs, from the next run. Without a sandbox URL the
+setting shows as unavailable.
+
+Beside it, **Hosts the terminal may reach** lists the hosts that commands
+may reach through the egress proxy. The list is empty by default, so
+commands reach no host. Write one host per line: `pypi.org` is port 443,
+`files.example.com:8443` names another port, and `*.example.com` matches
+each subdomain of `example.com`. The form and the proxy refuse a wildcard
+on a public suffix, such as `*.co.uk` or `*.github.io`, and a wildcard
+matches no host under a public suffix below it. The proxy refuses a name
+that resolves to a loopback, private, link-local or metadata address. It
+closes a connection after 5 minutes with no traffic or when its host
+leaves the list, and allows a run 32 connections at once. The form offers the
+hosts that installed packs name; an admin adds each one. Each change of the
+list or of the Terminal setting goes in the audit chain
+(`agent:egress_changed`, `agent:terminal_changed`). The proxy writes one
+line per connection to its log, with the run, the organization, the host
+and the result.
+
+An install that runs the sandbox recipe from before 6.0.0 has a sandbox
+network with a route out. To close it, take the new recipe and run the
+compose command with `pull` and then `up -d`. Compose makes the network again with
+`internal: true`, gives the sandbox `NET_ADMIN` and `SETPCAP` for its
+firewall, and starts `openneko-egress`. An override that sets its own
+`cap_add` for the sandbox must add both, or the sandbox does not start. Then run `openneko
+release-check --sandbox`: it must print `sandbox_egress=closed`. Commands
+reach no host until an admin lists one. A saved list that holds a wildcard
+on a public suffix reads as empty after the upgrade; save it again with the
+hosts named one by one. The steps for a native install are
+in `recipes/sandbox/README.md`, "Upgrade an install that runs an earlier
+recipe".
+
+OpenNeko gives a run the terminal, the script skills and workflow script
+steps only when the sandbox reports `closed`. Web asks the sandbox again
+every 30 seconds. On `open` or `unknown` the terminal is off, and Admin,
+Settings, Agent and the status page say why. Each change of the state goes
+in the audit chain of each organization as `sandbox:egress_state`.
+`openneko start` and `openneko upgrade` print a warning when
+`compose.override.yml` puts the sandbox on a network that is not internal,
+on an external network, or on `network_mode` other than `none`.
+
+A sandbox on another host can report `open` although a firewall there
+closes it. When you enforce its egress yourself, set
+`OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web. The terminal then runs
+whatever the sandbox reports, and the status page says that the operator
+enforces the egress. Web records the change in the audit chain at the first
+check after a restart. The setting is off by default.
+
+This release replaces the bundled `xlsx`, `docx`, `pptx` and `pdf` skills
+with new ones. It removes the bundled `document-extraction`,
+`internal-comms`, `excel-author`, `pptx-author` and five financial-model
+skills; the new `pdf`, `docx`, `pptx` and `xlsx` skills read those files. On
+upgrade, OpenNeko deletes each organization's unchanged copy of the old
+skills and adds the new ones. An admin's changed copy stays as that
+organization's own skill, and the new skill does not replace it. To get the
+new skill, delete the changed copy in Skills.
+
+### Semantic search (optional)
+
+OpenNeko finds memories and skills with Postgres full-text search. To find
+them by meaning as well, connect an OpenAI-compatible embedding service. Give
+`web` these values, then run `openneko stop` and `openneko start`. Set the
+key, if the service needs one, in `NEKO_EMBEDDING_API_KEY` in the
+environment of `openneko start`; web reads it from a secret file:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+x-embedding: &embedding
+  NEKO_EMBEDDING_URL: https://embeddings.example/v1   # OpenNeko calls <url>/embeddings
+  NEKO_EMBEDDING_MODEL: text-embedding-3-small
+  NEKO_EMBEDDING_DIMENSIONS: "768"                    # optional
+services:
+  web:
+    environment: *embedding
+```
+
+Semantic search is off until both the URL and the model are set. When it is
+on, `openneko-serve` sends memory and skill text, and each search query, to that
+service for `openneko web`. The service must answer on the stack's network.
+Each minute, `openneko web` queues the stored rows that have no vector from
+the current model, at most 128 at a time, and embeds them one at a time.
+Until it reaches a row, and whenever the service fails, search uses
+full-text search. A change of model re-embeds
+every row. To run a model on your own machine, see
+`recipes/embedding-gemma/README.md`.
+
+### Traces (optional)
+
+OpenNeko sends no traces until you give it an OTLP/HTTP collector. Only
+`openneko serve` exports traces. Give `openneko-serve` the endpoint, then run
+`openneko stop` and `openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+services:
+  openneko-serve:
+    environment:
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+```
+
+What each process exports:
+
+- `openneko serve` exports the spans of its GraphJin servers, with the
+  service name `openneko-graphjin` (`OTEL_SERVICE_NAME` changes it). Each
+  GraphJin query or tool call is its own trace. The spans hold names, times,
+  roles and status codes. Serve removes error text, exception events, SQL
+  text and URL query strings before export.
+- `openneko web` exports no traces in this release. It runs the agent turns,
+  so an agent run is not a trace, and its GraphJin calls do not join one.
+  The run's usage, cost and tool steps stay in the run's events in the app.
+
+`OTEL_SDK_DISABLED=true` turns traces off in serve.
+
+### Wake the jobs by HTTP (optional)
+
+`openneko web` runs the background jobs and their schedule. A host that
+stops a web between requests, such as a service that scales to zero, also
+stops the jobs. An outside scheduler can then start them by HTTP. Give web a
+long random token, run `openneko stop` and `openneko start`, and call the
+endpoint each minute:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+services:
+  web:
+    environment:
+      OPENNEKO_JOBS_WAKE_TOKEN: replace-with-a-long-random-token
+```
+
+```sh
+curl -X POST -H "Authorization: Bearer $OPENNEKO_JOBS_WAKE_TOKEN" \
+  "https://openneko.example.com/internal/jobs/wake?max_seconds=50"
+```
+
+Each call queues the scheduled jobs that are due and have not run in their
+period, so a second call in the same minute queues nothing new. On a web
+with its jobs off (`--jobs=false`), the call then runs the queued jobs until
+none is ready or `max_seconds` passes (default 50, at most 300). A job that
+is still running at the limit stops and runs again on a later call. On a web
+with its jobs on, the call only queues the due jobs. The answer gives the
+counts, for example `{"inserted":5,"ran":6,"timedOut":false}`. Without the
+token, or with a wrong one, the call gets 401. The endpoint is outside
+`/api/v1` and takes no session.
+
+### Metric refresh (optional)
+
+Each metric refresh is a paid model call, so the refresh is off by default.
+With it off, `openneko web` does not schedule the hourly metric sweep, and a
+pack install queues no refresh. A refresh that is already in the queue ends
+as cancelled, with one log line and no model call. The metric cards keep
+their last values. To turn the refresh on, set the variable on `web`,
+then run `openneko stop` and `openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+services:
+  web:
+    environment:
+      OPENNEKO_METRICS_REFRESH: "on"
+```
+
+With the refresh on, the metric refresh setting on the spend page applies
+as before.
+
+### File search
+
+The `openneko-serve` container keeps each user's files in a private folder
+on the `openneko-files` volume. The assistant gets three tools over the files
+of the user who owns the run:
+
+- search: keyword search over PDF, Word, PowerPoint, Excel, CSV, Markdown and
+  text files, with the matching passages
+- read text: the text of one file, with page, slide and sheet markers
+- query sheet tables: one read-only DuckDB query over the sheets of
+  spreadsheet and CSV files
+
+The keyword index is in OpenNeko's database. The sheet tables are Parquet files on the
+same volume. OpenNeko rebuilds both from the files, so you can delete them.
+DuckDB runs with external access off and reads only the tables of that user.
+`openneko web` reaches the service at `OPENNEKO_SERVE_URL` with a token that
+expires after one minute. When `OPENNEKO_SERVE_URL` is not set, the assistant
+does not get the file tools.
+
+`openneko-serve` connects to OpenNeko's database as `neko_files_<database>`
+([the serve roles](#the-serve-roles)). That role can read and write only the
+file index tables. The start step `openneko-serve-init` sets its password,
+derived from the secret key, and gives the service a key that checks the
+tokens. The service never gets the secret key or the `neko` password.
+
+Files a user adds to the Library go into that folder. When `OPENNEKO_SERVE_URL`
+is not set, the Library refuses uploads. After an upgrade, `openneko web` moves
+Library files from older releases into the folder once, at start
+(`openneko migrate library` runs the same step by hand). It marks a
+document as failed when its original file is gone.
+
+### Files in a bucket (optional)
+
+By default `openneko-serve` keeps the files in a folder on the
+`openneko-files` volume. To keep them in a bucket on Amazon S3 or another
+S3-compatible service, give `openneko-serve` these settings, then run
+`openneko stop` and `openneko start`:
+
+```yaml
+# ~/.config/openneko/compose.override.yml
+services:
+  openneko-serve:
+    environment:
+      OPENNEKO_FILES_BUCKET: s3://my-bucket/openneko      # the prefix is optional
+      OPENNEKO_FILES_BUCKET_REGION: eu-west-1             # us-east-1 when not set
+      OPENNEKO_FILES_BUCKET_ENDPOINT: https://s3.example.com  # only for a service other than Amazon S3
+      OPENNEKO_FILES_BUCKET_KEY_ID: <access key id>
+      OPENNEKO_FILES_BUCKET_SECRET: <secret access key>
+```
+
+Without a key ID and secret, serve uses the host's AWS credentials, for
+example an instance role or the `AWS_*` variables. A confined serve cannot
+read `~/.aws`, so a native install on Linux or macOS uses the variables or
+the instance role. The endpoint must use `https://`; serve accepts
+`http://` only for `localhost`. The login needs list, read, write and delete
+rights on the prefix. Two installs can share one bucket with two prefixes.
+
+The keyword index stays in OpenNeko's database, and the sheet tables stay on
+the `openneko-files` volume. Serve rebuilds both from the bucket.
+
+Serve checks the bucket at start and logs the result. When it cannot reach
+the bucket, serve still starts: agent turns and GraphJin work, and the file
+tools fail with the bucket's error until it is back. `GET /healthz` on serve
+reports `file_store` and `file_store_ok`.
+
+Serve does not read the folder after the switch, and it logs how many files
+the folder still holds. To copy them to the bucket, run the copy in the
+running serve container:
+
+```bash
+docker exec openneko-prod-openneko-serve-1 /openneko files copy-to-bucket
+```
+
+A named instance has another container name; `openneko status` shows it.
+
+The copy skips a file that the bucket already holds with the same size, so
+you can run it again. It does not delete the files in the folder. Remove them
+after you check the bucket. To go back to the folder, remove the settings and
+copy the files back with your bucket tool.
+
+
+## Backup and restore
+
+`openneko backup` writes one encrypted file while the stack runs. The file
+holds a `pg_dump` of OpenNeko's database and the config and file volumes
+(`openneko-config`, `openneko-graphjin-cli` and `openneko-files`). With a
+database URL, `pg_dump` runs in a `web` container and connects by the URL and
+its TLS files, so the host needs no Postgres tools. The dump holds the objects
+that the URL's login owns. It leaves out the schemas and tables of other roles.
+With `OPENNEKO_FILES_BUCKET` set, the backup does not hold the files in the
+bucket; back up the bucket with your storage service, for example with
+versioning. Files go to
+`${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/`. Use `--to` or
+`OPENNEKO_BACKUP_DIR` to write them somewhere else, such as a NAS.
+
+```bash
+openneko backup
+openneko restore <file> --confirm RESTORE
+```
+
+Restore decrypts and checks the whole file before it changes anything. Then it
+names the database it will replace, stops the stack, replaces the volumes,
+restores the database and starts the stack again. Migrations bring an older
+backup forward. `openneko doctor` warns when the latest backup is missing or
+more than a week old.
+
+With the bundled `neko-db`, restore drops and recreates the database. With a
+database URL, restore cannot do that. It drops every object that the URL's
+login owns in the database the URL names, then restores the dump in one
+transaction. It keeps the extensions, the objects that other roles own and the
+grants that you gave the login. It restores the grants of the dump, except the
+grants to a [serve role](#the-serve-roles) of any install or release. The
+start step `openneko-serve-init` then grants this install's serve roles again.
+A restore into the bundled `neko-db` restores no grants. Restore does not put
+a backup of an external database into a bundled `neko-db`.
+
+Before restore stops the stack, it lists the objects that the login owns and
+that OpenNeko did not make. An object is OpenNeko's when the backup holds it,
+an OpenNeko migration names it, or it is in the `pgboss`, `river` or
+`openneko_internal` schema. When the list is not empty, restore prints it, changes nothing and
+stops. Move those objects to another login, or give OpenNeko a database and a
+login of its own. To drop them with the restore, add `--drop-foreign-objects`.
+Restore then prints the list again and asks you to type the database name.
+Nothing brings the dropped objects back.
+
+Each installation has its own backup key. Keep a copy away from the backups:
+
+```bash
+openneko backup key export --to /secure/off-host/openneko-backup.key
+openneko backup key adopt --from /secure/off-host/openneko-backup.key
+```
+
+On a new host, `adopt` installs the copied key. You can also pass
+`--key-file` to a single restore. A file is AES-256-GCM in authenticated
+chunks, so a wrong key, a cut file or any edit fails the check.
 
 ## Upgrade
 
 `openneko upgrade` is the normal stack upgrade path. It:
 
-1. Pulls the latest OpenNeko service, agent, and plugin-base images.
-2. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
-3. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
-4. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
-5. Persists the new version and removes old OpenNeko image tags only after the stack is healthy (unless you pass `--no-prune`).
+1. Takes an `openneko backup` of the running stack and stops if the backup fails. Pass `--skip-backup` to upgrade without one.
+2. Pulls the new OpenNeko images: `neko-cli`, `neko-serve`, `neko-web`, and `neko-db` when the install uses the bundled database.
+3. Detects the mode recorded by your last `setup` or `start` (`prod`, `dev`, or `demo`) and recreates that stack detached.
+4. Re-runs every idempotent initializer against the existing volumes, including runtime-artifact repair and pending migrations.
+5. Waits for every declared service health check; a crash loop or unreachable data plane fails the upgrade instead of being reported as success.
+6. Persists the new version and removes old OpenNeko image tags only after the stack is healthy (unless you pass `--no-prune`).
 
 Run it from the same install directory you use for `openneko start`:
 
@@ -238,16 +1085,104 @@ openneko upgrade --version v1.18.0
 ```
 
 Older installs without a saved mode marker are detected from their existing
-Docker Compose project (`openneko`, `openneko-dev`, or `openneko-demo`). If more
+Docker Compose project: `openneko-prod`, `openneko-dev` or `openneko-demo`,
+the older `openneko` for prod, or `openneko-<instance>-<mode>` for a named
+installation with `--instance` (`apps/openneko/internal/cli/upgrade.go`). If more
 than one OpenNeko stack exists on the machine, pass the intended mode explicitly:
 
 ```bash
 openneko upgrade --mode demo
 ```
 
-The command persists the selected image tag in `.openneko/runtime/.image-version`,
-so later `openneko start` runs the same tag. Upgrading the host binary is still
+The command persists the selected image tag in `.openneko/runtime/.image-version`
+(a named installation keeps it in its own runtime folder),
+so later `openneko start`, `backup`, `restore` and `database move` run the
+same tag. Upgrading the host binary is still
 recommended when a release includes CLI changes.
+
+### Upgrade from a release before November 2026
+
+This release has fewer parts. The upgrade migrates your data in place:
+
+- **Records** is gone. The migrations drop its tables, policies and workflows.
+  Take a backup first if you need that data (`upgrade` takes one).
+- **Plugins** are gone. Scalekit and email-link sign-in are built in. Slack,
+  Telegram and the HUD are built-in channels. The upgrade moves their
+  credentials, workspaces, identities and grants to the built-in names. A
+  channel that had credentials is on after the upgrade, with no step from
+  you ([PACKS.md](PACKS.md#channels)). Resend, Slack, Shopify and Parallel web
+  search actions are packs now; install them from **Admin → Settings →
+  Packs**.
+- **The Library** keeps your files. At start, `openneko web` moves each uploaded
+  file into its owner's private folder for [file search](#file-search).
+  Concepts and distillation are gone.
+- **The OpenShell runtime, the embedding container and the separate GraphJin
+  containers** are gone. `openneko-serve` runs agent turns and both GraphJins.
+  Search by meaning is off until you connect an
+  [embedding service](#semantic-search-optional), and the terminal is off
+  until you connect a [sandbox](#sandbox-optional).
+- **Terminal egress** is an admin list now. OpenShell took its allowed hosts
+  from the model host, each workflow's network hosts and the plugin
+  allowlists. The sandbox recipe takes only the list at Admin, Settings,
+  Agent, which is empty after the upgrade. A workflow's network hosts
+  apply only to the agent's web tool.
+- **The sandbox image** holds no git, npm, pip, pypdf, openpyxl,
+  python-docx or python-pptx. A script skill that your organization wrote
+  and that imports or calls one of them fails. Change it to use the bundled
+  skills (`xlsx`, `docx`, `pptx`, `pdf`) or the Python standard library.
+- **Sandbox runs** can no longer write to `/tmp`, `/var/tmp` or
+  `/dev/shm`. A command's `TMPDIR`, `TEMP` and `TMP` point into the run's
+  own home. A script skill that your organization wrote and that writes to
+  `/tmp` by a fixed path, or uses Python `multiprocessing`, fails. Change
+  it to use `TMPDIR` and one process.
+- **An old `compose.override.yml`** can set services that this release does
+  not run, such as `worker`, `librarian`, `embedding`, `neko-backup`,
+  `neko-reaper` or the OpenShell services. `openneko start` and `upgrade`
+  ignore those entries, use the rest of the file, and print one warning
+  line that names them. Your file stays as it is; remove the entries to
+  stop the warning.
+- **Old images**: the upgrade also removes the untagged images of the
+  earlier release, such as the librarian image that 5.0.0 pulled by digest.
+- **The sandbox recipe** names the image of the release and has no `build:`
+  line. Without `OPENNEKO_VERSION`, Compose stops before any change with a
+  line that asks for it. For a source build, build the image and set
+  `OPENNEKO_SANDBOX_IMAGE`; Docker Compose v2 also needs `OPENNEKO_VERSION`,
+  with any value
+  ([recipes/sandbox/README.md](recipes/sandbox/README.md)).
+- **The serve roles** now have the database name in them. The first start
+  creates `neko_files_<database>` and `neko_subscriptions_<database>` with the
+  rights of the old roles. On a database that you run, the `neko` login needs
+  `CREATEROLE` or `ADMIN` on the new roles ([the serve roles](#the-serve-roles)).
+- **The config repository** is gone. Skills are plain folders, and each
+  member has a folder of their own skills. At its first start, `openneko web`
+  moves each org folder off its git repository. It writes the team skills
+  that the folder lacks. A member's changed copy of a team skill becomes a
+  private skill named `<skill>-<handle>`. A member's other files go to that
+  member's folder. The old repository stays as `.git.pre-plain` in the org
+  folder, and the log prints its path. Delete it when you no longer need it.
+  `openneko migrate config-repo` runs the same step by hand. With
+  `--dry-run`, it lists what it would write and changes nothing.
+- **The old job queue** goes. `openneko migrate` moves the pending jobs to
+  River, then removes the pg-boss queues of the moved jobs and of removed
+  features, with their schedules and finished jobs.
+- **Library documents** of an older release move into openneko serve. At
+  each start, `openneko web` stores each document that is still in the org
+  workspace in its owner's folder. A document with no owner, or with no
+  file, gets the status `failed` and a message that asks for a new upload.
+  `openneko migrate library` runs the same step by hand.
+- **Model keys stay in `openneko web`.** Serve gets a token for each call
+  and sends model calls through web's [key door](#model-keys). Remove any
+  `*_API_KEY` variable that an override gives `openneko-serve`, and run
+  `openneko release-check --serve-socket`. The model calls leave from web
+  now, so let web reach the model APIs. A server install gets the door
+  folder and the new units from `openneko upgrade`.
+- **A prod install** keeps its bundled `neko-db`. Move it to a database that
+  you run with [`openneko database move`](#the-bundled-database-of-an-older-release).
+
+The upgrade removes the old containers and images. It leaves the
+`openneko-plugins` and `openshell-config` volumes and the
+`<project>_runtime` network, which nothing uses. Remove them with
+`docker volume rm` and `docker network rm` when you no longer need them.
 
 ### macOS
 
@@ -280,38 +1215,424 @@ openneko upgrade
 
 ### What `openneko start` does
 
-1. **Migrate.** Connects to `neko-db`, takes a Postgres advisory lock, applies pending embedded migrations, releases the lock. Idempotent.
-2. **Compose up.** Writes embedded compose files to `.openneko/runtime/` and runs `docker compose up`. Docker pulls the pinned image tags.
+1. **Start steps.** Writes the embedded compose files to `.openneko/runtime/`, then runs the start steps in order, each in its own container: the database check (prod mode), the storage check, the migrations under a Postgres advisory lock, the config volume, and serve's credentials and GraphJin config. Demo mode also loads the sample data. A failed step stops the start. [AGENT_RUNTIME.md](AGENT_RUNTIME.md#start-steps) lists each step.
+2. **Compose up.** Runs `docker compose up` for `web` and `openneko-serve`. Docker pulls the pinned image tags.
 
 `openneko stop` doesn't touch volumes. Use `--volumes` for a clean slate (wipes the metadata DB, demo state, agent workspaces).
+
+### Run without Docker (native)
+
+`openneko start --native` runs OpenNeko on this host as plain processes.
+It needs no Docker. It runs prod mode only, for the default installation.
+OpenNeko's database is yours, by URL.
+
+The native install runs on Linux, macOS and Windows for one user, with no
+admin rights. Serve and web run as your account. The systemd install with
+its own system user is for Linux only ([Server install](#server-install-systemd)).
+
+On Linux or macOS (amd64 or arm64), this script installs the native release
+for your user:
+
+```bash
+curl --proto '=https' -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.sh | sh
+```
+
+The URL names a release tag, so you run the script of that release and not
+the newest change on `main`. For another release, change the tag in each
+URL of this section.
+
+The script downloads `openneko-native_<version>_<os>_<arch>.tar.gz` and
+`checksums-native.txt` from the release and checks the archive with
+`sha256sum` or, on macOS, `shasum`. On an Apple silicon Mac it takes the
+arm64 archive, also when the shell runs under Rosetta. It puts
+`bin/openneko`, `share/openneko/web`, the built-in packs
+(`share/openneko/packs`) and the bundled skills (`share/openneko/skills`) in
+`~/.local/opt/openneko` and links
+`~/.local/bin/openneko`. `OPENNEKO_VERSION` picks a release (default: the
+latest). `OPENNEKO_PREFIX` and `OPENNEKO_BIN_DIR` change the two folders.
+`OPENNEKO_RELEASE_URL` points at a mirror that holds `<tag>/<file>`, and
+then `OPENNEKO_VERSION` is needed. The script downloads over https only: it
+refuses a mirror URL that starts with `http://` (except `127.0.0.1`,
+`localhost` and `[::1]`) and a redirect to `http://`. At the end, the script runs `openneko
+release-check --skills --bundled-packs` and fails when the install lacks its
+bundled skills or packs. `--server` is for Linux only.
+
+On Windows (amd64 or arm64), `scripts/install-native.ps1` does the same in
+PowerShell 5.1 or later, with no admin rights:
+
+```powershell
+irm https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.ps1 | iex
+```
+
+It downloads `openneko-native_<version>_windows_<arch>.zip`, checks it
+against `checksums-native.txt`, and puts `bin\openneko.exe` and
+`share\openneko` in `%LOCALAPPDATA%\Programs\OpenNeko`
+(`OPENNEKO_PREFIX` changes it). It adds the `bin` folder to your user
+`PATH`, and keeps the other entries as they are, for example
+`%USERPROFILE%\bin` unexpanded. It runs `openneko release-check --skills --bundled-packs` at the
+end. `OPENNEKO_VERSION` and `OPENNEKO_RELEASE_URL` work as in the Linux
+script, with the same https rule. To upgrade with the new release's own executable, run it with
+`-Upgrade`; the arguments after it go to `openneko upgrade`:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.ps1))) -Upgrade --skip-backup
+```
+
+Each release also holds `openneko-native_<version>_darwin_<arch>.tar.gz`
+for macOS and `openneko-native_<version>_windows_<arch>.zip` for Windows
+(amd64 and arm64), with the same layout. In the Windows archive the
+executable is `bin\openneko.exe`. The Homebrew cask
+(`brew install open-neko/tap/openneko`) installs the macOS archive, so
+`openneko start --native` finds the web app beside the executable. The
+release binary has no Apple signature. The cask removes the quarantine flag
+from it, so macOS Gatekeeper does not check it. The cask's checksum, from
+the same release, is the only check.
+
+Then start OpenNeko:
+
+```bash
+openneko start --native -d \
+  --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full'
+```
+
+In PowerShell on Windows, give the command on one line:
+
+```powershell
+openneko start --native -d --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full'
+```
+
+When the start ends, open http://localhost:3000 and finish the setup
+wizard there. `openneko setup` drives the Docker stack and does not run on
+Windows.
+
+1. **Start steps.** The command runs the database check, the migrations and
+   serve's credentials and GraphJin config, in that order. A failed step
+   stops the start.
+2. **Processes.** A supervisor starts `openneko serve` and `openneko web`.
+   When a process stops, the supervisor starts it again after a delay
+   (1 second, then up to 30 seconds). With `-d`, the supervisor runs in the
+   background and the command waits until web answers.
+
+The start writes `"runtime": "native"` to `installation.json`. After that,
+`openneko start`, `stop`, `status`, `logs`, `doctor`, `backup`, `restore`
+and `upgrade` act on the native install. `openneko logs` reads the
+`supervisor`, `serve` and `web` logs.
+
+- `openneko status` gives the PID of the supervisor, `serve`, `web` and the
+  GraphJin that `serve` runs, with the restarts of each. Then it checks that
+  serve and web answer. It reports `degraded` when GraphJin does not run.
+- `openneko doctor` checks the host, the web app folder, the database (the
+  same checks as the start), `pg_dump` and `pg_restore`, the latest backup
+  and the processes.
+- `openneko backup` writes one encrypted file. It holds a `pg_dump` of the
+  database, the config folder (`installation.json` stays out) and the data
+  folders: files, file index, serve credentials, GraphJin config, agent runs
+  and subscriptions. Logs and `run` stay out. The default folder is
+  `~/.local/share/openneko/backups/<installation>/openneko-native`.
+- `openneko restore <file> --confirm RESTORE` verifies the whole file, stops
+  OpenNeko, replaces those folders and the objects that the login owns in
+  the database, and keeps the database URL of this install. It starts
+  OpenNeko again when it ran before. The start applies the migrations.
+- `openneko upgrade` downloads the release archive for this host and
+  checks it against `checksums-native.txt`. It takes a backup, stops
+  OpenNeko, puts the release's `bin/openneko`, `share/openneko/web`,
+  `share/openneko/packs` and `share/openneko/skills` in place of the current
+  ones, and starts OpenNeko again when it ran before.
+  `--version` picks the release (default: the latest), and
+  `OPENNEKO_RELEASE_URL` points at a mirror. The upgrade refuses a release
+  URL or a redirect that is not https. `--from <folder>` upgrades from
+  a release folder instead of a download. `--skip-backup` upgrades with no
+  backup. The upgrade stops before any change when the release has no web
+  app, no built-in pack (`share/openneko/packs/<id>/pack.yaml`), no built-in
+  skill or a missing sandbox skill (`share/openneko/skills/builtin` and
+  `share/openneko/skills/sandbox`). It also puts every other folder under
+  `share/openneko` of the release beside the executable, so a later release
+  can add a folder. After the change, the upgraded executable runs `openneko
+  release-check --skills --bundled-packs`; when that fails, the upgrade
+  stops and does not start OpenNeko. Skill scripts keep their executable bit.
+  On Windows a running `openneko.exe` cannot be replaced in one step. The
+  upgrade copies the new file to `openneko.exe.new` and writes it to disk,
+  renames the running file to `openneko.exe.old`, then renames
+  `openneko.exe.new` to `openneko.exe`. The next `openneko start` removes
+  `openneko.exe.old`. If the computer stops between the two renames, no
+  `openneko.exe` is left. Run the install script with `-Upgrade` again:
+  the upgrade first puts `openneko.exe.new` in place, or `openneko.exe.old`
+  back when no new file is left.
+- Use `install-native.sh --upgrade` when the installed `openneko` is older
+  than the release that added `share/openneko/skills`: that `openneko
+  upgrade` refuses the new archive. The script downloads and checks the
+  archive, then runs the new release's `openneko upgrade` on your install.
+  It keeps `OPENNEKO_PREFIX`, `OPENNEKO_VERSION` and `OPENNEKO_RELEASE_URL`
+  as the install does, and passes later options (for example
+  `--skip-backup`) to `openneko upgrade`. On a server install, run it with
+  `sudo`.
+
+Backup and restore run `pg_dump` and `pg_restore` on this host. Install the
+PostgreSQL client tools of the server's major version or later (on Debian
+and Ubuntu, `postgresql-client-16`). On Windows, the PostgreSQL installer
+puts them in `C:\Program Files\PostgreSQL\<version>\bin` and does not add
+that folder to `PATH`; add it to your user `PATH`. The login needs `CREATEROLE` for the
+serve roles; the database check prints the SQL when it does not have it.
+
+| What | Where |
+|---|---|
+| Web app files | `--web-dir`, else `OPENNEKO_WEB_DIR`, else `share/openneko/web` beside the release's `bin` folder |
+| Built-in packs | `OPENNEKO_PACKS_DIR`, else `share/openneko/packs` beside the release's `bin` folder (a Docker install: `/usr/local/share/openneko/packs` in the web image) |
+| Bundled skills | `OPENNEKO_BUILTIN_SKILLS_ROOT` and `OPENNEKO_SANDBOX_SKILLS_ROOT`, else `share/openneko/skills/builtin` and `share/openneko/skills/sandbox` beside the release's `bin` folder (a Docker install: `/usr/local/share/openneko/skills` in the web image) |
+| Files, file index, serve credentials, GraphJin config, agent runs | `$XDG_DATA_HOME/openneko` (default `~/.local/share/openneko`) |
+| Logs | `~/.local/share/openneko/logs` |
+| Supervisor state and the sockets | `~/.local/share/openneko/run` |
+| Web port | `OPENNEKO_PORT` and `OPENNEKO_WEB_BIND_ADDRESS` at the first start, then `installation.json` |
+
+On Windows the data folder is `%LOCALAPPDATA%\OpenNeko` and the config
+folder is `%APPDATA%\OpenNeko`. The logs, `run` and the backups are in the
+data folder, and the program is in `%LOCALAPPDATA%\Programs\OpenNeko`.
+Windows has no file modes, so OpenNeko gives
+these two folders, the secret key, `secrets.json`, the backup key and each
+backup a protected access list: only your account and SYSTEM can open them.
+A Windows socket takes the access list of its folder. Before serve, web,
+the key door and GraphJin listen on a socket, each one checks the socket's
+folder, also when an `OPENNEKO_*_SOCKET` variable points outside the data
+folder. A missing folder gets the same list. A folder that exists and
+allows another account is refused with one line that names it, and
+OpenNeko does not change its list: give the socket a folder of its own. OpenNeko reads each list back after it sets it. Keep the data and
+config folders on an NTFS or ReFS volume: a FAT or exFAT volume keeps no
+access list, and OpenNeko refuses it.
+Serve keeps its temp files in the `tmp` folder of the data folder, not in
+`%TEMP%`. The database move and restore commands keep the database URL and
+the archive there too.
+The supervisor starts serve and web suspended, puts them in a Windows job
+object and then lets them run, so they and every process that they start
+stop when the supervisor stops. `openneko stop` asks each process to stop
+through an event that only your account and SYSTEM can open, and ends it
+when it does not. A process whose event name another program has taken
+says so in its log and is ended at the stop. `openneko status` counts only
+processes of your account. macOS keeps the Linux folders under your home
+folder; there serve and web stop when the supervisor stops, also when it is
+killed.
+
+The Windows PostgreSQL installer has no `vector` extension. Use a Postgres
+server that has it, or build pgvector on Windows as its README tells.
+
+A Unix socket path holds at most 103 bytes on macOS and 107 on Linux and
+Windows. The
+longest socket is `door/keydoor.sock` in the data folder, and a named
+instance adds `instances/<name>`. When a path is too long, `openneko start`
+stops with one line that names it. Set `XDG_DATA_HOME` to a shorter folder or
+use a shorter instance name.
+
+In production (`OPENNEKO_ENV` unset or `production`), OpenNeko looks for the
+built-in packs and the bundled skills only in these places. `openneko web`
+does not start when it finds no built-in pack, no built-in skill or a missing
+sandbox skill, and the message names the folder. Only `OPENNEKO_ENV=development`
+uses the folders of a source checkout.
+
+`openneko serve` listens on `127.0.0.1:8090`, the customer GraphJin on
+`127.0.0.1:8080` and the subscriptions GraphJin on `127.0.0.1:8089`. Keep
+these ports free. The embedding service and the sandbox stay external. Set
+`NEKO_EMBEDDING_URL`, `NEKO_EMBEDDING_MODEL` and `NEKO_EMBEDDING_API_KEY`,
+and `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY`, in the shell before
+`openneko start --native`. Web gets the variables of that shell whose names
+hold no `KEY`, `TOKEN`, `SECRET`, `PASS`, `CREDENTIAL`, `DATABASE_URL`,
+`DSN` or `AUTH`, and of the others only the ones it reads. Serve gets none
+of the others: `openneko start` gives it the sandbox key and the bucket
+login on its stdin ([Model keys](#model-keys)). A variable `NAME_FILE`
+that names a file can stand in for each of the sandbox key, the embedding
+key and the bucket login.
+
+`openneko start --native` makes the sandbox socket folder
+`~/.local/share/openneko-sandbox`, mode 0700. Keep the sandbox out of
+`~/.local/share/openneko/run`, which holds serve's sockets. Start the sandbox
+with `share/openneko/sandbox/compose.native.yml` of the release archive. It
+runs the sandbox on a network with no route out. Set
+`OPENNEKO_SANDBOX_DIR=$HOME/.local/share/openneko-sandbox`,
+`OPENNEKO_SANDBOX_GID` to your group (`id -g`), a key in
+`OPENNEKO_SANDBOX_KEY` and `OPENNEKO_VERSION=v$(openneko version --short)`,
+then run `docker compose -f compose.native.yml up -d` in that folder. Compose
+pulls `ghcr.io/open-neko/neko-sandbox` at the release's tag. The
+file also starts the egress proxy, the only way out of that network. Then set
+`OPENNEKO_SANDBOX_URL=unix://$HOME/.local/share/openneko-sandbox/sandbox.sock`
+and the same key. Other users can share your primary group, so the start
+refuses a sandbox URL with no key, and a socket folder that other users can
+enter.
+
+On macOS and Windows, Docker Desktop runs containers in a Linux VM, and a
+socket on a bind mount does not reach the host. Use
+`share/openneko/sandbox/compose.desktop.yml` there. It starts the same
+sandbox and egress proxy, and a third container that joins the sandbox
+network and publishes the sandbox's port on `127.0.0.1:8091` only. Set a
+key of at least 32 characters in `OPENNEKO_SANDBOX_KEY` (for example
+`openssl rand -hex 32`; the sandbox refuses a shorter key on TCP) and
+`OPENNEKO_VERSION`, run
+`docker compose -f compose.desktop.yml up -d` in that folder, then set
+`OPENNEKO_SANDBOX_URL=http://127.0.0.1:8091` and the same key.
+`OPENNEKO_SANDBOX_PORT` changes the port. Each request needs the key.
+`recipes/sandbox/prove-desktop.sh` checks the recipe on your machine.
+
+#### Server install (systemd)
+
+On a Linux server, run the install script once as root with `--server`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.sh \
+  | sudo sh -s -- --server \
+  --database-url 'postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=verify-full' --start
+```
+
+The script puts the release in `/opt/openneko` and links
+`/usr/local/bin/openneko`. Then it runs `openneko server-install`, which
+needs root once. It makes one system user, `openneko`, and two systemd
+services that run as that user: `openneko-web.service` and
+`openneko-serve.service`.
+
+The user owns `/etc/openneko` (the secret key, `config.json` with the
+database login, the provider settings) and every folder under
+`/var/lib/openneko`, each mode 700. No other user can enter them. The
+serve unit makes `/etc/openneko` and `/var/lib/openneko/control` inaccessible
+to serve, and the web unit makes `/var/lib/openneko/agent` inaccessible to
+web. Both units set `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`,
+`ProtectHome` and `ReadWritePaths`, and run with umask 0007.
+
+The agent does not run in either service. Serve starts a confined runner
+for each agent turn. The runner opens no socket, runs no program and reads
+only the folders of its turn and the time zone data. Its environment holds only `PATH` and
+`TMPDIR`. See [Agent confinement](#agent-confinement-linux). On a kernel
+that cannot confine it, serve refuses every agent turn.
+
+Before each start, web runs the database check, the migrations and serve's
+credentials step. Put extra settings for a service in
+`/etc/openneko/web.env` or `/etc/openneko/serve.env`. systemd reads these
+files as root.
+
+- `NEKO_EMBEDDING_*` go in `web.env`. `openneko web` reads them and sends
+  serve the model and a door token with each embedding call. The key stays
+  in web (`apps/openneko/internal/webfront/hostcalls.go`).
+- Model keys go only in web: Admin, Settings, Models. Put no `*_API_KEY`
+  in `serve.env` ([Model keys](#model-keys)).
+- `server-install` makes the key door folder `/var/lib/openneko/shared/door`,
+  mode 700. Both units get `OPENNEKO_KEY_DOOR_SOCKET`.
+- `OPENNEKO_SANDBOX_URL` and `OPENNEKO_SANDBOX_KEY` go in both files.
+  `openneko serve` sends the agent's terminal commands to the sandbox
+  (`apps/openneko/internal/cli/serve.go`). `openneko web` runs workflow
+  script steps there and shows the terminal and the script skills only
+  when the URL is set (`apps/openneko/internal/webfront/workflowturn.go`,
+  `workspace.go`). The logs are `/var/lib/openneko/control/logs/web.log` and
+`/var/lib/openneko/agent/logs/serve.log`.
+- `server-install` makes the sandbox socket folder `/run/openneko-sandbox`:
+  owner and group `openneko`, mode 0700. It writes
+  `/etc/tmpfiles.d/openneko-sandbox.conf`, so systemd makes the folder again
+  at each boot. Start the sandbox with
+  `share/openneko/sandbox/compose.native.yml`, `OPENNEKO_SANDBOX_DIR=/run/openneko-sandbox`
+  and `OPENNEKO_SANDBOX_GID=$(id -g openneko)`, so that both services can connect. The
+  folder stays apart from `/var/lib/openneko/shared/run`, which holds
+  serve's sockets. An install from an earlier release gets the folder when
+  you run `server-install` again.
+
+`server-install` options: `--database-url`, `--user` (`openneko`), `--port` (3000), `--bind`
+(0.0.0.0), `--public-url`, `--sandbox-dir` (`/run/openneko-sandbox`),
+`--tmpfiles-dir` (`/etc/tmpfiles.d`) and `--start` (start both services and wait until web
+answers). A second run of `server-install` keeps the data and sets the given
+values again. When the services run, it stops them, gives each file under
+`/var/lib/openneko` and `/run/openneko-sandbox` to the `openneko` user, and
+starts them again. It follows no link below these folders. It does not
+change the folders of agent turns in `shared/agent-runs`: it deletes them,
+because each one belongs to one turn.
+
+To go back to the release you ran before, install it again with the same
+script and `OPENNEKO_VERSION=<that tag>`. Its own `server-install` writes
+its units again. The database keeps the migrations of the newer release,
+so restore the backup that `openneko upgrade` made before it changed
+anything, with the older executable.
+
+On a server install, the usual commands find `/etc/openneko/server.json` and
+act on the two services. Set `OPENNEKO_SERVER_FILE` when you gave
+`--config-dir`.
+
+| Command | Who runs it | What it does on a server install |
+|---|---|---|
+| `sudo openneko start`, `sudo openneko stop` | root | `systemctl start` or `stop` of both services |
+| `openneko status` | root or `openneko` | the state of each unit, then a check that serve and web answer |
+| `sudo openneko logs [serve\|web]` | root | `serve.log` and `web.log`; `-f` follows them |
+| `sudo openneko doctor` | root | the native checks, the owner and mode of each folder, and whether the units match what `server-install` writes |
+| `sudo openneko backup` | root | the config folder, the data folders and the database, to `/var/lib/openneko/control/openneko/backups` |
+| `sudo openneko restore <file> --confirm RESTORE` | root | stops the services, restores, gives each file to the `openneko` user, and starts the services again if they ran |
+| `sudo openneko upgrade` | root | a backup, then a new executable, web folder, packs and skills in `/opt/openneko`, then the release's folders and units and `systemctl daemon-reload`, then a start if the services ran |
+
+A backup of a native install for your own user restores into a server
+install, and the reverse: the backup names each data folder, not its path.
+
+An install from a 6.0.0 pre-release can have two system users,
+`openneko-agent` and the group `openneko-shared`. Upgrade it with the new
+release's own executable: `sudo sh install-native.sh --upgrade`. The upgrade
+gives every folder to `openneko`, rewrites both units and `server.json`,
+and prints how to remove the old user and group. It does not remove them.
+`server-install` of the new release does the same move.
+Before you remove the group, start the sandbox again with
+`OPENNEKO_SANDBOX_GID=$(id -g openneko)`. Until the upgrade, `openneko
+doctor` reports the two users as a failure.
+
+A native install runs no Node.js. `openneko web` serves the static web app,
+answers every `/api/v1/*` and `/api/*` route (including `POST /api/v1/settings/finish`),
+serves `openneko pack` on its local admin socket (`web-admin.sock`), and runs
+sign-in (device sign-in, session and token checks), passkeys, Web Push
+notifications, pack install/doctor/OAuth/actions, channels, GraphJin group
+grants, external-event subscription dispatch, the Scalekit workspace
+connection, the built-in action adapters, and River background jobs in Go.
+The Docker images hold no Node.js either.
+
+After a change to group grants or data access rules, `openneko web` writes
+the GraphJin config 30 seconds after the last change and restarts GraphJin.
+When another change holds the config, it tries again 30 seconds later. When
+GraphJin does not answer after the restart, `openneko web` puts the previous
+config file back, restarts GraphJin again, and undoes a change that turned
+group grants on or off. An external-event subscription fires when the event
+name equals the filter's `name` and the event source equals its `source`. A
+filter with neither key fires on every external event of the org.
 
 ## Reset
 
 ```bash
-openneko stop --volumes   # wipes data; keeps secrets + marketplaces
-openneko reset --all      # wipes everything including secrets and marketplaces
+openneko stop --volumes   # wipes data; keeps secrets
+openneko reset --all      # wipes everything including secrets
 ```
 
 ## Ports
 
-The packaged stack publishes only two host ports:
+The packaged stack publishes one host port: the web app, `3000` by default.
+In the web container (and in a native install), `openneko web` answers that port.
+It serves the static web app (including `/manifest.webmanifest` and `/sw.js` for
+the installable mobile web app) and answers every `/api/v1/*` route in
+`api/openapi.yaml` and its `/api/*` compatibility path: sign-in, session,
+sign-out, device sign-in (`/api/v1/auth/device/*`), passkey registration,
+removal and approval challenges (`/api/v1/my/passkeys/*`), Web Push VAPID key
+and subscription routes (`/api/v1/my/push-subscriptions/*`; the list
+gives the VAPID public key), SSO setup (`/api/v1/sso/setup/*`), the
+business profile, personal and deployment pack OAuth connections, approvals,
+action requests and observations, industry insights, memories, skills, assets,
+audit export, run file downloads, chat uploads, the Library routes, work threads
+and runs, bots, connectors, workflows, subscriptions, workflow runs, webhook
+compatibility routes (`/api/hooks/*`), the public workflow API, channel
+webhooks (`/api/v1/channels/*/inbound`), action policies, onboarding status and
+submit, provider tests, external service health (`/api/v1/admin/services`),
+admin overview, groups, IdP rules, directory, item grants, data access, users,
+password changes, paired devices (`/api/v1/admin/devices/*`), sign-in settings,
+public URL, channel settings, spend, models, model routes, workflow API limits,
+solution packs (`/api/v1/admin/packs/*`), webhook-compatibility settings, and the fifteen
+`/api/v1/settings/*` routes (including `POST /api/v1/settings/finish`). All UI
+pages render in the static app, and `openneko web` serves `apps/web/dist` and
+every API route directly, with no Node web server. The bundled Postgres,
+GraphJin, the file service, the agent runtime and the demo data
+services stay on the private Docker network.
 
-- Web app: `3000` by default
-- OpenShell gateway: loopback-only `18080` by default
-
-Postgres, GraphJin, worker broker, backup API, and demo data services remain on
-the private Docker network. Web is the only port intended to be reachable from
-another machine; the OpenShell host mapping exists only for local sandbox
-callbacks.
-
-Configure and persist ports during guided installation:
+Configure and persist the port during guided installation:
 
 ```bash
-openneko setup --mode prod --port 3001 --openshell-port 18081
+openneko setup --mode prod --port 3001
 ```
 
-For the backward-compatible unnamed installation, `OPENNEKO_PORT` and
-`OPENSHELL_PORT` remain available as one-process environment overrides. Named
+Setup still accepts `--openshell-port` and `--docker-subnet` from older
+automation and ignores them. For the backward-compatible unnamed installation,
+`OPENNEKO_PORT` remains available as a one-process environment override. Named
 instances use their persisted assignments; re-run setup with explicit flags to
 change them. `--bind-address 127.0.0.1` restricts the web listener to the host
 for a reverse-proxy deployment.
@@ -322,40 +1643,48 @@ for a reverse-proxy deployment.
 
 ```bash
 git clone https://github.com/open-neko/openneko.git
-cd neko
-export OPENSHELL_STATE_DIR="$PWD/.openneko/openshell"
-docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml up -d --build
-docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
+cd openneko
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml --profile steps build
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml run --rm openneko-serve-init
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml up -d
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml run --rm neko-adventureworks-seed
 ```
+
+The `run --rm openneko-serve-init` line runs the start steps in order:
+storage check, migrations, config volume, serve credentials. With your own
+database in place of `compose.db.yml`, run `docker compose run --rm
+database-check` first. Run it again
+after each `git pull`, before `up`.
 
 ### Live trial data
 
-The source compose trickles fresh sales orders into the sample DB every 10 minutes. Briefing numbers drift, cron workflows fire, runs accumulate on `/runs`. External actions use their configured adapters and approval policies.
+The source compose trickles fresh sales orders into the sample DB every 10 minutes. Cron workflows fire, and runs accumulate on `/runs`. External actions use their configured adapters and approval policies.
 
 ```bash
 AW_SIM_INTERVAL_SEC=300 AW_SIM_ORDERS_MIN=1 AW_SIM_ORDERS_MAX=5 \
-  docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml up -d
+  docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml up -d
 ```
 
 Disable the trickle: `AW_SIM_ENABLED=0`.
 
 ### Watch the loop fire end-to-end
 
-The seed pre-loads three watchers:
+The seed pre-loads four workflows:
 
 - **Daily Revenue Health Check** (9am cron) — yesterday's revenue vs trailing 7-day average.
 - **Revenue Drop Alert** (hourly) — per-territory current hour vs same-hour-of-week baseline over 4 weeks; proposes a Slack alert if any territory falls below 50%.
 - **Slow-Ship Operations** (8:30am cron) — orders stuck in *pending* > 5 days.
+- **Stock Reorder Watch** (no cron): a row change in `production.productinventory` below the product's reorder point fires it, and it recommends a reorder quantity.
 
 To see the loop without waiting for an organic dip, fire the Germany scenario (stops new orders for territory 8 for three hours):
 
 ```bash
-docker compose -f compose.yml -f compose.openshell.yml -f compose.adventureworks.yml \
+docker compose -f compose.yml -f compose.db.yml -f compose.adventureworks.yml \
   exec adventureworks-scenario-injector \
   /scripts/scenario-injector.sh fire germany-revenue-drop
 ```
 
-Wait ~15 minutes, then click **+ Run now** on **Revenue Drop Alert** in `/workflows`. A finding lands on the Briefing; a proposed Slack alert queues for approval. Click approve; the receipt lands under **Fired on your behalf**.
+Wait ~15 minutes, then click **Run now** on **Revenue Drop Alert** in `/workflows`. The finding shows on the run page under `/runs`, and a proposed Slack alert waits for approval at `/actions` under **Waiting for you**. Click approve; the receipt moves to **Completed**.
 
 Then write your own watcher from `/work`, and swap AdventureWorks for your data — see [Use your own data](#use-your-own-data).
 
@@ -370,18 +1699,20 @@ pnpm dev:setup
 pnpm dev
 ```
 
-Web and worker run on the host with hot reload. Everything else runs in Docker.
+`openneko web` and `openneko serve` run on the host. Everything else runs in Docker.
 
-- `pnpm dev:up` starts the backing services with `compose.dev.yml`: `neko-db`, `records-db`, both GraphJin data planes, `neko-graphjin`, `embedding`, `librarian`, the OpenShell gateway with the agent image, and AdventureWorks with its simulator. It installs the pinned GraphJin and OpenShell CLIs into `.openneko/dev/bin`, rebuilds a GraphJin image that reports another version than the pin, runs migrations from source, writes the GraphJin JWT secret, and registers the OpenShell gateway for host processes.
+- `pnpm dev:up` starts the backing services with `compose.yml`, `compose.db.yml`, `compose.adventureworks.yml` and `compose.dev.yml` (`scripts/dev-up.sh`): `neko-db`, the `openneko-serve` container with the customer GraphJin and the subscriptions GraphJin, and AdventureWorks with its simulator. It installs the pinned GraphJin CLI into `.openneko/dev/bin`, builds the serve image, runs migrations from source, and writes the GraphJin JWT secret.
 - `pnpm dev:seed` seeds demo workflows. `pnpm dev:setup` runs both steps.
-- `pnpm dev` runs `next dev` on port 3000 and `tsx watch` for the worker. Edits to `apps/web`, `apps/worker`, and workspace packages reload without an image build.
-- `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:worker` source the file.
-- The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and the worker manages it like the core stack.
+- `pnpm dev` runs `openneko serve` (`pnpm dev:agent`) and `openneko web` on port 3000 with Vite watching `apps/web/src` to rebuild `apps/web/dist` on edits (`pnpm dev:web`).
+- `pnpm --filter @neko/web build:spa` builds the web app as static files in `apps/web/dist`, with a client router. `pnpm dev:web` builds the static app first when `apps/web/src` changed since the last build, runs `openneko web` on port 3000 serving `apps/web/dist`, and runs `vite build --watch` alongside it so edits to `apps/web/src` rebuild `apps/web/dist` in place (set `OPENNEKO_WEB_WATCH=0` to skip the watcher). `pnpm dev:web` runs `openneko web` with `OPENNEKO_ENV=development`. Everywhere else, `openneko web` runs in production mode and refuses GraphJin development header auth; the public URL and the request scheme set whether its cookies are `Secure` (see [Setup](#setup)). It reads `NODE_ENV=development` only when `OPENNEKO_ENV` is not set, and only in this release. For Vite hot module replacement in the browser, run `pnpm --filter @neko/web dev` (`dev:spa`) alongside `openneko web`: Vite serves the static app on port 5173 and passes `/api` to `openneko web` on port 3000 (set `OPENNEKO_SPA_API` for another address). `openneko web` applies the sign-in and admin checks of `src/lib/access-policy.ts` to each request and sets the `Content-Security-Policy` header (`frame-src 'self'`) on the app. It reads sessions, devices and groups, and writes users and their IdP groups at sign-in, with the main database login, and reads `secrets.json` for whether sign-in is on. After an admin changes the database password, `openneko web` opens each new database connection with the password in `config.json`. Go answers `/api/v1/version`, `/api/v1/auth/*`, `/api/v1/sso/setup/*`, `/api/v1/profile`, `/api/v1/my/pack-accounts/*`, `/api/v1/observations`, `/api/v1/approvals`, `/api/v1/action-requests/*`, `/api/v1/insights/ensure`, `/api/v1/work/memories/*`, `/api/v1/work/skills/*`, `/api/v1/work/assets`, `/api/v1/work/audit/export`, `/api/v1/work/files/*`, `/api/v1/work/upload`, the Library routes (`/api/v1/library/*`), the work thread and run routes, the bot routes (`/api/v1/bots/*`), the connector routes (`/api/v1/integrations/*`), the pack OAuth routes (`/api/v1/pack-accounts/*`), the workflow, subscription, workflow run and hooks routes, the channel webhook (`/api/v1/channels/*/inbound`), `/api/v1/policies/*`, `/api/v1/onboarding/status`, `/api/v1/onboarding/submit`, `/api/v1/settings/provider/test`, `/api/v1/admin/services`, the admin group, IdP rule, directory, item grant, data access, user, password, device, sign-in, public address, channel, spend, model, workflow API limit, pack and webhook-compatibility routes (`/api/v1/admin/groups/*`, `/api/v1/admin/idp-rules/*`, `/api/v1/admin/directory`, `/api/v1/admin/items`, `/api/v1/admin/item-grants`, `/api/v1/admin/data-access/*`, `/api/v1/admin/users/*`, `/api/v1/admin/change-password`, `/api/v1/admin/devices/*`, `/api/v1/admin/signin/*`, `/api/v1/admin/public-url`, `/api/v1/admin/channels/settings`, `/api/v1/admin/channels/replies`, `/api/v1/admin/team-proposals/*`, `/api/v1/admin/spend/*`, `/api/v1/admin/models/*`, `/api/v1/admin/model-routes`, `/api/v1/admin/workflow-api-limits`, `/api/v1/admin/packs/*` and the webhook-compatibility admin routes), and the fifteen settings routes: `/api/v1/settings/channel-identities/*`, `data-sources`, `source-secrets`, `install-policy`, `skill-learn`, `graphjin-config`, `persona`, `source-check`, `file-sources`, `openapi-specs`, `agent`, `data-source`, `data-source/test`, `provider` and `finish`. When an admin saves the agent, data source or primary provider settings, `openneko web` writes the GraphJin client file, brings the GraphJin config file (`OPENNEKO_GRAPHJIN_CONFIG`) up to date, and turns on actor tokens for a data source that answers with one. Background jobs run on a River queue in the `river` schema. `openneko migrate` creates and updates the `river` schema under the migration lock, moves the pending jobs of an older install from pg-boss, and removes the old pg-boss queues. `openneko web` runs the jobs: two hourly sweeps, two sweeps each minute, the embedding jobs, the directory sync, the bot name sweep, skill learning, the three setup builds, the metric refreshes, the workflow runs, the workflow API sweep, the channel chat turns and the channel deliveries. The first hourly sweep deletes expired workflow outputs. The second queues the due metric refreshes, archives expired memories and declines memory proposals that nobody reviewed in 14 days. The sweep each minute checks the behavior thresholds (`OPENNEKO_BEHAVIOR_MAX_CP_CALLS_PER_RUN_10M`, `OPENNEKO_BEHAVIOR_MAX_ACTIONS_PER_HOUR`, `OPENNEKO_BEHAVIOR_MAX_MEMORY_WRITES_PER_HOUR`, scaled by `OPENNEKO_PROFILE`) and records the `security.behavior_threshold` event. It then runs each due condition watcher and queues its workflow as a `workflow_run_fire` job, once in each quiet period of the watcher. The second sweep each minute, which also runs when `openneko web` starts, queues one `embedding_index` job for each memory and skill that has no vector from the current embedding model; `openneko web` runs these jobs one at a time, with up to 9 attempts. At 00:00, 06:00, 12:00 and 18:00 UTC, `openneko web` syncs the Scalekit directory: its users, groups and memberships. With no directory provider the job does nothing. A failed sync waits for the next run. Every 15 minutes, and once when `openneko web` starts, the bot name sweep asks the model for a short name for up to 20 bots that still carry their chat title (task `bot_names`); each bot gets one try. After a run from a channel uses a skill, `openneko web` queues a `skill_learn` job for that skill, unless one already waits. `openneko web` runs it: when skill learning is on for the org and the skill, and five runs that ended at least two hours ago used one version of it, the model proposes one lesson (task `skill_lessons`), and a lesson that passes the checks waits for an admin at Settings, Approval rules. It goes to the skill's `LEARNED.md` overlay when an admin confirms it, and the job asks the model for no new lesson for that skill while one waits. A failed attempt tries again after 30 seconds, with up to 3 attempts. The setup builds are `business_profile_build`, `industry_insights_build` and `bootstrap_metrics_build`. The onboarding submit queues the business profile build with one attempt. The profiler agent reads the data source through read-only GraphJin tools in an empty workspace and writes a new profile version. A reply that is not a usable profile goes back to the agent with the reason, up to 3 turns. When the org has industry research on, the build then queues `industry_insights_build`; `/api/v1/insights/ensure` queues it too. Industry research is off until an admin saves an enabled research provider; while it is off, the research settings show "Disabled", and the profile page shows the insights as off and queues no job. That job asks the model for a research mission (task `research_mission`) and sends it to Perplexity once, with one more try on a 5xx, a 429 or a network fault. `bootstrap_metrics_build` asks the model for four starter cards for each onboarding seat that has no metric yet, and queues one metric refresh for each new card; no step queues this build today. Each build keeps its `processing_job` row up to date for the onboarding and profile pages. A failed attempt tries again after 30 seconds, with up to 3 attempts; a model provider that is down or refuses the key ends the build with no retry. A `metric_refresh` job updates one card and writes a new snapshot. The hourly sweep, the bootstrap build and a pack install queue it. A card with a reviewed saved query runs that query on the card's pack source, or else on the default enabled data source, with no model. Any other card runs the metric agent: the read-only GraphJin tools, a search of the saved memories, and up to 3 turns for a reply that fails the card checks. The agent reserves the per-run spend cap before it starts, records its token cost, and releases the reservation at the end; an org over its spend limit gets a failed card and a `spend.budget_blocked` alert. The refreshes have their own queue: `OPENNEKO_METRIC_REFRESH_CONCURRENCY` (default 2) sets how many run at once in each `openneko web`. A failed attempt tries again after 30 seconds, with up to 3 attempts. A `workflow_run_fire` job runs one workflow headless: a schedule firing from the scheduler, a match of a workflow subscription, a watcher that fired, or a call to the workflow API. It runs one at a time in each `openneko web`. A schedule firing runs once, however often its job comes. When the org is over its spend limit, the run does not start and the firing is cancelled. A run that fails, or that a stop of `openneko web` cuts short, tries again after 30 seconds, with up to 3 attempts. A schedule firing waits 60 seconds before its third attempt. A schedule firing whose last attempt fails ends as failed and is not queued again; when no run started, the recent runs of the workflow show the firing with the reason. The workflow API route queues its run in the same transaction as the admission. The run starts when fewer API runs are running than the workflow's concurrency cap, `OPENNEKO_WORKFLOW_API_ORG_CONCURRENCY_CAP` for the org and `OPENNEKO_WORKFLOW_API_GLOBAL_CONCURRENCY_CAP` for the install (default 3 each); otherwise it waits 5 seconds and tries again. An API run with a batch contract writes its CSV file with no model call. Any other API run stops at the first tool call, model call, token count, cost or second past the ceilings of its workflow, and fails with the code of that ceiling. A claimed API run never runs a second time: a failure ends the run as failed, and the caller reads the reason. The workflow API sweep runs each minute and when `openneko web` starts. It fails each API run whose time ran out while it ran (`worker_interrupted`), deletes the results, inputs and files of runs past their retention, and queues each admitted run that has no job. An approved action goes on River as an `action_execute` job. When a person approves it in the app (including with a verified passkey assertion once the user registers a passkey), Go writes the job in the same transaction as the approval, so an approval that fails queues nothing. `openneko web` runs the job in Go for every pack action (`graphjin_api_operation` REST mutations and Magento store changes, undo and financial handoffs) and the eight built-in adapters (`channel_admin`, `code_create_issue`, `code_draft_patch`, `data_source_admin`, `group_admin`, `send_webhook`, `source_config_admin`, and `user_admin`). An approved `send_webhook` goes to the URL that the approver saw: Go does not follow a redirect, and it refuses a URL whose name resolves to a loopback, link-local (such as the cloud metadata address 169.254.169.254), multicast or unspecified address. A private network address is allowed. A `code_draft_patch` writes its file to `~/.config/openneko/agents/orgs/<org>/artifacts/patches`. A `source_config_admin` change fails when an admin turned off GraphJin config changes in the settings. A failed attempt tries again after 30 seconds, with up to 3 attempts. `openneko web` also runs the durable cron workflow scheduler (claiming due schedules every 15 seconds) and the GraphJin workflow-output subscription listener, and queues `web_push` jobs to notify opted-in browsers when an approval waits, a chat run finishes, or a workflow needs attention. A chat run with no owner notifies the admins only. A `web_push` job sends only to an `https` push endpoint. Go does not follow a redirect, and it refuses an endpoint whose name resolves to a loopback, private, link-local, multicast or unspecified address. When some endpoints fail, a new job tries only those again, after 15 seconds, twice as long each time, with up to 4 attempts in all. A push endpoint stays with the user who subscribed it; sign-out removes the subscription of the browser. `OPENNEKO_WEB_PUSH_ALLOW_LOOPBACK=1` allows a push endpoint on this host, for the local checks only. The `openneko web` that runs the jobs receives channel messages: it polls Telegram every 3 seconds and holds a Slack Socket Mode connection. The HUD bridge posts to `/api/v1/channels/hud/inbound`. Telegram posts to `/api/v1/channels/telegram/inbound` in place of the poll only when the admin stored `TELEGRAM_WEBHOOK_SECRET`, `OPENNEKO_PUBLIC_URL` is `https` on a host that Telegram can reach (not `localhost`, a name with no dot, a `.local`, `.internal`, `.lan` or `.home.arpa` name, or a loopback, private or link-local address), and Telegram's `getWebhookInfo` reports that inbound URL for the bot. `openneko web` asks Telegram every 30 seconds and when a channel setting changes. Else `openneko web` polls Telegram, and a change of the public URL alone starts or stops the poll. The route checks the channel's signature first and answers 401 when it does not match or when the channel is unknown. OpenNeko handles each update once; an update that fails 30 times is set aside in `inbound_dedup`. When two `openneko web` processes with jobs share one database, one process polls each Telegram bot under a Postgres advisory lock, and the other takes over when the first stops. A process holds an update while it handles it and renews the hold every 100 seconds, so the other process does not handle it too; a hold that is not renewed ends after 5 minutes. A message from one update starts one chat run, also when the update is handled again. Each minute, `openneko web` handles again each update that failed, has attempts left and that no process holds. This covers a Slack update: Socket Mode needs its answer within 3 seconds, so OpenNeko acknowledges the update before it handles it. The poll lock holds one Postgres connection of its own for as long as the process polls. It needs a direct connection or a session-mode pooler: through PgBouncer in transaction mode, PgBouncer can hand the locked server connection to another client, so the lock does not work. The route answers 500 for a failed update that has attempts left, so the provider sends it again. A message from Slack or Telegram goes on River as a `work_run` job. `openneko web` runs its chat turn as it runs a question from the app, up to 3 jobs at a time, then queues the reply as a `channel_deliver` job. When a workflow writes an output, `openneko web` queues one `channel_deliver` job for each enabled delivery binding whose audience holds the workflow, and the watcher when a watcher fired the run. `openneko web` sends each delivery itself to Slack, Telegram or the HUD bridge, with the channel settings in the secrets store. A reply or a workflow output for a Slack channel or a Telegram group follows the org's answer rule at Admin, Settings, Channels: when the rule makes it private, `openneko web` sends it to the person who asked, or to the workflow's owner, and posts a note with no data in the group chat. Slack needs the `im:write` scope to open the direct message. A failed send tries again after 15 seconds, twice as long each time, with up to 9 attempts. A chat turn that started never runs a second time, and each run sends its reply once. When the `river` schema is missing, `openneko web` still starts and says that background jobs are off. `openneko web --jobs=false` (or `OPENNEKO_WEB_JOBS=false`) runs no job; another `openneko web` with jobs on must run them, or an outside scheduler calls the wake endpoint (see "Wake the jobs by HTTP").
+- `pnpm dev:web:stack` runs a host `openneko web` on port 3200 against a running Compose stack (`scripts/dev-web-stack.sh`).
+- `scripts/dev-env.sh` holds the host settings. Each service a host process calls has a loopback port; `pnpm dev:web` and `pnpm dev:agent` source the file.
+- The customer GraphJin runs in sources mode from `db/graphjin/dev.sources.example.yml`. Its config lives in `.openneko/dev/graphjin`, and `openneko web` manages it like the core stack.
 - OpenNeko state uses your XDG config home. Set `OPENNEKO_DEV_CONFIG_HOME=$PWD/.openneko/dev/config` to keep a worktree's stack separate, and a distinct `COMPOSE_PROJECT_NAME` with its ports when two stacks run at once.
 
-Without `neko-graphjin`, subscription-chained workflows stay silent (`subscription manager ready (0 active)` in worker logs).
+Without the `openneko-serve` container, subscription-chained workflows stay silent. `openneko web` logs `graphjin subscription socket error` for each subscription and tries again.
 
-Install host-only CLIs the worker shells out to (Docker images already include them):
+Install the pinned GraphJin CLI on the host when you need `graphjin` on your `PATH` (`pnpm dev:up` also installs a copy into `.openneko/dev/bin`):
 
 ```bash
 ./scripts/install-clis.sh
@@ -412,24 +1743,30 @@ CI runs this with `--check` and fails on drift.
 
 **Docker not running.** Start Docker Desktop or the daemon; re-run `openneko start`.
 
-**Port in use.** Re-run setup with `--port` / `--openshell-port`, or use the
-equivalent `OPENNEKO_PORT` / `OPENSHELL_PORT` environment overrides.
+**Port in use.** Re-run setup with `--port`, or use the `OPENNEKO_PORT`
+environment override.
 
 **Image pull `unauthorized`.** Confirm packages are public at https://github.com/orgs/open-neko/packages.
 
-**Worker crashes on boot.** Check `openneko logs worker`. `ERR_MODULE_NOT_FOUND` for a workspace dep means an old binary — `brew upgrade openneko` (≥ 1.7.3).
+**GraphJin connection fails.** Prod and demo modes use `http://graphjin:8080` (pre-filled), the GraphJin inside `openneko-serve`. Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`. Run `openneko status` and read the `graphjin` line: it says whether GraphJin runs or restarts, with the reason.
 
-**GraphJin connection fails.** `--mode demo` uses internal `http://graphjin:8080` (pre-filled). Dev mode (`pnpm dev`) on the host uses `http://localhost:8080`.
+**Workflow subscriptions don't fire.** Run `openneko status` and check the `subscriptions` line. `openneko web` logs `[subscription-manager] ready (N active)` on start, where N is the number of enabled subscriptions. A `graphjin subscription socket error` line means the subscriptions GraphJin in `openneko-serve` is unreachable; `openneko web` tries again within a minute. `openneko stop && openneko start` writes its login again.
 
-**Workflow subscriptions don't fire.** `neko-graphjin` must be healthy. The worker logs `subscription manager ready (N active)` on boot — if `N=0` despite subscriptions in the DB, GraphJin is unreachable or its password drifted. Rotate via `/setup`, then `openneko stop && openneko start`.
+**Web stops with "the database lacks N migration(s)".** `openneko web` starts
+only on a database that holds every migration of its release. Run
+`openneko migrate`, then start web again. If you apply the migrations by
+another route, set `OPENNEKO_SKIP_MIGRATE=1`; web then starts with a warning.
+
+**Migrate waits for "the migration lock".** Another migrator holds the lock.
+The message names its process ID and application name. It ends when that
+migrator ends.
 
 **Provider key fails.** Confirm it's active, has billing/quota, and matches the provider in `/settings`.
 
-**Stale `pnpm dev` processes hammering port 5432.** `tsx watch` processes survive `openneko stop` and reconnect with a stale password (`password authentication failed for user "neko"` in logs):
+**Stale `pnpm dev` processes hammering port 5432.** Host `pnpm dev` processes survive `openneko stop` and reconnect with a stale password (`password authentication failed for user "neko"` in logs):
 
 ```bash
-pkill -f "tsx.*apps/worker/src/index"
-pkill -f "tsx.*apps/web"
+pkill -f "\.openneko/dev/bin/openneko"
 openneko stop --volumes && openneko start --mode demo --detach
 ```
 
@@ -438,5 +1775,5 @@ openneko stop --volumes && openneko start --mode demo --detach
 ```bash
 openneko reset --all
 brew uninstall openneko && brew untap open-neko/tap   # if also reinstalling
-pkill -f "tsx.*apps/(worker|web)"                     # if you ever ran pnpm dev
+pkill -f "\.openneko/dev/bin/openneko"                # if you ever ran pnpm dev
 ```

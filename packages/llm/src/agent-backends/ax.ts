@@ -1,11 +1,9 @@
-// Ax backend: one ax-harness process per turn. Protocol: apps/ax-harness/docs/RUN-PROTOCOL.md.
+// Ax backend: one ax-harness turn, as a child process or in openneko serve. Protocol: apps/ax-harness/docs/RUN-PROTOCOL.md.
 
-import { axCatalogPricingVersion, estimateTokenCost, hasPriceOverride } from "../spend/model-prices";
-import { spawn, type ChildProcess } from "node:child_process";
+import { axCatalogPricingVersion, estimateRecordCost, estimateTokenCost, hasPriceOverride } from "../spend/model-prices";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { agentLimits, axLimitEnv, axRunLimits, type AgentReasoningEffort } from "../agent-limits";
 import {
   agentTurnTimeoutMs,
@@ -16,13 +14,51 @@ import {
   type AgentRunResult,
   type AgentTokenUsage,
 } from "../agent-backend";
-import { AX_HARNESS_BINARY } from "../agent-runtime-contract";
 import { registerAgentCanceller } from "../agent-shutdown";
-import type { AxModelRoute } from "../provider-runtime";
+import { FALLBACK_KEY_ENV, type AxModelRoute } from "../provider-runtime";
 import { A2UI_RENDER_ACP_TITLE, A2UI_RENDER_SERVER_NAME } from "../work/a2ui-contract";
 import { splitStablePrompt } from "../prompts/stable-prefix";
 import { extractMarkdownText, outsideFenceText } from "./output";
 import { extractCardFences, extractSurfaceMessages } from "./surface";
+import { serveHarnessTurn, serveSocket } from "./harness-turn";
+
+export const NO_SERVE_SOCKET =
+  "agent turns run only in the confined runner of openneko serve, and OPENNEKO_SERVE_SOCKET is not set";
+import { sandboxConfig } from "../work/sandbox-service";
+
+/** The run's model key: a stored key the worker loaded, a key in the environment, or "none" for a keyless provider such as Ollama. */
+function modelKey(route: AxModelRoute): string {
+  return (route.keyEnv && process.env[route.keyEnv]) || process.env.MODEL_API_KEY || "none";
+}
+
+const PRIMARY_ROUTE_KEY_ENV = "PRIMARY_MODEL_API_KEY";
+
+function fallbackKey(): string {
+  return process.env[FALLBACK_KEY_ENV] || "none";
+}
+
+/**
+ * The harness route profile for a turn with a fallback model. Every stage uses
+ * the primary route; the harness moves a failed call to the fallback only on
+ * an error Ax classifies as retryable. See apps/ax-harness/internal/command/routes.go.
+ */
+export function fallbackRouteProfile(primary: AxModelRoute, fallback: AxModelRoute): string {
+  const entry = (key: string, route: AxModelRoute, keyEnv: string) => ({
+    key,
+    ...(route.provider ? { provider: route.provider } : {}),
+    model: route.model,
+    ...(route.url ? { url: route.url } : {}),
+    api_key_env: keyEnv,
+    ...(route.options ? { options: route.options } : {}),
+  });
+  return JSON.stringify({
+    context: "primary",
+    executor: "primary",
+    responder: "primary",
+    fallbacks: [{ from: "primary", to: "fallback" }],
+    routes: [entry("primary", primary, PRIMARY_ROUTE_KEY_ENV), entry("fallback", fallback, FALLBACK_KEY_ENV)],
+  });
+}
 
 /** The org prompt goes in `instructions` and the per-turn rest in `prompt`, so providers cache the org prompt on its own. */
 export function axRunPrompt(prompt: string, userMessage?: string): { instructions?: string; prompt: string } {
@@ -34,6 +70,8 @@ export function axRunPrompt(prompt: string, userMessage?: string): { instruction
 /** Trusted, non-secret model settings, resolved on the host from admin settings. */
 export type AxBackendConfig = {
   route: AxModelRoute;
+  /** Serves a model call after the route fails with a retryable provider error. */
+  fallback?: AxModelRoute;
   contextWindowTokens?: number;
   maxOutputTokens?: number;
   reasoningEffort?: AgentReasoningEffort;
@@ -79,21 +117,8 @@ type AxEvent = {
 
 const KILL_GRACE_MS = 15_000;
 
-function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (!child.pid) return;
-  try {
-    process.kill(-child.pid, signal);
-  } catch {
-    // Already exited, or not a group leader.
-  }
-  try {
-    child.kill(signal);
-  } catch {
-    // ignore
-  }
-}
 
-export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider: string; model: string }): AgentTokenUsage {
+export function normalizeAxUsage(usage: AxUsage | undefined, route?: Pick<AxModelRoute, "provider" | "model" | "price">): AgentTokenUsage {
   if (!usage) return { coverage: "unavailable", missingReasons: ["Ax Harness reported no usage"] };
   const tokens = {
     inputTokens: usage.input_tokens,
@@ -107,21 +132,24 @@ export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider:
   const scale = usage.coverage === "complete" ? 1
     : usage.coverage === "partial" && usage.reported && usage.requests ? usage.requests / usage.reported
     : 0;
-  // The harness priced each call on the route that served it; a host price override for the route wins.
+  // The harness priced each call on the route that served it; a host price override or a model record price wins.
   const harnessPriced = usage.priced_by === "catalog" && typeof usage.cost_micros === "number" && Number.isFinite(usage.cost_micros) &&
-    !!usage.catalog_version && !(route && hasPriceOverride(route.provider, route.model));
+    !!usage.catalog_version && !(route && (route.price || hasPriceOverride(route.provider, route.model)));
+  const tokenCounts = {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    cacheReadTokens: usage.cache_read_tokens,
+    cacheWriteTokens: usage.cache_write_tokens,
+    totalTokens: usage.total_tokens,
+    calls: usage.reported,
+  };
   const reported = scale <= 0 ? undefined
+    : route?.price
+      ? estimateRecordCost(route.price, tokenCounts)
     : harnessPriced
       ? { usd: usage.cost_micros! / 1_000_000, costSource: "ax_harness_catalog", pricingCatalogVersion: axCatalogPricingVersion(usage.catalog_version!) }
       : route
-        ? estimateTokenCost(route.provider, route.model, {
-            inputTokens: usage.input_tokens,
-            outputTokens: usage.output_tokens,
-            cacheReadTokens: usage.cache_read_tokens,
-            cacheWriteTokens: usage.cache_write_tokens,
-            totalTokens: usage.total_tokens,
-            calls: usage.reported,
-          })
+        ? estimateTokenCost(route.provider, route.model, tokenCounts)
         : undefined;
   return {
     ...Object.fromEntries(Object.entries(tokens).filter(([, v]) => typeof v === "number")),
@@ -129,7 +157,7 @@ export function normalizeAxUsage(usage: AxUsage | undefined, route?: { provider:
     ...(reported === undefined
       ? { costStatus: "unknown" as const }
       : {
-          costStatus: "estimated" as const,
+          costStatus: reported.usd === 0 ? ("included" as const) : ("estimated" as const),
           estimatedCostUsd: reported.usd * scale,
           currency: "USD",
           costSource: reported.costSource,
@@ -191,6 +219,8 @@ export class AxBackend implements AgentBackend {
     status?: "cancelled";
   }> {
     if (!this.ax) throw new Error("Ax backend has no model configured. Set the primary provider in admin settings.");
+    const socket = serveSocket();
+    if (!socket) return { finalText: "", error: NO_SERVE_SOCKET, errorCode: "agent_confinement_unavailable" };
     const { workspace, onEvent, signal } = opts;
     const timeoutMs = opts.timeoutMs ?? agentTurnTimeoutMs();
     const runId = (opts.tag ?? `ax-${Date.now()}`).replace(/[^\w.:-]/g, "").slice(0, 128) || "ax";
@@ -226,26 +256,29 @@ export class AxBackend implements AgentBackend {
       ...(opts.debug ? { debug: true } : {}),
     };
 
-    const child = spawn(AX_HARNESS_BINARY, [], { stdio: ["pipe", "pipe", "pipe"], cwd, env, detached: true });
-    const stderr: Buffer[] = [];
-    child.stderr?.on("data", (c: Buffer) => {
-      stderr.push(c);
-      if (opts.debug) process.stderr.write(c);
+    const servers = this.bridgeServers(opts);
+    const turn = serveHarnessTurn({
+      socket,
+      spec,
+      env,
+      modelKeyEnv: this.ax.route.keyEnv || "MODEL_API_KEY",
+      modelKey: modelKey(this.ax.route),
+      ...(this.ax.fallback
+        ? { extraKeys: { [PRIMARY_ROUTE_KEY_ENV]: modelKey(this.ax.route), [FALLBACK_KEY_ENV]: fallbackKey() } }
+        : {}),
+      servers,
+      ...(opts.mcpBridgeEnv ? { bridgeEnv: { ...opts.mcpBridgeEnv, OPENNEKO_MCP_SERVERS: servers.join(",") } } : {}),
+      debug: opts.debug === true,
     });
-    let spawnError: Error | undefined;
-    child.on("error", (e) => {
-      spawnError = new Error(`ax-harness spawn failed: ${e.message}`);
-    });
-    const exited = new Promise<number | null>((resolve) => child.on("close", (code) => resolve(code)));
-    const unregister = registerAgentCanceller(() => killProcessGroup(child, "SIGKILL"));
+    const unregister = registerAgentCanceller(() => turn.stop(true));
     let cancelled = false;
     const onAbort = () => {
       cancelled = true;
-      killProcessGroup(child, "SIGTERM");
+      turn.stop();
     };
     signal?.addEventListener("abort", onAbort, { once: true });
-    // The harness enforces timeout_ms itself; this only reaps a stuck process.
-    const reaper = setTimeout(() => killProcessGroup(child, "SIGKILL"), timeoutMs + KILL_GRACE_MS);
+    // The harness enforces timeout_ms itself; this only reaps a stuck turn.
+    const reaper = setTimeout(() => turn.stop(true), timeoutMs + KILL_GRACE_MS);
 
     let queue = Promise.resolve();
     let eventError: unknown;
@@ -262,12 +295,8 @@ export class AxBackend implements AgentBackend {
     let result: AxResult | undefined;
     let protocolError: string | undefined;
     try {
-      // An early exit (invalid configuration) closes stdin; the result check reports it.
-      child.stdin?.on("error", () => {});
-      child.stdin?.end(JSON.stringify(spec));
-      const lines = createInterface({ input: child.stdout! });
       let last = 0;
-      for await (const line of lines) {
+      for await (const line of turn.lines) {
         if (!line.trim()) continue;
         let event: AxEvent;
         try {
@@ -284,13 +313,12 @@ export class AxBackend implements AgentBackend {
         if (event.type === "run.finished") result = event.result;
         else mapper.handle(event);
       }
-      const code = await exited;
+      const code = await turn.exited;
       await queue;
       if (eventError) throw eventError;
-      if (spawnError) throw spawnError;
       if (cancelled || signal?.aborted) return { finalText: "", status: "cancelled" };
       if (!result) {
-        const tail = Buffer.concat(stderr).toString("utf8").trim().split("\n").slice(-6).join("\n").slice(-600);
+        const tail = turn.diagnostics().trim().split("\n").slice(-6).join("\n").slice(-600);
         return {
           finalText: "",
           error: protocolError ?? `ax-harness exited (code=${code ?? "null"}) without a result${tail ? `: ${tail}` : ""}`,
@@ -303,7 +331,7 @@ export class AxBackend implements AgentBackend {
       const answer = result.answer ?? "";
       if (result.status !== "completed" || !answer.trim()) {
         const reason = result.code ?? "no answer";
-        const tail = Buffer.concat(stderr).toString("utf8").trim().slice(-600);
+        const tail = turn.diagnostics().trim().slice(-600);
         return {
           finalText: "",
           errorCode: result.code ?? "empty_output",
@@ -339,9 +367,15 @@ export class AxBackend implements AgentBackend {
       clearTimeout(reaper);
       signal?.removeEventListener("abort", onAbort);
       unregister();
-      if (child.exitCode == null) killProcessGroup(child, "SIGTERM");
+      if (turn.running) turn.stop();
       await cleanupScratch?.();
     }
+  }
+
+  private bridgeServers(opts: AgentRunOptions): string[] {
+    return Object.keys(opts.mcpServers ?? {}).filter(
+      (name) => /^neko_[a-z0-9_]+$/.test(name) && (name !== A2UI_RENDER_SERVER_NAME || opts.wantsCards),
+    );
   }
 
   private environment(opts: AgentRunOptions, cwd: string, limitEnv: Record<string, string>): NodeJS.ProcessEnv {
@@ -349,9 +383,8 @@ export class AxBackend implements AgentBackend {
     const { workspace } = opts;
     const env: NodeJS.ProcessEnv = { ...process.env };
     if (workspace) env.PATH = `${workspace.binRoot}:${process.env.PATH || ""}`;
-    // The key is an OpenShell placeholder; only the harness may hold it.
-    const key = (route.keyEnv && process.env[route.keyEnv]) || process.env.MODEL_API_KEY || "none";
-    for (const name of ["MODEL_API_KEY", route.keyEnv, "HARNESS_MODEL_ROUTES"]) if (name) delete env[name];
+    const key = modelKey(route);
+    for (const name of ["MODEL_API_KEY", route.keyEnv, "HARNESS_MODEL_ROUTES", PRIMARY_ROUTE_KEY_ENV, FALLBACK_KEY_ENV]) if (name) delete env[name];
     Object.assign(env, {
       HARNESS_MODEL_PROVIDER: route.provider,
       HARNESS_MODEL: route.model,
@@ -359,11 +392,16 @@ export class AxBackend implements AgentBackend {
       HARNESS_MODEL_URL: route.url ?? "",
       HARNESS_MODEL_OPTIONS: route.options ? JSON.stringify(route.options) : "",
     });
+    if (this.ax!.fallback) {
+      Object.assign(env, {
+        HARNESS_MODEL_ROUTES: fallbackRouteProfile(route, this.ax!.fallback),
+        [PRIMARY_ROUTE_KEY_ENV]: key,
+        [FALLBACK_KEY_ENV]: fallbackKey(),
+      });
+    }
     Object.assign(env, limitEnv);
 
-    const names = Object.keys(opts.mcpServers ?? {}).filter(
-      (name) => /^neko_[a-z0-9_]+$/.test(name) && (name !== A2UI_RENDER_SERVER_NAME || opts.wantsCards),
-    );
+    const names = this.bridgeServers(opts);
     const bridge = Boolean(process.env.OPENNEKO_MCP_BRIDGE && opts.mcpBridgeEnv && names.length > 0);
     if (bridge) {
       Object.assign(env, opts.mcpBridgeEnv, { OPENNEKO_MCP_SERVERS: names.join(",") });
@@ -375,12 +413,14 @@ export class AxBackend implements AgentBackend {
     env.OPENNEKO_MCP_ORG_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_ORG_ID ?? opts.orgId ?? "local";
     env.OPENNEKO_MCP_THREAD_ID = opts.mcpBridgeEnv?.OPENNEKO_MCP_THREAD_ID ?? opts.tag ?? "local";
     env.OPENNEKO_HARNESS_WORKSPACE_DIR = cwd;
-    env.OPENNEKO_HARNESS_SHELL = "1";
+    if (sandboxConfig()) env.OPENNEKO_HARNESS_SHELL = "1";
+    else delete env.OPENNEKO_HARNESS_SHELL;
     if (workspace?.threadUploadsRoot) env.OPENNEKO_HARNESS_UPLOADS_DIR = workspace.threadUploadsRoot;
     else delete env.OPENNEKO_HARNESS_UPLOADS_DIR;
     if (workspace?.skillsRoot) {
       env.OPENNEKO_HARNESS_SKILLS_READ = "1";
       env.OPENNEKO_MCP_SKILLS_ROOT = opts.mcpBridgeEnv?.OPENNEKO_MCP_SKILLS_ROOT ?? workspace.skillsRoot;
+      env.SKILLS_DIR = env.OPENNEKO_MCP_SKILLS_ROOT;
     }
     if (opts.networkHosts?.length) env.OPENNEKO_HARNESS_WEB_HOSTS = opts.networkHosts.join(",");
     else delete env.OPENNEKO_HARNESS_WEB_HOSTS;
@@ -514,7 +554,7 @@ export class AxEventMapper {
       source: "outer",
       ...(this.observed ?? {}),
       modelIdentity: { configured, ...(this.observed ? { observed: this.observed } : {}) },
-      usage: normalizeAxUsage(usage, configured),
+      usage: normalizeAxUsage(usage, this.route),
     });
   }
 

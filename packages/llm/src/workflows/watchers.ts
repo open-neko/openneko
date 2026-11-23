@@ -142,39 +142,6 @@ export async function getWatcher(
   return row ? toRecord(row) : null;
 }
 
-/** Enable or disable a watcher without replacing its definition or history. */
-export async function setWatcherEnabled(
-  orgId: string,
-  watcherId: string,
-  enabled: boolean,
-): Promise<WatcherRecord | null> {
-  const [row] = await db()
-    .update(watcher)
-    .set({ enabled, updated_at: new Date() })
-    .where(and(eq(watcher.org_id, orgId), eq(watcher.id, watcherId)))
-    .returning();
-  return row ? toRecord(row) : null;
-}
-
-/** Clear evaluation history while preserving the watcher definition. */
-export async function resetWatcher(
-  orgId: string,
-  watcherId: string,
-): Promise<WatcherRecord | null> {
-  const [row] = await db()
-    .update(watcher)
-    .set({
-      last_checked_at: null,
-      last_fired_at: null,
-      last_value: null,
-      last_error: null,
-      updated_at: new Date(),
-    })
-    .where(and(eq(watcher.org_id, orgId), eq(watcher.id, watcherId)))
-    .returning();
-  return row ? toRecord(row) : null;
-}
-
 /** Delete a watcher within its organization boundary. */
 export async function deleteWatcher(
   orgId: string,
@@ -281,12 +248,12 @@ async function defaultEnqueueFire(payload: {
   triggerPayload: Record<string, unknown>;
   windowSeconds?: number;
 }): Promise<void> {
-  const { enqueue, QUEUE } = await import("@neko/db/jobs");
+  const { enqueueWorkflowRunFire } = await import("@neko/db/jobs");
   const { windowSeconds = 3600, ...job } = payload;
   // Collapses duplicate sweeps of one check; the watcher's quiet period sets the window.
-  await enqueue(QUEUE.WORKFLOW_RUN_FIRE, job, {
-    singletonKey: `watcher:${String(payload.triggerPayload.watcherId)}`,
-    singletonSeconds: windowSeconds,
+  await enqueueWorkflowRunFire(job, {
+    dedupeKey: `watcher:${String(payload.triggerPayload.watcherId)}`,
+    dedupeSeconds: windowSeconds,
   });
 }
 

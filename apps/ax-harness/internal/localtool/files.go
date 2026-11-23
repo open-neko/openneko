@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -33,6 +34,7 @@ const (
 
 type Files struct {
 	dir   string
+	vars  map[string]string
 	root  *os.Root
 	gate  sync.RWMutex
 	mu    sync.Mutex
@@ -51,6 +53,37 @@ func OpenFiles(dir string) (*Files, error) {
 }
 
 func (f *Files) Close() error { return f.root.Close() }
+
+// SetEnviron gives the file tools the run's folders, so a path may start with
+// $RUN_DIR, $ARTIFACT_DIR or $SKILLS_DIR as it may in the terminal.
+func (f *Files) SetEnviron(environ []string) {
+	f.vars = map[string]string{}
+	for _, name := range []string{"RUN_DIR", "ARTIFACT_DIR", "SKILLS_DIR"} {
+		if value := envValue(environ, name); value != "" {
+			f.vars[name] = value
+		}
+	}
+}
+
+var leadingRunVar = regexp.MustCompile(`^\$(?:\{(RUN_DIR|ARTIFACT_DIR|SKILLS_DIR)\}|(RUN_DIR|ARTIFACT_DIR|SKILLS_DIR)\b)`)
+
+func (f *Files) expand(path string) (string, bool) {
+	match := leadingRunVar.FindStringSubmatchIndex(path)
+	if match == nil {
+		return path, true
+	}
+	name := ""
+	if match[2] >= 0 {
+		name = path[match[2]:match[3]]
+	} else {
+		name = path[match[4]:match[5]]
+	}
+	value := f.vars[name]
+	if value == "" {
+		return "", false
+	}
+	return value + path[match[1]:], true
+}
 
 func (f *Files) Capabilities() []agent.Capability {
 	return []agent.Capability{
@@ -110,11 +143,12 @@ func (f *Files) Skills() ([]agent.Skill, error) {
 			if !ok {
 				return "", fmt.Errorf("skill %s has no frontmatter", name)
 			}
+			dir := filepath.ToSlash(filepath.Join(f.dir, name))
 			body = withSkillDir(body, filepath.Join(f.dir, name))
 			if len(body) > maxSkillContent {
-				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read the rest with file_read at skills/" + name + "/SKILL.md]"
+				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read the rest with file_read at " + dir + "/SKILL.md]"
 			}
-			return body, nil
+			return "This guide and its files are in " + dir + "/\n\n" + body, nil
 		}})
 	}
 	return skills, nil
@@ -174,8 +208,14 @@ func validPath(path string) bool {
 	return len(path) <= 1024 && filepath.IsLocal(path) && filepath.Clean(path) == path && path != "."
 }
 
-// local accepts a workspace-relative path, or an absolute path inside the workspace.
+// local accepts a workspace-relative path, or an absolute path inside the
+// workspace, also one that starts with $RUN_DIR, $ARTIFACT_DIR or $SKILLS_DIR.
 func (f *Files) local(path string) (string, bool) {
+	path, ok := f.expand(path)
+	if !ok {
+		return "", false
+	}
+	path = filepath.FromSlash(path)
 	if filepath.IsAbs(path) {
 		rel, err := filepath.Rel(f.dir, filepath.Clean(path))
 		if err != nil {
@@ -184,6 +224,19 @@ func (f *Files) local(path string) (string, bool) {
 		path = rel
 	}
 	return path, validPath(path)
+}
+
+func (f *Files) syncDir(path string) error {
+	// Windows cannot flush a directory handle; NTFS journals the rename itself.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := f.root.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (f *Files) pathError() error {
@@ -337,12 +390,7 @@ func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 	if err := f.root.Rename(tmp, input.Path); err != nil {
 		return nil, err
 	}
-	dir, err := f.root.Open(filepath.Dir(input.Path))
-	if err == nil {
-		err = dir.Sync()
-		_ = dir.Close()
-	}
-	if err != nil {
+	if err := f.syncDir(filepath.Dir(input.Path)); err != nil {
 		return nil, err
 	}
 	version := digest([]byte(content))
@@ -378,7 +426,7 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 		return nil, err
 	}
 	tmp := filepath.Join(filepath.Dir(input.Path), ".harness-write-"+hex.EncodeToString(nonce[:]))
-	file, err := f.root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	file, err := f.root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o660)
 	if err != nil {
 		return nil, err
 	}
@@ -401,12 +449,7 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 	if err := f.root.Link(tmp, input.Path); err != nil {
 		return nil, fmt.Errorf("file already exists or path unavailable: %w", err)
 	}
-	dir, err := f.root.Open(filepath.Dir(input.Path))
-	if err == nil {
-		err = dir.Sync()
-		_ = dir.Close()
-	}
-	if err != nil {
+	if err := f.syncDir(filepath.Dir(input.Path)); err != nil {
 		return nil, err
 	}
 	return json.Marshal(struct {

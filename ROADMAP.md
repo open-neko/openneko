@@ -8,15 +8,14 @@ have stale implementation status; verify them against current source.
 
 **Pending — required for fine-grained or multi-user access.**
 
-Every agent turn starts in a fresh sandbox, so no sandbox is reused across
+Each run gets its own runner and run folder, so no run folder is reused across
 users. Access still has to be enforced per request:
 
 - Enforce RBAC on each data/tool/action request through server-side checks.
-- Filter staged files, retrieved memories and library context **before they
-  reach the agent**. Existing org-wide knowledge/library staging needs review
-  here.
+- Filter staged files and retrieved memories **before they reach the agent**.
+  Existing org-wide knowledge staging needs review here.
 - Cover all effective grants: sources and row/action restrictions, packs,
-  plugins, personal/team memories, library documents and concepts, role/group
+  channels, personal/team memories, uploaded files, role/group
   membership, ownership and sharing rules.
 
 Acceptance: for each resource class above, revoke access and verify that the

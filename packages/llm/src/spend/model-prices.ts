@@ -82,7 +82,7 @@ export type TokenUsageForPrice = {
   calls?: number;
 };
 
-export type TokenCost = { usd: number; costSource: "price_override" | "ax_model_catalog"; pricingCatalogVersion: string };
+export type TokenCost = { usd: number; costSource: "price_override" | "ax_model_catalog" | "model_record"; pricingCatalogVersion: string };
 
 /**
  * The cost of the tokens, or undefined for a model with no override and no
@@ -120,4 +120,19 @@ export function estimateTokenCost(provider: string, model: string, usage: TokenU
 
 export function estimateTokenCostUsd(provider: string, model: string, usage: TokenUsageForPrice, at = new Date()): number | undefined {
   return estimateTokenCost(provider, model, usage, at)?.usd;
+}
+
+export type RecordPrice = { inputUsdPer1M: number; outputUsdPer1M: number };
+
+export const MODEL_RECORD_PRICE_SOURCE = "model_record";
+
+/** An admin's price on a model record wins over the catalog. Cache tokens bill as input. */
+export function estimateRecordCost(price: RecordPrice, usage: TokenUsageForPrice): TokenCost {
+  const input = (usage.inputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+  const output = Math.max(usage.outputTokens ?? 0, (usage.totalTokens ?? 0) - input);
+  return {
+    usd: (input * price.inputUsdPer1M + output * price.outputUsdPer1M) / 1_000_000,
+    costSource: "model_record",
+    pricingCatalogVersion: MODEL_RECORD_PRICE_SOURCE,
+  };
 }

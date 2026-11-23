@@ -1,10 +1,6 @@
-// Dependency manifest for Neko's bundled skills (packages/llm/assets/builtin-skills/*).
-// The upstream Anthropic skills don't ship a machine-readable dep list — they
-// mention requirements in SKILL.md prose. Mirroring those here lets the Dockerfile
-// and scripts/skill-doctor.ts know what to install.
-//
-// User-authored skills are not in this manifest. They typically use the runtime's
-// existing tools (Bash, Read/Write) rather than external Python/binary deps.
+// What the bundled skills in packages/llm/assets/builtin-skills and
+// recipes/sandbox/skills need. Keep recipes/sandbox/Dockerfile,
+// recipes/sandbox/skills/package.json and scripts/skill-doctor.ts in step.
 
 export interface SkillDeps {
   python: string[];
@@ -17,60 +13,6 @@ export interface SkillDeps {
 }
 
 export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
-  xlsx: {
-    python: ["openpyxl"],
-    pip: ["openpyxl"],
-    binaries: ["soffice"],
-    apt: ["libreoffice"],
-    brew: ["--cask libreoffice"],
-  },
-  pptx: {
-    python: ["pptx", "PIL"],
-    pip: ["python-pptx", "Pillow"],
-    node: ["pptxgenjs", "react", "react-dom", "react-icons", "sharp"],
-    npm: [
-      "pptxgenjs@4.0.1",
-      "react@19.2.8",
-      "react-dom@19.2.8",
-      "react-icons@5.7.0",
-      "sharp@0.35.3",
-    ],
-    binaries: ["soffice"],
-    apt: ["libreoffice"],
-    brew: ["--cask libreoffice"],
-  },
-  docx: {
-    python: ["docx"],
-    pip: ["python-docx"],
-    node: ["docx"],
-    npm: ["docx@9.7.1"],
-    binaries: ["soffice"],
-    apt: ["libreoffice"],
-    brew: ["--cask libreoffice"],
-  },
-  pdf: {
-    python: ["pypdf", "pdfplumber", "reportlab", "PIL"],
-    pip: ["pypdf", "pdfplumber", "reportlab", "Pillow"],
-    binaries: ["pdftotext", "qpdf"],
-    apt: ["poppler-utils", "qpdf"],
-    brew: ["poppler", "qpdf"],
-  },
-  "document-extraction": {
-    // The bundled extract_text.py degrades to stdlib zipfile parsing for
-    // docx/pptx/xlsx, so only the PDF/OCR path truly needs these.
-    python: ["pypdf", "docx", "pptx", "openpyxl"],
-    pip: ["pypdf", "python-docx", "python-pptx", "openpyxl"],
-    binaries: ["pdftotext", "tesseract", "file"],
-    apt: ["poppler-utils", "tesseract-ocr", "file"],
-    brew: ["poppler", "tesseract"],
-  },
-  "internal-comms": {
-    python: [],
-    pip: [],
-    binaries: [],
-    apt: [],
-    brew: [],
-  },
   "skill-creator": {
     python: ["yaml"],
     pip: ["PyYAML"],
@@ -78,58 +20,41 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     apt: [],
     brew: [],
   },
-  // ─── Tier-A finance skills (Hermes-sourced, Apache-2.0) ────────────
-  // All five model skills pair with excel-author and use openpyxl — same
-  // dep set as the generic xlsx builtin, so no new pip/apt requirements
-  // beyond what's already baked.
-  "excel-author": {
-    python: ["openpyxl"],
-    pip: ["openpyxl"],
-    binaries: [],
+  docx: {
+    python: [],
+    pip: [],
+    node: ["fflate", "fast-xml-parser"],
+    npm: ["fflate@0.8.3", "fast-xml-parser@5.12.0"],
+    binaries: ["node"],
     apt: [],
-    brew: [],
+    brew: ["node"],
   },
-  "pptx-author": {
-    python: ["pptx", "PIL"],
-    pip: ["python-pptx", "Pillow"],
-    binaries: [],
-    apt: [],
-    brew: [],
+  pdf: {
+    python: [],
+    pip: [],
+    node: ["pdf-lib", "@pdf-lib/fontkit", "pdfjs-dist"],
+    npm: ["pdf-lib@1.17.1", "@pdf-lib/fontkit@1.1.1", "pdfjs-dist@6.5.438"],
+    binaries: ["node", "pdftoppm", "tesseract"],
+    apt: ["poppler-utils", "tesseract-ocr"],
+    brew: ["node", "poppler", "tesseract"],
   },
-  "3-statement-model": {
-    python: ["openpyxl"],
-    pip: ["openpyxl"],
-    binaries: [],
+  pptx: {
+    python: [],
+    pip: [],
+    node: ["fflate", "fast-xml-parser"],
+    npm: ["fflate@0.8.3", "fast-xml-parser@5.12.0"],
+    binaries: ["node"],
     apt: [],
-    brew: [],
+    brew: ["node"],
   },
-  "dcf-model": {
-    python: ["openpyxl"],
-    pip: ["openpyxl"],
-    binaries: [],
+  xlsx: {
+    python: [],
+    pip: [],
+    node: ["fflate", "fast-xml-parser", "fast-formula-parser", "@formulajs/formulajs"],
+    npm: ["fflate@0.8.3", "fast-xml-parser@5.12.0", "fast-formula-parser@1.0.19", "@formulajs/formulajs@4.6.1"],
+    binaries: ["node"],
     apt: [],
-    brew: [],
-  },
-  "lbo-model": {
-    python: ["openpyxl"],
-    pip: ["openpyxl"],
-    binaries: [],
-    apt: [],
-    brew: [],
-  },
-  "comps-analysis": {
-    python: ["openpyxl"],
-    pip: ["openpyxl"],
-    binaries: [],
-    apt: [],
-    brew: [],
-  },
-  "merger-model": {
-    python: ["openpyxl"],
-    pip: ["openpyxl"],
-    binaries: [],
-    apt: [],
-    brew: [],
+    brew: ["node"],
   },
   "graphjin-config": {
     python: [],
@@ -139,12 +64,6 @@ export const KNOWN_SKILL_DEPS: Record<string, SkillDeps> = {
     brew: [],
   },
 };
-
-// Note: the Library sends digital PDF/Office/CSV inputs only to the owned
-// `librarian` service over NEKO_LIBRARIAN_URL; Markdown/text are decoded by the
-// worker. The bundled document-extraction skill below stays for the AGENT's
-// own in-sandbox use and is not a Library fallback. Docling is therefore not a
-// Python dependency in this manifest.
 
 // Union of all pip / apt / brew deps across the manifest. Used by the
 // Dockerfile-time installer to bake everything into the image, and by the

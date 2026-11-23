@@ -12,15 +12,16 @@ import (
 
 func newLogsCmd() *cobra.Command {
 	var follow bool
+	var tail int
 	cmd := &cobra.Command{
 		Use:   "logs [service...]",
 		Short: "Stream logs from one or more services",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := configureBackupEnvironment(); err != nil {
-				return err
+			if _, ok := nativeInstall(); ok {
+				return logsNative(cmd.Context(), cmd.OutOrStdout(), args, follow, tail)
 			}
 			sup := compose.New(assets.ComposeFS)
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}
@@ -44,5 +45,6 @@ func newLogsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow new log lines")
+	cmd.Flags().IntVar(&tail, "tail", 200, "Native: lines to show from the end of each log; 0 shows all")
 	return cmd
 }

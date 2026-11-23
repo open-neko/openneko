@@ -1,11 +1,8 @@
 // SEC8 — the deployment dial: one env knob resolves the posture; the
-// behavior envelopes shrink with it and org/hardened postures demand an
-	// ADMIN approver for chat-driven plugin management.
+// behavior envelopes shrink with it.
 
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  profileBehaviorThresholds,
-  profilePolicyDefaults,
   reportDeploymentProfile,
   resolveDeploymentProfile,
 } from "../src/work/deployment-profile";
@@ -29,26 +26,6 @@ describe("SEC8 deployment profiles", () => {
     process.env.OPENNEKO_PROFILE = "Hardened";
     expect(resolveDeploymentProfile()).toBe("hardened");
   });
-
-  it("tightens behavior envelopes as the posture hardens", () => {
-    const solo = profileBehaviorThresholds("solo");
-    const org = profileBehaviorThresholds("org");
-    const hardened = profileBehaviorThresholds("hardened");
-    expect(org.controlPlaneCallsPerRun).toBe(
-      Math.floor(solo.controlPlaneCallsPerRun / 2),
-    );
-    expect(hardened.actionRequestsPerHour).toBe(
-      Math.floor(solo.actionRequestsPerHour / 4),
-    );
-    expect(hardened.memoryWritesPerHour).toBeGreaterThanOrEqual(1);
-  });
-
-	  it("requires an admin approver for plugin management in every profile", () => {
-	    expect(profilePolicyDefaults("solo").pluginApproverRole).toBe("admin");
-	    expect(profilePolicyDefaults("team").pluginApproverRole).toBe("admin");
-	    expect(profilePolicyDefaults("org").pluginApproverRole).toBe("admin");
-	    expect(profilePolicyDefaults("hardened").pluginApproverRole).toBe("admin");
-	  });
 
   it("hardened warns when the model host is a public cloud API", () => {
     process.env.OPENNEKO_PROFILE = "hardened";

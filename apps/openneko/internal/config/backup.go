@@ -9,16 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
-
-const backupKeyFilename = "backup-key"
-
-// LegacyBackupKeyPath is where releases before repository-bound backup keys
-// stored their per-install key. It is read only for a one-time migration; new
-// keys live in the state directory selected by the CLI.
-func LegacyBackupKeyPath(overrideDir string) string {
-	return filepath.Join(Dir(overrideDir), backupKeyFilename)
-}
 
 // ReadBackupKey reads a key without ever printing it and tightens its mode
 // when the caller owns the file. Key files are deliberately plain files so
@@ -77,6 +70,11 @@ func WriteBackupKey(path, value string) error {
 	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		return err
+	}
+	if err := ownonly.Set(path); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
 		return err
 	}
 	if _, err := file.WriteString(value + "\n"); err != nil {

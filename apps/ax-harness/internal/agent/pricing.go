@@ -1,6 +1,6 @@
 package agent
 
-import "github.com/open-neko/openneko/apps/ax-harness/internal/catalog"
+import "github.com/open-neko/openneko/apps/ax-harness/catalog"
 
 // CostSummary is the admission charge in USD micros at Ax catalog rates.
 // Missing provider usage retains its reservation. It is an estimate, not a

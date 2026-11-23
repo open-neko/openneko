@@ -1,0 +1,141 @@
+package serve
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/open-neko/openneko/apps/ax-harness/embedding"
+	"github.com/open-neko/openneko/apps/ax-harness/harness"
+	"github.com/open-neko/openneko/apps/ax-harness/inference"
+)
+
+func frames(t *testing.T, c *client) []Frame {
+	t.Helper()
+	var out []Frame
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case frame, ok := <-c.frames:
+			if !ok {
+				return out
+			}
+			out = append(out, frame)
+			if frame.Type == "exit" {
+				return out
+			}
+		case <-timeout:
+			t.Fatal("serve did not finish the call")
+		}
+	}
+}
+
+func TestServeRunsAHostModelCallWithTheCallersKey(t *testing.T) {
+	var gotKey, gotFallbackKey string
+	var gotRequest inference.Request
+	socket := startServer(t, &Server{Generate: func(_ context.Context, request inference.Request, key, fallbackKey string) (inference.Result, error) {
+		gotKey, gotFallbackKey, gotRequest = key, fallbackKey, request
+		return inference.Result{Outputs: map[string]any{"answer": "42"}, Usage: inference.Usage{Requests: 1, Reported: 1, InputTokens: 3, OutputTokens: 1, TotalTokens: 4, Coverage: "complete"}}, nil
+	}})
+	request, _ := json.Marshal(inference.Request{Route: inference.Route{Provider: "openai", Model: "m"}, Signature: "question:string -> answer:string", Values: map[string]any{"question": "q"}})
+	got := frames(t, dial(t, socket, Frame{Type: "generate", Generate: request, ModelKey: "org-key", FallbackKey: "fallback-key"}))
+	if len(got) != 2 || got[0].Type != "result" || got[1].Type != "exit" || *got[1].Code != 0 {
+		t.Fatalf("frames = %+v", got)
+	}
+	var result inference.Result
+	if err := json.Unmarshal(got[0].Result, &result); err != nil || result.Outputs["answer"] != "42" || result.Usage.InputTokens != 3 {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	if gotKey != "org-key" || gotFallbackKey != "fallback-key" || gotRequest.Route.Model != "m" || gotRequest.Values["question"] != "q" {
+		t.Fatalf("key = %q, request = %+v", gotKey, gotRequest)
+	}
+}
+
+func TestServeReportsAFailedHostModelCall(t *testing.T) {
+	socket := startServer(t, &Server{Generate: func(context.Context, inference.Request, string, string) (inference.Result, error) {
+		return inference.Result{}, errors.New("provider said no")
+	}})
+	request, _ := json.Marshal(inference.Request{Route: inference.Route{Provider: "openai", Model: "m"}, Signature: "question:string -> answer:string"})
+	got := frames(t, dial(t, socket, Frame{Type: "generate", Generate: request}))
+	if len(got) != 1 || got[0].Type != "exit" || *got[0].Code != 1 || got[0].Error != "provider said no" {
+		t.Fatalf("frames = %+v", got)
+	}
+	got = frames(t, dial(t, socket, Frame{Type: "generate"}))
+	if len(got) != 1 || *got[0].Code != 2 {
+		t.Fatalf("a generate frame without a request: %+v", got)
+	}
+}
+
+func TestServeRunsAnEmbeddingCallWithTheCallersKey(t *testing.T) {
+	var gotKey string
+	var gotRequest embedding.Request
+	socket := startServer(t, &Server{Embed: func(_ context.Context, request embedding.Request, key string) (embedding.Result, error) {
+		gotKey, gotRequest = key, request
+		return embedding.Result{Vectors: [][]float64{{0.5, 0.25}}, Model: request.Model}, nil
+	}})
+	request, _ := json.Marshal(embedding.Request{URL: "http://embedder/v1", Model: "m", Input: []string{"hello"}})
+	got := frames(t, dial(t, socket, Frame{Type: "embed", Embed: request, ModelKey: "embed-key"}))
+	if len(got) != 2 || got[0].Type != "result" || *got[1].Code != 0 {
+		t.Fatalf("frames = %+v", got)
+	}
+	var result embedding.Result
+	if err := json.Unmarshal(got[0].Result, &result); err != nil || len(result.Vectors) != 1 || result.Vectors[0][1] != 0.25 {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	if gotKey != "embed-key" || gotRequest.Input[0] != "hello" {
+		t.Fatalf("key = %q, request = %+v", gotKey, gotRequest)
+	}
+	got = frames(t, dial(t, socket, Frame{Type: "embed"}))
+	if len(got) != 1 || *got[0].Code != 2 {
+		t.Fatalf("an embed frame without a request: %+v", got)
+	}
+}
+
+func TestServeRunsHostCallsWhenAgentTurnsAreOff(t *testing.T) {
+	off := "agent confinement: off. Linux 4.18.0 has no Landlock, so agent turns are off"
+	socket := startServer(t, &Server{TurnsOff: off,
+		Generate: func(context.Context, inference.Request, string, string) (inference.Result, error) {
+			return inference.Result{Outputs: map[string]any{"answer": "42"}}, nil
+		},
+		Embed: func(context.Context, embedding.Request, string) (embedding.Result, error) {
+			return embedding.Result{Vectors: [][]float64{{1}}}, nil
+		}})
+	request, _ := json.Marshal(inference.Request{Route: inference.Route{Provider: "openai", Model: "m"}, Signature: "question:string -> answer:string"})
+	if got := frames(t, dial(t, socket, Frame{Type: "generate", Generate: request})); len(got) != 2 || got[0].Type != "result" || *got[1].Code != 0 {
+		t.Fatalf("a host model call with turns off: %+v", got)
+	}
+	embed, _ := json.Marshal(embedding.Request{URL: "http://embed.example/v1", Model: "e", Input: []string{"x"}})
+	if got := frames(t, dial(t, socket, Frame{Type: "embed", Embed: embed})); len(got) != 2 || got[0].Type != "result" || *got[1].Code != 0 {
+		t.Fatalf("an embedding call with turns off: %+v", got)
+	}
+	got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`)}))
+	if last := got[len(got)-1]; last.Type != "exit" || *last.Code != 2 || last.Error != off {
+		t.Fatalf("a turn with turns off: %+v", got)
+	}
+}
+
+func TestServeRunsATurnOnlyInAConfinedRunner(t *testing.T) {
+	ran := 0
+	run := func(context.Context, harness.Turn) (int, error) { ran++; return 0, nil }
+	for name, srv := range map[string]*Server{
+		"in-process":            {Run: run},
+		"runner that is open":   {Run: run, Runner: []string{"/nonexistent/openneko", "agent-runner"}},
+		"turns off on a system": {Run: run, TurnsOff: "agent confinement: off. Linux 4.18.0 has no Landlock, so agent turns are off"},
+	} {
+		socket := startConfinedServer(t, srv)
+		got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`), Environ: []string{"OPENNEKO_SERVE_CONFINE=off", "OPENNEKO_ENV=development"}}))
+		if last := got[len(got)-1]; last.Type != "exit" || *last.Code != 2 || ran != 0 {
+			t.Fatalf("%s: a turn ran with no confinement: ran = %d, %+v", name, ran, got)
+		}
+	}
+
+	confined := 0
+	srv := &Server{Run: run}
+	srv.confine = func([]string) error { confined++; return nil }
+	socket := startConfinedServer(t, srv)
+	if got := frames(t, dial(t, socket, Frame{Type: "start", Spec: json.RawMessage(`{}`)})); *got[len(got)-1].Code != 0 || confined != 1 || ran != 1 {
+		t.Fatalf("a runner that confines itself: confined = %d, ran = %d, %+v", confined, ran, got)
+	}
+}

@@ -10,11 +10,11 @@
 
 > The intelligence is rented; the findings, rules, and decisions are yours. Models keep changing — the memory of how your business actually runs (promises, exceptions, baselines, decisions) shouldn't live inside the vendor that rents you the model. OpenNeko keeps the agent **and** that memory on your infrastructure.
 
-![OpenNeko on mobile — Briefing, Ask, Workflows](cfo-briefing.png)
+![OpenNeko on mobile](cfo-briefing.png)
 
 ## Quickstart
 
-You'll need **Docker** and **one LLM provider API key**.
+You'll need **Docker** on Linux or macOS (or PostgreSQL 16+ for the [native install](INSTALL.md#run-without-docker-native) on Linux, macOS or Windows) and **one LLM provider API key**.
 
 ```bash
 curl -fsSL https://openneko.app/install.sh | sh
@@ -22,21 +22,21 @@ mkdir -p ~/openneko && cd ~/openneko
 openneko setup --mode demo
 ```
 
-The installer detects your OS/arch (Homebrew on macOS, a checksum-verified release binary on Linux) and checks for Docker. `openneko setup` then runs preflight checks, brings up the stack, and walks you through configuration **right in the terminal** — admin password, data source, model provider + key. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`) to finish the wizard at [http://localhost:3000](http://localhost:3000).
+The installer detects your OS/arch (Homebrew on macOS, a checksum-verified release binary on Linux) and checks for Docker. `openneko setup` then runs preflight checks, brings up the stack, and walks you through configuration **right in the terminal** — admin password, data source, model provider + key. Prefer a browser? Choose **browser** at the first prompt (or pass `--skip-onboarding`) to finish the wizard at [http://localhost:3000](http://localhost:3000). Without Docker, run `scripts/install-native.sh` on Linux or macOS, or `scripts/install-native.ps1` on Windows, then `openneko start --native` against your Postgres database (see [INSTALL.md](INSTALL.md#run-without-docker-native)). Windows runs the native install only.
 
-The demo seeds three watchers against sample data — kick off **Slow-Ship Operations** from `/workflows` and watch an *"orders stuck in pending > 5 days"* finding land on your Briefing.
+The demo seeds four workflows against sample data. Run **Slow-Ship Operations** from `/workflows`, and an *"orders stuck in pending > 5 days"* finding shows on its run page under `/runs`.
 
 Full propose-and-approve walkthrough, the live trial (order simulator + scenario injector), and connecting your own data → **[INSTALL.md](INSTALL.md)**.
 
 Hosting several smaller customers on one VM? Named installations isolate each
-customer's Compose project, databases, secrets, sandbox state, backups, ports,
-and Docker network. See [Multiple customer instances](INSTALL.md#multiple-customer-instances-on-one-host).
+customer's Compose project, databases, secrets, files, backups, ports and
+Docker network. See [Multiple customer instances](INSTALL.md#multiple-customer-instances-on-one-host).
 
 ## What you get
 
 The full feature catalog, in plain language, lives in **[FEATURES.md](FEATURES.md)** — ask-anything answers, chat-first administration, watchers, channels (Slack / Telegram), personal-vs-team knowledge, and the verifiable security model. The highlights:
 
-- **Operational findings on the Briefing.** A SKU below reorder, orders stuck in *pending* for days, payment retries piling up — checked on a schedule and posted as findings.
+- **Operational findings.** A SKU below reorder, orders stuck in *pending* for days, payment retries piling up — checked on a schedule and posted as findings.
 - **Watchers you describe in plain English.** *"Alert me when any SKU's on-hand stock drops below its reorder point."* OpenNeko schedules it, runs it, and writes up what it found.
 - **Actions drafted, not auto-fired.** Slack alerts, Gmail follow-ups, Sheets updates, Shopify writes — proposed with the finding that triggered them, queued for your approval. Write a rule when you want a specific class of safe action to auto-fire.
 - **Follow-up questions about your data, in chat.** *"Which territories drove this week's revenue drop?"* — drill in on a finding without leaving the app or writing SQL.
@@ -48,6 +48,7 @@ OpenNeko reads through **[GraphJin](https://graphjin.com)**, a GraphQL gateway y
 
 - **Databases** — Postgres, MySQL, and [more](https://graphjin.com), with an auto-generated query surface.
 - **Files, external APIs, custom code** — first-class GraphQL fields via GraphJin's script layer.
+- **From chat or a pack.** An admin connects a database by answering a few questions in a card. OpenNeko checks the connection, shows what the config will do, and applies it after the admin approves. For Magento, Shopify and the other packed systems, the card asks only for the address and the login.
 
 One consistent surface no matter where the data lives — you don't write per-connector plumbing.
 
@@ -57,41 +58,39 @@ OpenNeko separates the *intelligence* (the model) from the *memory* (your busine
 
 The memory layer runs on your own Postgres, on your own infrastructure:
 
-- **Findings & briefings** — every watcher run and result, kept against the watcher that produced it.
+- **Findings** — every watcher run and result, kept against the watcher that produced it.
 - **Pinned facts & learned rules** — what the agent figured out and you confirmed, kept separate from what the agent proposed and you haven't decided on yet.
-- **Document library** — files you upload, distilled by a librarian agent into concepts the assistant searches and cites. Private to you until you share; team knowledge only after a human approves it.
+- **Document library** — documents and spreadsheets you upload, private to you. The assistant searches them, reads them whole, and answers questions over spreadsheet data with SQL, citing the file and page or sheet it used.
 - **Action policies** — your rules for what auto-fires, what queues, what's blocked.
 - **Decision history** — every approval, rejection, and execution receipt.
 
-Apache-2.0 core, self-hosted, single Postgres. Take a backup, take it with you — and the team library exports as a plain-Markdown [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) bundle any OKF-aware tool can read.
+Apache-2.0 core, self-hosted, single Postgres. Take a backup, take it with you: `openneko backup` writes one encrypted file with the database and config. Your skills are plain-Markdown `SKILL.md` files, and your library is the files you uploaded.
 
-## Plugins
+## Integrations, channels and sign-in
 
-Add new action kinds with sandboxed plugins — web search, Slack, Gmail, Shopify, Sheets, Telegram, and more. Enterprise SSO comes from the Scalekit plugin: install it, authorize the workspace from **Admin → Settings → Single sign-on** (a guided checklist), and every Scalekit-backed IdP (Okta, Entra ID, Google Workspace…) lights up — plus the agent gains 35 workspace-management tools.
+Integrations ship as **solution packs** — sources, API specs, actions, workflows and skills for an application, installed from **Admin → Settings → Solution packs** or `openneko pack install`. See **[PACKS.md](PACKS.md)**.
 
-- **Every plugin runs in an isolated OpenShell sandbox**, with outbound network limited to what its manifest declares.
-- **Secrets are scoped per plugin** and never reach the model context.
-
-Browse the [marketplace](https://open-neko.github.io/plugins/) · capability model, install policy, and host support in **[PLUGINS.md](PLUGINS.md)**.
-
-```bash
-openneko install @open-neko/plugin-scalekit
-```
+- **Channels are built in.** Slack, Telegram and the HUD come with the core; a channel turns on when you save its credentials at **Admin → Settings → Channels**.
+- **Sign-in is built in.** Enterprise SSO and directory sync come from Scalekit: authorize the workspace from **Admin → Settings → Single sign-on** (a guided checklist) and every Scalekit-backed IdP (Okta, Entra ID, Google Workspace…) lights up. Email-link sign-in is the lighter option for small teams.
+- **Secrets never reach the model context.** Channel, sign-in and pack credentials live in the encrypted secrets store.
 
 ## Under the hood
 
-- **Self-hosted via Docker.** One binary, one `start` command. Data lives on your Postgres.
-- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the sandboxed agent runtime.
-- **Plugins in OpenShell sandboxes.** Outbound network is allowlisted per manifest, not blanket-open.
-- **Agent in a sandbox by default.** The agent loop itself runs inside an OpenShell policy sandbox — default-deny egress, and the model API key never enters the box (the gateway proxy injects it on the wire). See [OPENSHELL.md](OPENSHELL.md).
+- **Self-hosted on Linux, macOS and Windows.** One binary, one `start` command. Linux and macOS run the Docker stack or the native install; Windows runs the native install. The systemd server install is for Linux. Data lives on your Postgres.
+- **Installable mobile web app.** Add to Home Screen on a phone, pair devices with an 8-letter code (`/device`), sign high-risk action approvals with WebAuthn passkeys, and receive encrypted Web Push notifications when an approval waits, a run finishes, or a workflow needs attention.
+- **Bring your own LLM.** The Ax agent runs against Anthropic, OpenAI, Google, Ollama, and other compatible providers. Change providers without changing the agent runtime.
+- **The agent runs no code in OpenNeko.** The agent loop runs in `openneko serve`, apart from the control plane, and reaches data only through `openneko web`'s per-run tool bridge. Its terminal runs only in an optional sandbox service that holds no secrets. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
+- **Optional services by URL.** An embedding service (search by meaning), a sandbox service (the terminal and the document skills) and a trace collector each connect by URL. OpenNeko works with each one off.
 - **Apache-2.0.** Read the source, self-host, fork, and build on it. OpenNeko trademarks are separately controlled — see [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Evaluations
 
 OpenNeko evaluates an agent backend through the production Work runtime, not as
-an isolated model call. The suite exercises skills, memories, library retrieval,
-workflows, Records, governed actions, channel delivery, compaction, and GraphJin
-tools against a frozen AdventureWorks snapshot.
+an isolated model call. The suite exercises skills, memories, file search,
+workflows, governed actions, channel delivery, compaction, and GraphJin tools
+against a frozen AdventureWorks snapshot. The rows below come from earlier
+releases. The Hermes backend and the Records task (`s05`) are no longer in the
+product, so the current v4 suite has 64 tasks.
 
 | Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: |
@@ -104,18 +103,17 @@ tools against a frozen AdventureWorks snapshot.
 ## Stack modes
 
 `openneko start|setup|upgrade --mode prod|dev|demo` picks which Compose layers the
-CLI deploys. Every mode shares the same core: app + records Postgres, migrations,
-backup/restore, web, worker, three internal GraphJin instances (app
-subscriptions, records, records-watch), plus the customer-facing GraphJin in
-sources (agentic) mode. The OpenShell sandbox runtime (gateway, registry,
-certgen) is always layered on top — it is the only way agents and plugins run,
-in every mode.
+CLI deploys. Every mode shares the same core: migrations, `web` and
+`openneko serve`. OpenNeko's own Postgres is yours in prod mode, by URL; dev
+and demo modes run one in a container. In every mode, `openneko serve` runs file search,
+every agent turn, the customer-facing GraphJin in sources (agentic) mode and
+the internal GraphJin for app subscriptions.
 
 | Mode | Layers on top of core | What's different |
 |------|----------------------|------------------|
-| **prod** (default) | none | Core stack only. You connect your own data source; actions run for real. |
-| **demo** | AdventureWorks sample DB, seed job, order simulator, scenario injector | Customer GraphJin points at the sample data. What `openneko setup --mode demo` gives you. |
-| **dev** | none (reserved overlay) | For working on OpenNeko itself: Docker runs only the dependency services while web and worker hot-reload as host processes (`pnpm dev:setup && pnpm dev`, using the repo's root `compose.yml`) — see [CONTRIBUTING.md](CONTRIBUTING.md). |
+| **prod** (default) | none | Core stack only, with your Postgres for OpenNeko's database. You connect your own data source; actions run for real. |
+| **demo** | OpenNeko's database in a container, AdventureWorks sample DB, seed job, order simulator, scenario injector | Customer GraphJin points at the sample data. What `openneko setup --mode demo` gives you. |
+| **dev** | OpenNeko's database in a container | For working on OpenNeko itself: Docker runs the backing services while `openneko web` and `openneko serve` run as host processes (`pnpm dev:setup && pnpm dev`, using the repo's root `compose.yml`) — see [CONTRIBUTING.md](CONTRIBUTING.md). |
 
 **Solution packs** (e.g. `openneko pack install magento`) are not a mode: they
 layer onto a running stack in any mode, adding sources, specs, and saved queries
@@ -123,13 +121,11 @@ to the customer GraphJin config at runtime.
 
 ## Docs
 
-- [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including RBAC and warm sandbox access revisions
+- [ROADMAP.md](ROADMAP.md) — implementation follow-ups, including per-request access checks
 - [PACKS.md](PACKS.md) — authoring solution packs, directory layout, connectors, validation, and contributions
-- [CONTEXT_REPOSITORY.md](CONTEXT_REPOSITORY.md) — version history of skills and workflows, and an optional GitHub, GitLab or other git remote
 - [INSTALL.md](INSTALL.md) — install, [upgrade](INSTALL.md#upgrade), requirements, troubleshooting, connecting your data, full demo trial
-- [PLUGINS.md](PLUGINS.md) — plugin capabilities, sandbox/security model, marketplaces, install policy, host support
-- [OPENSHELL.md](OPENSHELL.md) — preview: running the agent itself in an OpenShell policy sandbox (architecture, security, how to enable)
-- [SECRETS.md](SECRETS.md) — secrets at rest and the optional Infisical vault (enterprise)
+- [AGENT_RUNTIME.md](AGENT_RUNTIME.md) — how the agent runs: `openneko web`, `openneko serve` and the optional sandbox service, and what each holds
+- [SECRETS.md](SECRETS.md) — secrets at rest in the local secrets file
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, repo layout, pre-PR checks
 - [evals/README.md](evals/README.md) — community-configurable harness evals,
   AdventureWorks baselines, resumable runs, checked-in results, and production

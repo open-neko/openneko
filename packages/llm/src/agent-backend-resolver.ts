@@ -19,7 +19,8 @@ import type { AxBackendConfig } from "./agent-backends/ax";
 import { isReasoningEffort } from "./agent-limits";
 import { makeAgentBackend } from "./agent-runtime";
 import { isPrimaryProvider } from "./config";
-import { resolveAxModelRoute } from "./provider-runtime";
+import { recordPrice, taskRouteRecords, type ModelRecord } from "./model-routes";
+import { resolveAxModelRoute, type AxModelRoute } from "./provider-runtime";
 
 type StoredRow = {
   provider: string;
@@ -94,7 +95,7 @@ function positiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
-/** Ax needs the route itself, not only the identity; the key stays in OpenShell. */
+/** Ax needs the route itself, not only the identity; the launcher loads the key per run. */
 export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefined {
   const model = row?.model?.trim();
   if (!row?.enabled || !model || !isPrimaryProvider(row.provider)) return undefined;
@@ -108,16 +109,45 @@ export function axBackendConfig(row: StoredRow | null): AxBackendConfig | undefi
   };
 }
 
+function recordRow(record: ModelRecord): StoredRow {
+  return { provider: record.provider, model: record.model, enabled: record.enabled, config: record.config };
+}
+
+function recordRoute(record: ModelRecord): AxModelRoute | undefined {
+  if (!isPrimaryProvider(record.provider)) return undefined;
+  const price = recordPrice(record);
+  try {
+    return { ...resolveAxModelRoute({ provider: record.provider, model: record.model, config: record.config ?? {} }), ...(price ? { price } : {}) };
+  } catch {
+    return undefined;
+  }
+}
+
+async function turnRecords(orgId: string): Promise<Awaited<ReturnType<typeof taskRouteRecords>> | undefined> {
+  try {
+    return await taskRouteRecords(orgId, "turn");
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Resolve the org's backend and its non-secret configured model identity. The
- * real provider key remains independently provisioned through OpenShell and is
- * never returned with the backend.
+ * Resolve the org's backend and the non-secret route of the "turn" task: its
+ * model, and the fallback model when one is set. Keys never travel with it.
+ * `model` overrides the model name for this run.
  */
-/** `model` overrides the primary model for this run. */
 export async function resolveAgentBackend(orgId: string, backendId?: AgentBackendId, model?: string): Promise<AgentBackend> {
-  const [id, primary] = await Promise.all([
+  const [id, primary, records] = await Promise.all([
     backendId ?? resolveAgentBackendId(orgId),
     loadRow(orgId, "primary"),
+    turnRecords(orgId),
   ]);
-  return makeAgentBackend({ id, ax: axBackendConfig(model && primary ? { ...primary, model } : primary) });
+  const base = records?.primary ? recordRow(records.primary) : primary;
+  const ax = axBackendConfig(model && base ? { ...base, model } : base);
+  const price = records?.primary ? recordPrice(records.primary) : undefined;
+  const fallback = records?.fallback ? recordRoute(records.fallback) : undefined;
+  return makeAgentBackend({
+    id,
+    ax: ax && { ...ax, route: { ...ax.route, ...(price ? { price } : {}) }, ...(fallback ? { fallback } : {}) },
+  });
 }

@@ -9,6 +9,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { matchesListSearch } from "@/lib/list-search";
+import { withRunEventFormat } from "@/lib/run-event-format";
 
 type ThreadSummary = {
   id: string;
@@ -40,7 +41,7 @@ export default function AskHistoryPanel({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/work/threads", { cache: "no-store" })
+    fetch("/api/v1/work/threads", { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as { threads: ThreadSummary[] };
@@ -73,7 +74,7 @@ export default function AskHistoryPanel({
       destructive: true,
     });
     if (!ok) return;
-    const res = await fetch(`/api/work/threads/${threadId}`, {
+    const res = await fetch(withRunEventFormat(`/api/v1/work/threads/${threadId}`), {
       method: "DELETE",
     });
     if (!res.ok) return;

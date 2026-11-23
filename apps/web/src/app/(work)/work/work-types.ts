@@ -36,10 +36,12 @@ export type WorkEvent =
   // reconstructs the full assistant text. Mirrors `AgentEvent.message` in
   // packages/llm/src/agent-backend.ts.
   | { type: "message"; role: "user" | "assistant"; content: string }
+  | { type: "answer_reset" }
+  | { type: "card_pending" }
   | { type: "interim"; id: string; content: string; source: "hermes_interim_assistant" }
-  | { type: "tool_start"; id: string; name: string; input?: unknown }
+  | { type: "tool_start"; id: string; name: string; input?: unknown; label?: string }
   | { type: "tool_delta"; id: string; delta: unknown }
-  | { type: "tool_end"; id: string; result?: unknown; error?: string }
+  | { type: "tool_end"; id: string; result?: unknown; error?: string; failed?: boolean; label?: string }
   | { type: "surface"; messages: A2UIMessage[] }
   | { type: "artifact"; artifact: { path: string; label: string; mimeType?: string } }
   | { type: "status"; message: string }
@@ -48,9 +50,10 @@ export type WorkEvent =
       id: string;
       content: string;
       source: "provider_summary";
-      provider: "google-gemini" | "anthropic";
+      provider: string;
     }
   | { type: "error"; message: string }
+  | { type: "notice"; code: string; message: string }
   | {
       type: "capability_denied";
       capability: "network_egress";
@@ -68,6 +71,7 @@ export type WorkEvent =
       risk_level?: string;
       intent?: string;
       summary?: string;
+      facts?: ApprovalFacts;
       decision: "auto_approved" | "pending_approval";
     }
   | {
@@ -142,17 +146,22 @@ export type PendingMemory = {
 export type ToolItem = {
   id: string;
   name: string;
+  /** What the call does, in plain words, from the server. */
+  label?: string;
   input?: unknown;
   deltas: unknown[];
   end?: Extract<WorkEvent, { type: "tool_end" }>;
   approval?: ApprovalItem;
 };
 
+export type ApprovalFacts = { headline: string; lines: string[]; flags: string[] };
+
 export type ApprovalItem = {
   actionRequestId: string;
   actionKind: string;
   intent: string | null;
   summary: string | null;
+  facts: ApprovalFacts | null;
   decision: "auto_approved" | "pending_approval";
   result:
     | Extract<WorkEvent, { type: "action_request_result" }>
@@ -161,6 +170,7 @@ export type ApprovalItem = {
 
 export type TimelineItem =
   | { kind: "text"; content: string }
+  | { kind: "card_pending" }
   | { kind: "interim"; id: string; content: string }
   | { kind: "progress"; id: string; content: string }
   | { kind: "tools"; tools: ToolItem[] }
@@ -174,6 +184,7 @@ export type TimelineItem =
       request: Extract<WorkEvent, { type: "needs_input" }>;
     }
   | { kind: "error"; message: string }
+  | { kind: "notice"; message: string }
   | { kind: "stopped" };
 
 export type RunArtifact = Extract<WorkEvent, { type: "artifact" }>["artifact"];

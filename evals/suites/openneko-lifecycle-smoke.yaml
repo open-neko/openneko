@@ -1,10 +1,10 @@
 schema_version: openneko.eval.suite/v1
 id: openneko-lifecycle-smoke
-version: 1.0.0
+version: 1.1.0
 description: Executable watcher and approval-governed mutation lifecycle coverage.
 cases:
   - { ref: ../datasets/openneko-control-plane/cases/w01-condition-matrix.yaml }
-  - { ref: ../datasets/openneko-control-plane/cases/w02-lifecycle.yaml }
+  - { ref: ../datasets/openneko-control-plane/cases/w02-lifecycle-v2.yaml }
   - { ref: ../datasets/openneko-control-plane/cases/a01-policy-matrix.yaml }
   - { ref: ../datasets/openneko-control-plane/cases/a02-action-lifecycle.yaml }
 gates:

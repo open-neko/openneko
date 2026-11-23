@@ -1,14 +1,14 @@
-import { connection } from "next/server";
-import { getSpendSettings } from "@neko/llm/spend";
-import { AdminDenied } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
+"use client";
+
+import AdminLoad from "@/app/admin/AdminLoad";
 import SpendForm from "./SpendForm";
 
-export default async function SettingsSpendPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type Initial = Parameters<typeof SpendForm>[0]["initial"];
 
-  return <SpendForm initial={await getSpendSettings(await getOrgId())} />;
+export default function SettingsSpendPage() {
+  return (
+    <AdminLoad title="Spending limits" paths={["/api/v1/admin/spend"]}>
+      {([initial]) => <SpendForm initial={initial as Initial} />}
+    </AdminLoad>
+  );
 }

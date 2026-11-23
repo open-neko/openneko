@@ -16,6 +16,9 @@ import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/cn";
 import { matchesListSearch } from "@/lib/list-search";
 import SkillLearnCard from "./SkillLearnCard";
+import ProposedRules, { type RuleProposal } from "./ProposedRules";
+import PackChoices, { type PackChoice } from "./PackChoices";
+import TeamProposals, { type TeamProposal } from "./TeamProposals";
 
 type Policy = {
   id: string;
@@ -100,76 +103,39 @@ function describeLimits(limits: Record<string, unknown>): string | null {
   return `Limits: ${parts.join(" · ")}`;
 }
 
-type PluginActionDescriptor = {
-  kind: string;
-  description: string;
-  default_mode?:
-    | "auto"
-    | "ask"
-    | "deny"
-    | {
-        external?: "auto" | "ask" | "deny";
-        internal?: "auto" | "ask" | "deny";
-      };
-};
-
-function resolveEffectiveMode(
-  kind: string,
-  policies: Policy[],
-): { mode: string; policyId: string | null } {
-  // Most specific match wins: a kind-explicit, external-scoped,
-  // enabled, highest-priority policy. Fall back to a kind-empty
-  // external_default if nothing kind-specific exists. Mirrors how
-  // evaluateActionPolicy walks policies at runtime — but kept
-  // visually simple here (a single "current mode" per kind).
-  const candidates = policies
-    .filter((p) => p.enabled)
-    .filter(
-      (p) => p.appliesToScopes.length === 0 || p.appliesToScopes.includes("external"),
-    );
-  const kindSpecific = candidates
-    .filter((p) => p.appliesToKinds.includes(kind))
-    .sort((a, b) => a.priority - b.priority);
-  if (kindSpecific[0]) {
-    return { mode: kindSpecific[0].mode, policyId: kindSpecific[0].id };
-  }
-  const generic = candidates
-    .filter((p) => p.appliesToKinds.length === 0)
-    .sort((a, b) => a.priority - b.priority);
-  if (generic[0]) {
-    return { mode: generic[0].mode, policyId: generic[0].id };
-  }
-  return { mode: "no policy", policyId: null };
-}
-
 export default function RulesClient() {
   const router = useRouter();
   const [policies, setPolicies] = useState<Policy[] | null>(null);
-  const [pluginDescriptors, setPluginDescriptors] = useState<
-    PluginActionDescriptor[]
-  >([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [proposals, setProposals] = useState<RuleProposal[]>([]);
+  const [teamProposals, setTeamProposals] = useState<TeamProposal[]>([]);
+  const [packChoices, setPackChoices] = useState<PackChoice[]>([]);
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      fetch("/api/policies", { cache: "no-store" }).then((r) => {
+    void fetch("/api/v1/policies/proposals", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ proposals: RuleProposal[] }>) : { proposals: [] }))
+      .then((result) => {
+        if (!cancelled) setProposals(result.proposals ?? []);
+      })
+      .catch(() => undefined);
+    void fetch("/api/v1/admin/team-proposals", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ proposals: TeamProposal[] }>) : { proposals: [] }))
+      .then((result) => {
+        if (!cancelled) setTeamProposals(result.proposals ?? []);
+      })
+      .catch(() => undefined);
+    void fetch("/api/v1/policies", { cache: "no-store" })
+      .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<{ policies: Policy[] }>;
-      }),
-      fetch("/api/plugins/action-descriptors", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : { descriptors: [] }))
-        .then(
-          (data) =>
-            (data as { descriptors?: PluginActionDescriptor[] }).descriptors ?? [],
-        )
-        .catch(() => [] as PluginActionDescriptor[]),
-    ])
-      .then(([policiesResult, descriptors]) => {
+        return r.json() as Promise<{ policies: Policy[]; packChoices?: PackChoice[] }>;
+      })
+      .then((policiesResult) => {
         if (cancelled) return;
         setPolicies(policiesResult.policies ?? []);
-        setPluginDescriptors(descriptors);
+        setPackChoices(policiesResult.packChoices ?? []);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -178,7 +144,7 @@ export default function RulesClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [revision]);
 
   const filteredPolicies = policies?.filter((policy) =>
     matchesListSearch(
@@ -220,14 +186,19 @@ export default function RulesClient() {
 
         <div className="mb-5 max-w-[520px]">
           <SearchInput
-            label="Search rules and action kinds"
+            label="Search rules"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search rules and action kinds"
+            placeholder="Search rules"
           />
         </div>
 
         <SkillLearnCard />
+
+        <ProposedRules proposals={proposals} onDecided={() => setRevision((n) => n + 1)} />
+
+        <PackChoices choices={packChoices} onDecided={() => setRevision((n) => n + 1)} />
+        <TeamProposals proposals={teamProposals} onDecided={() => setRevision((n) => n + 1)} />
 
         {error ? (
           <div className="py-14 text-center text-sm text-danger">{error}</div>
@@ -235,21 +206,6 @@ export default function RulesClient() {
           <SkeletonList rows={3} variant="row" label="Loading rules" />
         ) : (
           <>
-            {pluginDescriptors.length > 0 ? (
-              <InstalledPluginsSection
-                descriptors={pluginDescriptors}
-                policies={policies}
-                query={query}
-                onEditPolicy={(policyId) => {
-                  const policy = policies.find((p) => p.id === policyId);
-                  const name = policy?.name ?? "this rule";
-                  router.push(
-                    `/work?seed=${encodeURIComponent(`Update the '${name}' rule to `)}`,
-                  );
-                }}
-              />
-            ) : null}
-
             {policies.length === 0 ? (
               <div className="py-14 px-6 text-center text-sm text-text3 leading-[1.55] max-w-[520px] mx-auto">
                 No rules yet. Defaults are seeded automatically the first time a
@@ -379,141 +335,5 @@ function Row({
       </dt>
       <dd className="m-0 text-text break-words">{children}</dd>
     </div>
-  );
-}
-
-function pluginNameFromKind(kind: string): string {
-  // Cheap heuristic — most kinds are namespaced like `slack_send_message`
-  // or `web_search`. We don't actually have a reverse-lookup from kind
-  // to plugin without the descriptor, so callers group descriptors
-  // outside this function. Used only as a fallback header.
-  return kind.split("_")[0] ?? kind;
-}
-
-function describeDefaultMode(
-  mode: PluginActionDescriptor["default_mode"],
-): string {
-  if (mode === undefined) return "no default declared";
-  if (typeof mode === "string") {
-    if (mode === "auto") return "auto by default";
-    if (mode === "ask") return "asks by default";
-    if (mode === "deny") return "denied by default";
-    return "no default declared";
-  }
-  const parts: string[] = [];
-  if (mode.external) parts.push(`external: ${mode.external}`);
-  if (mode.internal) parts.push(`internal: ${mode.internal}`);
-  return parts.length > 0 ? parts.join(" · ") : "no default declared";
-}
-
-function InstalledPluginsSection({
-  descriptors,
-  policies,
-  query,
-  onEditPolicy,
-}: {
-  descriptors: PluginActionDescriptor[];
-  policies: Policy[];
-  query: string;
-  onEditPolicy: (policyId: string) => void;
-}) {
-  // descriptors are flat across plugins; the kind name itself carries
-  // the plugin namespace (e.g. send_slack_*, web_search) since we
-  // committed to Option-A namespacing earlier in the design. Group
-  // for display by the leading token — close enough until plugins
-  // tell us their package name in the descriptor (a small follow-up).
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleDescriptors = descriptors.filter((descriptor) =>
-    [descriptor.kind, descriptor.description, pluginNameFromKind(descriptor.kind)]
-      .some((value) => value.toLowerCase().includes(normalizedQuery)),
-  );
-  const groups = new Map<string, PluginActionDescriptor[]>();
-  for (const d of visibleDescriptors) {
-    const key = pluginNameFromKind(d.kind);
-    const list = groups.get(key) ?? [];
-    list.push(d);
-    groups.set(key, list);
-  }
-
-  return (
-    <section className="mt-8 mb-6">
-      <div className="flex items-baseline justify-between mb-2.5">
-        <h2 className="font-display text-ui-section font-bold tracking-[-0.01em] text-text">
-          Installed plugins
-        </h2>
-        <span className="font-mono text-ui-label text-text3">
-          {visibleDescriptors.length} of {descriptors.length} action kind
-          {descriptors.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <p className="text-ui-body-sm leading-[1.5] text-text2 mb-3 max-w-[640px]">
-        Plugins contribute action kinds the agent can call from /work. Each
-        kind&apos;s effective approval mode comes from the rule whose
-        <em> applies-to-kinds </em>
-        includes it; everything else falls through to{" "}
-        <code className="font-mono text-ui-caption bg-neutral px-1 rounded">
-          external_default
-        </code>
-        . Click a kind to edit the rule that governs it.
-      </p>
-      {groups.size === 0 ? (
-        <div className="border-y border-border py-8 text-center text-ui-body-sm text-text2">
-          No plugin action kinds match “{query}”.
-        </div>
-      ) : (
-        <ul className="list-none p-0 m-0 flex flex-col gap-2">
-          {[...groups.entries()].map(([groupName, kinds]) => (
-            <li key={groupName}>
-              <Disclosure
-                title={groupName}
-                meta={`${kinds.length} kind${kinds.length === 1 ? "" : "s"}`}
-                open={normalizedQuery ? true : undefined}
-              >
-                <div className="flex flex-col gap-2">
-                  {kinds.map((descriptor) => {
-                    const { mode, policyId } = resolveEffectiveMode(
-                      descriptor.kind,
-                      policies,
-                    );
-                    return (
-                      <div
-                        key={descriptor.kind}
-                        className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-1 py-2.5 last:border-0 max-[640px]:items-stretch max-[640px]:flex-col"
-                      >
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <code className="font-mono text-ui-caption text-text [overflow-wrap:anywhere]">
-                            {descriptor.kind}
-                          </code>
-                          <span className="text-ui-caption text-text3 max-[640px]:whitespace-normal [overflow-wrap:anywhere]">
-                            {descriptor.description}
-                          </span>
-                        </div>
-                        <div className="flex min-w-0 items-center justify-end gap-2 flex-wrap max-[640px]:justify-start">
-                          <Badge variant={modePillVariant(mode)}>
-                            {describeMode(mode)}
-                          </Badge>
-                          <span className="min-w-0 text-ui-label text-text3 [overflow-wrap:anywhere]">
-                            {describeDefaultMode(descriptor.default_mode)}
-                          </span>
-                          {policyId ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onEditPolicy(policyId)}
-                            >
-                              Edit rule
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </Disclosure>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }

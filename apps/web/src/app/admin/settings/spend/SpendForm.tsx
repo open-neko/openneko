@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type { MetricRefresh, SpendLimitsUsd, SpendSettings, SpendWindowUsage, WorkflowSpendRow } from "@neko/llm/spend";
+import { taskLabel } from "@neko/llm/model-tasks";
 import { AdminError } from "@/components/admin/AdminError";
 import { adminApi } from "@/components/admin/admin-api";
 import AppHeader from "@/components/AppHeader";
@@ -51,7 +52,7 @@ export default function SpendForm({ initial }: { initial: SpendSettings }) {
       ...Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, Number(value)])),
       metricRefresh,
     };
-    const result = await adminApi<SpendSettings>("/api/admin/spend", "PUT", body);
+    const result = await adminApi<SpendSettings>("/api/v1/admin/spend", "PUT", body);
     setSaving(false);
     if (!result.ok) return setError(result.error);
     setSettings(result.body);
@@ -78,6 +79,8 @@ export default function SpendForm({ initial }: { initial: SpendSettings }) {
           <UsageCard title="This hour" usage={settings.org.hour} warnPercent={settings.limits.warnPercent} />
           <UsageCard title="Today" usage={settings.org.day} warnPercent={settings.limits.warnPercent} />
         </section>
+
+        <SpendByModel settings={settings} />
 
         <form onSubmit={saveLimits} className="settings-card mt-6 flex flex-col gap-5">
           <div>
@@ -164,7 +167,7 @@ function SpendAlerts({ settings, onSaved }: { settings: SpendSettings; onSaved: 
   async function acknowledge(alertId: string) {
     setBusy(alertId);
     setError(null);
-    const result = await adminApi<SpendSettings>(`/api/admin/spend/alerts/${alertId}`, "DELETE");
+    const result = await adminApi<SpendSettings>(`/api/v1/admin/spend/alerts/${alertId}`, "DELETE");
     setBusy(null);
     if (!result.ok) return setError(result.error);
     onSaved(result.body);
@@ -248,6 +251,49 @@ function UsageCard({ title, usage, warnPercent }: { title: string; usage: SpendW
   );
 }
 
+function SpendByModel({ settings }: { settings: SpendSettings }) {
+  return (
+    <section className="settings-card mt-6 flex flex-col gap-4" aria-label="Spend by task and model">
+      <div>
+        <h2 className="settings-card-title">Last 30 days by task and model</h2>
+        <p className="settings-card-copy">
+          Agent turns and the short calls OpenNeko makes for itself. A short call with no price counts as no cost; a turn
+          with no price is charged the per-run cap. Add a price to a model in Models.
+        </p>
+      </div>
+      {settings.byModel.length === 0 ? (
+        <p className="text-ui-body-sm text-text3">No model calls in the last 30 days.</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Task</TableHead>
+              <TableHead>Model</TableHead>
+              <TableHead className="text-right">Calls</TableHead>
+              <TableHead className="text-right">Tokens</TableHead>
+              <TableHead className="text-right">Spend</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {settings.byModel.map((row) => (
+              <TableRow key={`${row.task}:${row.provider}:${row.model}`}>
+                <TableCell>{taskLabel(row.task)}</TableCell>
+                <TableCell className="break-all">{row.provider && row.model ? `${row.provider}/${row.model}` : "Not recorded"}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.calls.toLocaleString("en-US")}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.tokens.toLocaleString("en-US")}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {usd(row.spentUsd)}
+                  {row.unpricedCalls > 0 ? <span className="block text-ui-caption text-text3">{row.unpricedCalls} with no price</span> : null}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </section>
+  );
+}
+
 function WorkflowBudgets({ settings, onSaved }: { settings: SpendSettings; onSaved: (s: SpendSettings) => void }) {
   const [error, setError] = useState<string | null>(null);
   return (
@@ -318,7 +364,7 @@ function WorkflowBudgetRow({
       method === "PUT"
         ? { hourlyUsd: hourly.trim() ? Number(hourly) : null, dailyUsd: daily.trim() ? Number(daily) : null }
         : undefined;
-    const result = await adminApi<SpendSettings>(`/api/admin/spend/workflows/${row.workflowId}`, method, body);
+    const result = await adminApi<SpendSettings>(`/api/v1/admin/spend/workflows/${row.workflowId}`, method, body);
     setBusy(false);
     if (!result.ok) return onError(`${row.name}: ${result.error}`);
     onSaved(result.body);

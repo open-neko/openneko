@@ -172,7 +172,6 @@ same four families:
 | actions + policy | fake adapters, receipts, seeded approval rules | state-machine (propose/approve/execute/idempotency), safety (policy precedence, no bypass), audit chain | decide, act |
 | channels | fake channel transcripts | contract (delivery/degradation projection), method (single delivery) | act |
 | records | seeded app/object registry | value + state (reads/writes honor schema and policy) | understand, act |
-| delegation (GraphJin agent) | already a config variant (`data_path`) | method + usage coverage (inner/outer attribution) | understand |
 | compaction / resume | long-thread fixture replayed with and without compaction | differential (phase outcomes must not change), method (retained decisions/figures) | all |
 
 Reading or invoking a skill outside the case's allowed set is a contextual

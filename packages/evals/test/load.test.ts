@@ -87,7 +87,7 @@ describe("threshold policy capability registry", () => {
       ),
     );
     const loaded = await loadEval(configPath);
-    expect(loaded.cases).toHaveLength(65);
+    expect(loaded.cases).toHaveLength(64);
     expect(loaded.thresholdPolicy?.version).toBe("4.0.0");
   });
 

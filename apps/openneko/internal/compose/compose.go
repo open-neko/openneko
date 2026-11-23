@@ -10,12 +10,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -45,7 +48,7 @@ type Supervisor struct {
 	//   compose/core.yml
 	//   compose/dev.yml
 	//   compose/demo.yml
-	//   compose/plugins.linux.yml
+	//   compose/bundled-db.yml
 	AssetsFS fs.FS
 	// RuntimeDir is where compose files are written. Defaults to
 	// $OPENNEKO_WORKSPACE_ROOT/.openneko/runtime/ when that variable is set,
@@ -53,6 +56,9 @@ type Supervisor struct {
 	RuntimeDir string
 	// GOOS lets tests stub the platform.
 	GOOS string
+	// Notice receives the warning about ignored override entries; nil is stderr.
+	Notice          io.Writer
+	overrideNoticed bool
 }
 
 func New(assets fs.FS) *Supervisor {
@@ -90,7 +96,21 @@ func (s *Supervisor) runtimeDir() (string, error) {
 
 // Materialize writes the embedded compose files for the given mode into the
 // runtime dir and returns the list of `-f` paths to pass to `docker compose`.
+// Dev and demo modes get the bundled database; prod mode does not.
 func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
+	return s.MaterializeStack(mode, mode == ModeDev || mode == ModeDemo)
+}
+
+// MaterializeStack is Materialize with an explicit choice of the bundled
+// database. A prod install takes it only as a legacy install.
+// Overlay is a compose file that the CLI writes at start, after the
+// embedded files and before the operator's compose.override.yml.
+type Overlay struct {
+	Name string
+	Data []byte
+}
+
+func (s *Supervisor) MaterializeStack(mode Mode, bundledDB bool, overlays ...Overlay) ([]string, error) {
 	rt, err := s.runtimeDir()
 	if err != nil {
 		return nil, err
@@ -99,6 +119,11 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 		return nil, err
 	}
 	files := []string{"compose/core.yml"}
+	// The bundled database goes before the mode file: Compose 2.40 drops its
+	// !reset of the URL secret when demo.yml sits between it and core.yml.
+	if bundledDB {
+		files = append(files, "compose/bundled-db.yml")
+	}
 	switch mode {
 	case ModeDev:
 		files = append(files, "compose/dev.yml")
@@ -109,8 +134,6 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("compose: unknown mode %q (want prod|dev|demo)", mode)
 	}
-	// SEC9: OpenShell is the only runtime — its overlay always applies.
-	files = append(files, "compose/openshell.yml")
 	var out []string
 	for _, name := range files {
 		raw, err := fs.ReadFile(s.AssetsFS, name)
@@ -123,11 +146,19 @@ func (s *Supervisor) Materialize(mode Mode) ([]string, error) {
 		}
 		out = append(out, dst)
 	}
-	override := filepath.Join(config.Dir(""), "compose.override.yml")
-	if _, err := os.Stat(override); err == nil {
-		out = append(out, override)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	for _, overlay := range overlays {
+		dst := filepath.Join(rt, overlay.Name)
+		if err := os.WriteFile(dst, overlay.Data, 0o644); err != nil {
+			return nil, err
+		}
+		out = append(out, dst)
+	}
+	override, err := s.overrideFile(rt)
+	if err != nil {
 		return nil, err
+	}
+	if override != "" {
+		out = append(out, override)
 	}
 	return out, nil
 }
@@ -175,7 +206,7 @@ func (s *Supervisor) ProjectName(modeIfStarting Mode) (string, error) {
 // InstallationID returns a random identity tied to this runtime directory.
 // It separates two OpenNeko stacks that use the same mode/project name from
 // different working directories. Reinstalling in the same directory reuses
-// it; a genuinely new installation gets a new backup repository by default.
+// it; `openneko backup` keys and default backup directories are scoped by it.
 func (s *Supervisor) InstallationID() (string, error) {
 	rt, err := s.runtimeDir()
 	if err != nil {
@@ -216,48 +247,6 @@ func (s *Supervisor) InstallationID() (string, error) {
 		return "", err
 	}
 	return value, nil
-}
-
-// RotateInstallationID gives the next set of newly created database volumes a
-// fresh backup namespace. The previous repository is deliberately retained so
-// it can still be restored with its exported key.
-func (s *Supervisor) RotateInstallationID() (string, string, error) {
-	rt, err := s.runtimeDir()
-	if err != nil {
-		return "", "", err
-	}
-	oldID, err := s.InstallationID()
-	if err != nil {
-		return "", "", err
-	}
-	newID, err := generateInstallationID()
-	if err != nil {
-		return "", "", err
-	}
-	staging, err := os.CreateTemp(rt, ".installation-id-*")
-	if err != nil {
-		return "", "", err
-	}
-	stagingPath := staging.Name()
-	if err := staging.Chmod(0o600); err != nil {
-		_ = staging.Close()
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	if _, err := staging.WriteString(newID + "\n"); err != nil {
-		_ = staging.Close()
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	if err := staging.Close(); err != nil {
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	if err := os.Rename(stagingPath, filepath.Join(rt, installationIDMarker)); err != nil {
-		_ = os.Remove(stagingPath)
-		return "", "", err
-	}
-	return oldID, newID, nil
 }
 
 func generateInstallationID() (string, error) {
@@ -344,11 +333,32 @@ func (s *Supervisor) WriteImageVersion(version string) error {
 	return os.WriteFile(filepath.Join(rt, imageVersionMarker), []byte(strings.TrimSpace(version)+"\n"), 0o644)
 }
 
+// optionalSecrets feed compose secrets that may be empty. Compose refuses
+// to start a service whose secret variable is unset.
+var optionalSecrets = []string{"OPENNEKO_SANDBOX_KEY", "NEKO_EMBEDDING_API_KEY"}
+
+// ComposeEnv sets each optional secret variable that env lacks to empty.
+func ComposeEnv(env []string) []string {
+	out := slices.Clip(env)
+	for _, name := range optionalSecrets {
+		if !slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, name+"=") }) {
+			out = append(out, name+"=")
+		}
+	}
+	return out
+}
+
 // Run shells out to `docker compose -p <project> -f <files…> <args…>`,
 // forwarding I/O and signals. Returns the child's exit code. Pass
 // projectName as the empty string to let docker compose default to the
 // runtime dir name (not recommended).
 func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []string, stdout, stderr *os.File) (int, error) {
+	return s.RunIO(ctx, projectName, files, args, os.Stdin, stdout, stderr)
+}
+
+// RunIO is Run with caller-supplied streams, so a command such as
+// `exec -T neko-db pg_dump` can be streamed into or out of the CLI.
+func (s *Supervisor) RunIO(ctx context.Context, projectName string, files, args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	dockerArgs := []string{"compose"}
 	if projectName != "" {
 		dockerArgs = append(dockerArgs, "-p", projectName)
@@ -358,9 +368,10 @@ func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []
 	}
 	dockerArgs = append(dockerArgs, args...)
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	cmd.Env = ComposeEnv(os.Environ())
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Stdin = os.Stdin
+	cmd.Stdin = stdin
 	if err := cmd.Start(); err != nil {
 		return 1, err
 	}
@@ -386,6 +397,23 @@ func (s *Supervisor) Run(ctx context.Context, projectName string, files, args []
 			return 0, nil
 		}
 	}
+}
+
+// VolumeExists reports whether Docker has a volume with this name.
+func (s *Supervisor) VolumeExists(ctx context.Context, name string) (bool, error) {
+	var stderr strings.Builder
+	cmd := exec.CommandContext(ctx, "docker", "volume", "ls", "-q", "--filter", "name=^"+regexp.QuoteMeta(name)+"$")
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("docker volume ls: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // EnsureImage pulls image unless it's already present locally. Used to warm the

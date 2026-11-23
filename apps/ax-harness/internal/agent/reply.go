@@ -30,6 +30,16 @@ func (w writtenAnswer) answer(modelText string) string {
 	return text + w.cards
 }
 
+// replyWrittenPayload tells whether the reader got the written text or the
+// responder's own text with the reply's cards.
+func replyWrittenPayload(reply writtenAnswer, answer string) json.RawMessage {
+	payload, _ := json.Marshal(struct {
+		Explicit      bool `json:"explicit"`
+		ResponderText bool `json:"responder_text"`
+	}{reply.explicit, answer != reply.text+reply.cards})
+	return payload
+}
+
 var cardFence = regexp.MustCompile("(?s)```neko_cards\\s.*?```")
 
 // writtenReply turns replyAsWritten's argument into the final answer: the
@@ -60,7 +70,7 @@ func writtenReply(value ax.Value) (writtenAnswer, error) {
 	var fences strings.Builder
 	for _, card := range cards {
 		if _, ok := card.(map[string]ax.Value); !ok {
-			return writtenAnswer{}, errors.New("each card must be an object of render_cards arguments")
+			return writtenAnswer{}, errors.New("each card must be an object of card fields")
 		}
 		data, err := json.Marshal(plainValue(card))
 		if err != nil {

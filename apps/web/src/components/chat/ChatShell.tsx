@@ -22,6 +22,7 @@ import { BotMoodProvider, useBotMood } from "./bot-mood";
 import { ChatSidebar } from "./ChatSidebar";
 import { NekoStyleProvider, useNekoStyle } from "./neko-style";
 import { BotsProvider, useBots } from "./useBots";
+import { signOut } from "@/lib/sign-out";
 
 const STYLE_LABELS: Record<NekoStyle, string> = {
   robot: "Robot",
@@ -65,14 +66,6 @@ function ProfileMenu({ identity }: { identity?: RailIdentity }) {
   const user = identity?.user;
   const label = user?.name || user?.email || "You";
   const isAdmin = identity?.mode === "solo" || identity?.mode === "admin";
-
-  async function signOut() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/signin";
-    }
-  }
 
   return (
     <DropdownMenu>

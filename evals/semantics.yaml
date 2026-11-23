@@ -108,8 +108,8 @@ entries:
       - apps/worker/src
   - id: RUNTIME-SANDBOX
     category: runtime-backend
-    description: Every production agent runs in the required OpenShell boundary with
-      declared mounts and capabilities
+    description: Every agent turn runs in openneko serve; terminal commands run only
+      in the sandbox service, with declared mounts and capabilities
     verification: containment E2E
     disposition: declared
     owners:
@@ -183,15 +183,6 @@ entries:
     description: Direct GraphJin execution returns grounded read-only results
       through the brokered path
     verification: runtime oracle
-    disposition: eval
-    owners:
-      - packages/llm/src/graphjin
-      - packages/llm/src/work
-  - id: DATA-DELEGATED
-    category: data-calculation
-    description: Delegated GraphJin agent results carry sufficient
-      data/evidence/usage and obey read-only policy
-    verification: outer+inner trace + oracle
     disposition: eval
     owners:
       - packages/llm/src/graphjin
@@ -555,9 +546,9 @@ entries:
       - packages/llm/src/work
   - id: WORK-CONFIG-VCS
     category: work-context
-    description: Snapshot/history/restore/promote/adopt of config artifacts preserve
-      semantic content and attribution
-    verification: repository/DB oracle
+    description: Promote/adopt/copy/share of config artifacts preserve semantic
+      content, and each change adds a config_change row with its attribution
+    verification: DB oracle
     disposition: declared
     owners:
       - packages/llm/src/work
@@ -799,9 +790,7 @@ entries:
     verification: adapter + dedupe oracle
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: CHANNEL-WORKSPACE-ROUTE
     category: channels-plugins
     description: External workspace/conversation maps to the correct org and
@@ -809,9 +798,7 @@ entries:
     verification: DB routing oracle
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: CHANNEL-IDENTITY
     category: channels-plugins
     description: Sender linking by explicit approval or verified identity assigns
@@ -819,9 +806,7 @@ entries:
     verification: cross-identity E2E
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: CHANNEL-DELIVERY
     category: channels-plugins
     description: Output messages, cards/degradation, receipts, errors, and
@@ -829,18 +814,14 @@ entries:
     verification: fake channel transcript
     disposition: eval
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: CHANNEL-BACKOFF
     category: channels-plugins
     description: Poll failures back off without duplicate delivery or log/run floods
     verification: fake clock/load
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: ADMIN-USER
     category: channels-plugins
     description: Invite, role change, deactivate/reactivate, and authorization
@@ -848,9 +829,7 @@ entries:
     verification: control-plane state oracle
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: ADMIN-SOURCE
     category: channels-plugins
     description: Source registry/config/role changes use secure forms for secrets
@@ -858,9 +837,7 @@ entries:
     verification: state + no-secret oracle
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: ADMIN-CHANNEL
     category: channels-plugins
     description: Workspace/member/link administration is scoped, attributable, and
@@ -868,9 +845,7 @@ entries:
     verification: state + policy oracle
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: ADMIN-PLUGIN
     category: channels-plugins
     description: Plugin list/install/remove/update surfaces permissions and enforces
@@ -878,9 +853,7 @@ entries:
     verification: registry + approval oracle
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: PLUGIN-MANIFEST
     category: channels-plugins
     description: Manifest validation and declared capabilities/egress match runtime
@@ -888,9 +861,7 @@ entries:
     verification: contract test
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: PLUGIN-SANDBOX
     category: channels-plugins
     description: Each plugin receives only declared mounts, credentials, and network
@@ -898,9 +869,7 @@ entries:
     verification: containment E2E
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: PLUGIN-HOT-RELOAD
     category: channels-plugins
     description: Install/remove/secret rotation reconciles the live registry without
@@ -908,9 +877,7 @@ entries:
     verification: lifecycle E2E
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: PLUGIN-ACTION
     category: channels-plugins
     description: Plugin actions become correctly described agent tools and execute
@@ -918,9 +885,7 @@ entries:
     verification: tool + fake adapter
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: PLUGIN-CONNECT
     category: channels-plugins
     description: Connector discovery, per-user OAuth/token refresh, and source sync
@@ -928,9 +893,7 @@ entries:
     verification: fake OAuth + sync oracle
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: PLUGIN-CHANNEL
     category: channels-plugins
     description: Channel capabilities register and drive inbound/outbound through
@@ -938,9 +901,7 @@ entries:
     verification: plugin contract
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
+      - apps/openneko/internal/webfront
   - id: PLUGIN-AUTH
     category: channels-plugins
     description: Singleton auth capability, sign-in, group/role mapping, and session
@@ -948,104 +909,7 @@ entries:
     verification: fake OIDC + DB
     disposition: declared
     owners:
-      - packages/channels
-      - packages/plugin-types
-      - packages/plugin-install
-  - id: RECORDS-REGISTRY
-    category: records
-    description: App/object definitions, availability mirror, and catalog remain consistent
-    verification: catalog/schema oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-SCHEMA-PLAN
-    category: records
-    description: Schema proposals, previews, counterproposals, DDL saga, and audit
-      are deterministic and recoverable
-    verification: state-machine E2E
-    disposition: eval
-    owners:
-      - packages/records
-  - id: RECORDS-READ
-    category: records
-    description: List/detail/reference/aggregate queries honor filters, ordering,
-      cursors, and projections
-    verification: query/result oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-WRITE
-    category: records
-    description: Create/update/delete/backfill validate fields/references and record
-      change history
-    verification: pre/post-state oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-RECYCLE
-    category: records
-    description: Soft-deleted records are listed/restored/purged only with correct
-      permission
-    verification: state + auth oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-POLICY
-    category: records
-    description: App/object/field/row permissions and actor synchronization match
-      GraphJin enforcement
-    verification: cross-role differential
-    disposition: eval
-    owners:
-      - packages/records
-  - id: RECORDS-IMPORT
-    category: records
-    description: CSV/artifact plan hash, sampling, batched execution, rejects,
-      cancellation, resume, and receipt are correct
-    verification: import fixture oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-CONNECT
-    category: records
-    description: Salesforce export/sync/cursor/cutover handle deltas, retries,
-      conflicts, and provenance
-    verification: fake connector + DB
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-IDENTITY
-    category: records
-    description: Imported users reconcile/link/conflict/ignore and backfill
-      ownership without scope escalation
-    verification: identity state oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-WATCH
-    category: records
-    description: Starter watches bind/reconcile and enqueue evaluation exactly once
-      per source event
-    verification: event/receipt oracle
-    disposition: declared
-    owners:
-      - packages/records
-  - id: RECORDS-ACTION
-    category: records
-    description: Records action execution obeys policy and produces the intended
-      record mutation/receipt
-    verification: action + state oracle
-    disposition: eval
-    owners:
-      - packages/records
-  - id: RECORDS-OPS
-    category: records
-    description: Health, lifecycle, system findings, backup verification, and ops
-      watches report real conditions
-    verification: fault-injected smoke
-    disposition: declared
-    owners:
-      - packages/records
+      - apps/openneko/internal/webfront
   - id: SEC-PRINCIPAL
     category: security-governance
     description: Human/service identity and backend actor are snapshotted and
@@ -1054,7 +918,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-TENANT
     category: security-governance
     description: Org boundaries hold across data, records, threads, memory, files,
@@ -1063,7 +926,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-AUTHZ
     category: security-governance
     description: Admin/member/service and source roles allow exactly their declared
@@ -1072,7 +934,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-TOOL-ALLOWLIST
     category: security-governance
     description: Backend/operator-local tools outside the run catalog are unreachable
@@ -1080,7 +941,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-EGRESS
     category: security-governance
     description: Undeclared network access is denied and emitted as a structured
@@ -1089,7 +949,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-SECRETS
     category: security-governance
     description: Keys stay outside sandboxes/model context and are scrubbed from
@@ -1098,7 +957,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-PROMPT-INJECTION
     category: security-governance
     description: Untrusted data/tool content cannot override data, action, identity,
@@ -1107,7 +965,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-APPROVAL
     category: security-governance
     description: Consequential changes cannot bypass proposal/policy/approval paths
@@ -1115,7 +972,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-AUDIT-CHAIN
     category: security-governance
     description: Append-only chain sequence/hash verifies and exposes logging
@@ -1124,7 +980,6 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-BEHAVIOR
     category: security-governance
     description: Excessive action/memory/control-plane rates raise the expected
@@ -1133,7 +988,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-DEPLOYMENT-PROFILE
     category: security-governance
     description: Solo/team/org/hardened defaults change controls coherently while
@@ -1142,7 +996,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: SEC-TELEMETRY
     category: security-governance
     description: Content mode, redaction, cardinality, tenant hashing, retention,
@@ -1151,7 +1004,6 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/work
-      - packages/records/src/policy
   - id: OPS-JOB-LIFECYCLE
     category: operability-recovery
     description: Queue, running, retrying, succeeded, failed, and cancelled states
@@ -1207,8 +1059,8 @@ entries:
       - apps/openneko/internal
   - id: OPS-BACKUP
     category: operability-recovery
-    description: Records backup and verification detect corruption/missing data and
-      report safely
+    description: Backup files verify in full before restore, and restore reports
+      failures safely
     verification: backup restore test
     disposition: declared
     owners:

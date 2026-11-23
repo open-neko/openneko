@@ -21,7 +21,7 @@ async function verifyScreenshot(page: Page, testInfo: TestInfo, name: string) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route("**/api/admin/packs", route => route.fulfill({ json: { packs: [] } }));
+  await page.route("**/api/v1/admin/packs", route => route.fulfill({ json: { packs: [] } }));
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
   await page.clock.setFixedTime(new Date("2026-08-29T08:00:00.000Z"));
 });
@@ -31,7 +31,7 @@ test("pack catalog has loading and empty states at desktop and phone widths", as
     await page.setViewportSize({ width, height: 900 });
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
-    await page.route("**/api/admin/packs", async route => {
+    await page.route("**/api/v1/admin/packs", async route => {
       await pending;
       await route.fulfill({ json: { packs: [] } });
     });
@@ -45,7 +45,7 @@ test("pack catalog has loading and empty states at desktop and phone widths", as
     await expect(page.getByLabel("Pack archive", { exact: true })).toBeVisible();
     const controlHeight = await page.getByLabel("Pack archive", { exact: true }).evaluate(el => el.getBoundingClientRect().height);
     expect(controlHeight).toBeGreaterThanOrEqual(width === 390 ? 44 : 40);
-    await page.unroute("**/api/admin/packs");
+    await page.unroute("**/api/v1/admin/packs");
   }
 });
 

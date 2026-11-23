@@ -24,13 +24,12 @@ import {
 const ts = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "date" });
 
-// pgvector column. Stored as `vector(N)`; we don't read it back into JS
-// (similarity search uses raw SQL with the `<=>` operator). Drizzle just
-// needs to know the type exists so inserts typecheck.
-const vector = (name: string, dim: number) =>
+// pgvector column without a fixed dimension: the configured embedding model
+// decides it, and embedding_model records which model wrote each vector.
+const vector = (name: string) =>
   customType<{ data: string; driverData: string }>({
     dataType() {
-      return `vector(${dim})`;
+      return "vector";
     },
   })(name);
 
@@ -284,116 +283,6 @@ export const sso_setup = pgTable(
   },
 );
 
-
-// Availability mirror for the records-engine registry. The records database
-// remains authoritative for app definitions; metadata consumers use this
-// narrow projection for navigation, orchestration, and degraded-state checks.
-export const app_state = pgTable(
-  "app_state",
-  {
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    app_id: text("app_id").notNull(),
-    status: text("status").notNull().default("draft"),
-    created_by: text("created_by").references(() => app_user.id, {
-      onDelete: "set null",
-    }),
-    created_at: ts("created_at").notNull().defaultNow(),
-    config: jsonb("config")
-      .$type<Record<string, unknown>>()
-      .notNull()
-      .default(sql`'{}'::jsonb`),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.org_id, t.app_id] }),
-    org_status_idx: index("app_state_org_status_idx").on(t.org_id, t.status),
-  }),
-);
-
-export const records_ops_health = pgTable(
-  "records_ops_health",
-  {
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    check_name: text("check_name").notNull(),
-    level: text("level").notNull(),
-    sample: jsonb("sample")
-      .$type<Record<string, unknown>>()
-      .notNull()
-      .default(sql`'{}'::jsonb`),
-    sampled_at: ts("sampled_at").notNull(),
-    updated_at: ts("updated_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.org_id, t.check_name] }),
-    org_level_idx: index("records_ops_health_org_level_idx").on(
-      t.org_id,
-      t.level,
-      t.updated_at.desc(),
-    ),
-  }),
-);
-
-export const records_watch_binding = pgTable(
-  "records_watch_binding",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    app_id: text("app_id").notNull(),
-    watch_key: text("watch_key").notNull(),
-    workflow_id: uuid("workflow_id")
-      .notNull()
-      .references(() => workflow_definition.id, { onDelete: "cascade" }),
-    graphjin_watch_id: text("graphjin_watch_id").notNull(),
-    definition_hash: text("definition_hash").notNull(),
-    enabled: boolean("enabled").notNull().default(true),
-    status: text("status").notNull().default("active"),
-    last_evaluated_at: ts("last_evaluated_at"),
-    last_error: text("last_error"),
-    created_at: ts("created_at").notNull().defaultNow(),
-    updated_at: ts("updated_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    org_app_watch_unique: uniqueIndex("records_watch_binding_org_app_watch_unique").on(
-      t.org_id,
-      t.app_id,
-      t.watch_key,
-    ),
-    graphjin_watch_unique: uniqueIndex("records_watch_binding_graphjin_watch_unique").on(
-      t.graphjin_watch_id,
-    ),
-    due_idx: index("records_watch_binding_due_idx").on(
-      t.org_id,
-      t.enabled,
-      t.status,
-      t.last_evaluated_at,
-    ),
-  }),
-);
-
-export const records_watch_event_receipt = pgTable(
-  "records_watch_event_receipt",
-  {
-    event_id: text("event_id").primaryKey(),
-    binding_id: uuid("binding_id")
-      .notNull()
-      .references(() => records_watch_binding.id, { onDelete: "cascade" }),
-    payload_hash: text("payload_hash").notNull(),
-    received_at: ts("received_at").notNull().defaultNow(),
-    queued_at: ts("queued_at"),
-  },
-  (t) => ({
-    binding_idx: index("records_watch_event_receipt_binding_idx").on(
-      t.binding_id,
-      t.received_at,
-    ),
-  }),
-);
-
 export const data_source = pgTable(
   "data_source",
   {
@@ -538,8 +427,7 @@ export const metric = pgTable(
     definition_version: integer("definition_version"),
     definition_hash: text("definition_hash"),
     created_by_job: uuid("created_by_job").references(() => processing_job.id),
-    // Denormalized refresh status — read by /api/briefing so the dashboard
-    // can render pending vs failed cards without joining processing_job.
+    // Denormalized refresh status.
     // Writers: metric-refresh.ts (success/failure) and bootstrap-metrics-build.ts
     // ('pending' on insert).
     last_refresh_status: text("last_refresh_status"),
@@ -655,28 +543,6 @@ export const operator_profile = pgTable(
   (t) => ({
     org_user_unique: uniqueIndex("operator_profile_org_user_unique").on(
       t.org_id,
-      t.user_id,
-    ),
-  }),
-);
-
-// CV0 — config-vcs ref pointers: the DB knows each org layer's current
-// commit; git holds the content. Team layer = (scope='team', user_id='').
-export const config_ref = pgTable(
-  "config_ref",
-  {
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    scope: text("scope").notNull().default("team"),
-    user_id: text("user_id").notNull().default(""),
-    commit_sha: text("commit_sha").notNull(),
-    updated_at: ts("updated_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    org_scope_user_unique: uniqueIndex("config_ref_org_scope_user_unique").on(
-      t.org_id,
-      t.scope,
       t.user_id,
     ),
   }),
@@ -939,7 +805,6 @@ export const memory_fork = pgTable(
     user_id: text("user_id")
       .notNull()
       .references(() => app_user.id, { onDelete: "cascade" }),
-    baseline_sha: text("baseline_sha").notNull().default(""),
     baseline_at: ts("baseline_at").notNull().defaultNow(),
     frozen: boolean("frozen").notNull().default(false),
     created_at: ts("created_at").notNull().defaultNow(),
@@ -1147,6 +1012,45 @@ export const llm_provider_config = pgTable(
   }),
 );
 
+export const llm_model = pgTable(
+  "llm_model",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    config: jsonb("config").notNull().default(sql`'{}'::jsonb`),
+    secrets: jsonb("secrets").notNull().default(sql`'{}'::jsonb`),
+    enabled: boolean("enabled").notNull().default(true),
+    input_usd_per_1m: numeric("input_usd_per_1m", { precision: 12, scale: 4 }),
+    output_usd_per_1m: numeric("output_usd_per_1m", { precision: 12, scale: 4 }),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_name_unique: uniqueIndex("llm_model_org_id_name_key").on(t.org_id, t.name),
+  }),
+);
+
+export const llm_task_route = pgTable(
+  "llm_task_route",
+  {
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    task: text("task").notNull(),
+    model_id: uuid("model_id"),
+    fallback_model_id: uuid("fallback_model_id"),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.org_id, t.task] }),
+  }),
+);
+
 export const work_thread = pgTable(
   "work_thread",
   {
@@ -1187,11 +1091,144 @@ export const skill_embedding = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     skill_name: text("skill_name").notNull(),
     document: text("document").notNull().default(""),
-    embedding: vector("embedding", 384),
+    embedding: vector("embedding"),
+    embedding_model: text("embedding_model"),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
   (t) => ({
     org_skill_idx: uniqueIndex("skill_embedding_org_id_skill_name_key").on(t.org_id, t.skill_name),
+  }),
+);
+
+export const app_device_request = pgTable(
+  "app_device_request",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    device_code_verifier: text("device_code_verifier").notNull().unique(),
+    user_code: text("user_code").notNull().unique(),
+    name: text("name").notNull(),
+    approved_by_user_id: text("approved_by_user_id").references(() => app_user.id, {
+      onDelete: "cascade",
+    }),
+    approved_at: ts("approved_at"),
+    denied_at: ts("denied_at"),
+    last_polled_at: ts("last_polled_at"),
+    expires_at: ts("expires_at").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    org_idx: index("app_device_request_org_idx").on(t.org_id, t.expires_at),
+  }),
+);
+
+export const app_device = pgTable(
+  "app_device",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    token_prefix: text("token_prefix").notNull().unique(),
+    token_verifier: text("token_verifier").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    last_used_at: ts("last_used_at").notNull().defaultNow(),
+    revoked_at: ts("revoked_at"),
+    revoked_by_user_id: text("revoked_by_user_id").references(() => app_user.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => ({
+    org_idx: index("app_device_org_idx").on(t.org_id, t.created_at.desc()),
+    user_idx: index("app_device_user_idx").on(t.user_id),
+    prefix_shape_check: check(
+      "app_device_token_prefix_check",
+      sql`${t.token_prefix} ~ '^onk_dev_[0-9a-f]{12}$'`,
+    ),
+  }),
+);
+
+export const app_passkey = pgTable(
+  "app_passkey",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    credential_id: text("credential_id").notNull(),
+    public_key: text("public_key").notNull(),
+    algorithm: integer("algorithm").notNull().default(-7),
+    sign_count: bigint("sign_count", { mode: "number" }).notNull().default(0),
+    backup_eligible: boolean("backup_eligible"),
+    name: text("name").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    last_used_at: ts("last_used_at"),
+  },
+  (t) => ({
+    cred_unique: uniqueIndex("app_passkey_org_id_credential_id_key").on(t.org_id, t.credential_id),
+    user_idx: index("app_passkey_user_idx").on(t.org_id, t.user_id, t.created_at.desc()),
+  }),
+);
+
+export const app_passkey_challenge = pgTable(
+  "app_passkey_challenge",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(),
+    action_request_id: uuid("action_request_id").references(() => action_request.id, {
+      onDelete: "cascade",
+    }),
+    challenge: text("challenge").notNull().unique(),
+    expires_at: ts("expires_at").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    user_idx: index("app_passkey_challenge_user_idx").on(t.org_id, t.user_id, t.expires_at.desc()),
+  }),
+);
+
+export const app_push_subscription = pgTable(
+  "app_push_subscription",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    org_id: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => app_user.id, { onDelete: "cascade" }),
+    device_id: uuid("device_id").references(() => app_device.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    endpoint_unique: uniqueIndex("app_push_subscription_org_id_endpoint_key").on(
+      t.org_id,
+      t.endpoint,
+    ),
+    user_idx: index("app_push_subscription_user_idx").on(
+      t.org_id,
+      t.user_id,
+      t.created_at.desc(),
+    ),
   }),
 );
 
@@ -1358,7 +1395,8 @@ export const work_memory = pgTable(
     integrity_hmac: text("integrity_hmac"),
     expires_at: ts("expires_at"),
     archived_at: ts("archived_at"),
-    embedding: vector("embedding", 384),
+    embedding: vector("embedding"),
+    embedding_model: text("embedding_model"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
@@ -1458,11 +1496,6 @@ export const work_pending_memory = pgTable(
   }),
 );
 
-// Document library: uploaded files promoted from thread context into a
-// per-user library, distilled by the librarian job into OKF concept docs
-// (see packages/llm/src/library). Personal by default (user_id set),
-// team-visible only via explicit share + approval, mirroring the
-// work_memory overlay rules.
 export const library_document = pgTable(
   "library_document",
   {
@@ -1470,8 +1503,6 @@ export const library_document = pgTable(
     org_id: text("org_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    // NULL user_id = solo/no-auth install (actor has no user id); the
-    // document still behaves as the uploader's personal layer.
     user_id: text("user_id").references(() => app_user.id, {
       onDelete: "cascade",
     }),
@@ -1479,27 +1510,14 @@ export const library_document = pgTable(
       onDelete: "set null",
     }),
     filename: text("filename").notNull(),
-    // Org-workspace-relative path of the raw upload, e.g.
-    // "uploads/<threadId>/<name>" — the citation target.
+    // "files/<path in the owner's openneko serve folder>"; an older upload keeps its workspace path until the worker moves it.
     relative_path: text("relative_path").notNull(),
     content_hash: text("content_hash").notNull(),
     size_bytes: integer("size_bytes").notNull(),
-    status: text("status").notNull().default("uploaded"),
-    skip_reason: text("skip_reason"),
+    // ready once stored in the Library file source; failed when the file
+    // could not be stored or moved there.
+    status: text("status").notNull().default("ready"),
     error: text("error"),
-    // Extraction is a durable async stage. The task/checkpoint is temporary;
-    // the small hashes and extractor fingerprint remain as provenance after
-    // the normalized Markdown artifact has been removed.
-    extract_checkpoint: jsonb("extract_checkpoint"),
-    extracted_relative_path: text("extracted_relative_path"),
-    extracted_content_hash: text("extracted_content_hash"),
-    extractor_fingerprint: text("extractor_fingerprint"),
-    extracted_at: ts("extracted_at"),
-    // Resumable-distillation checkpoint written by the librarian. It binds the
-    // chunk cursor and accumulated ops to source/extraction/plan hashes. NULL
-    // when idle or complete; kept on failure so a retry resumes mid-document.
-    distill_checkpoint: jsonb("distill_checkpoint"),
-    distilled_at: ts("distilled_at"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
@@ -1517,96 +1535,6 @@ export const library_document = pgTable(
       t.org_id,
       t.content_hash,
     ),
-    async_recovery_idx: index("library_document_async_recovery_idx").on(
-      t.status,
-      t.updated_at,
-    ),
-  }),
-);
-
-export const library_concept = pgTable(
-  "library_concept",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    // NULL user_id = team layer (approved, org-visible). Non-NULL =
-    // the owner's personal layer, invisible to everyone else. Path is
-    // unique per (org, layer) — enforced in code, not by constraint,
-    // because NULLs make a plain unique index inert here.
-    user_id: text("user_id").references(() => app_user.id, {
-      onDelete: "cascade",
-    }),
-    // Bundle-relative OKF path, e.g. "policies/refund-policy.md".
-    path: text("path").notNull(),
-    type: text("type").notNull(),
-    title: text("title").notNull(),
-    description: text("description"),
-    tags: jsonb("tags").notNull().default(sql`'[]'::jsonb`),
-    body: text("body").notNull(),
-    status: text("status").notNull().default("draft"),
-    // OKF v0.2 provenance/trust, projected into frontmatter on
-    // materialization: sources point at raw uploads, generated is the
-    // producing actor, verified accumulates human approvals.
-    sources: jsonb("sources").notNull().default(sql`'[]'::jsonb`),
-    generated_by: text("generated_by"),
-    generated_at: ts("generated_at"),
-    verified: jsonb("verified").notNull().default(sql`'[]'::jsonb`),
-    stale_after: date("stale_after"),
-    source_document_id: uuid("source_document_id").references(
-      () => library_document.id,
-      { onDelete: "set null" },
-    ),
-    promoted_from_id: uuid("promoted_from_id"),
-    promoted_by: text("promoted_by"),
-    promoted_at: ts("promoted_at"),
-    archived_at: ts("archived_at"),
-    embedding: vector("embedding", 384),
-    created_at: ts("created_at").notNull().defaultNow(),
-    updated_at: ts("updated_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    org_layer_path_idx: index("library_concept_org_layer_path_idx").on(
-      t.org_id,
-      t.user_id,
-      t.path,
-    ),
-    org_status_idx: index("library_concept_org_status_idx").on(
-      t.org_id,
-      t.status,
-      t.archived_at,
-      t.updated_at.desc(),
-    ),
-    org_user_idx: index("library_concept_org_user_idx").on(
-      t.org_id,
-      t.user_id,
-      t.archived_at,
-    ),
-  }),
-);
-
-export const library_event = pgTable(
-  "library_event",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    org_id: text("org_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    document_id: uuid("document_id").references(() => library_document.id, {
-      onDelete: "set null",
-    }),
-    concept_id: uuid("concept_id").references(() => library_concept.id, {
-      onDelete: "set null",
-    }),
-    user_id: text("user_id"),
-    action: text("action").notNull(),
-    payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
-    created_at: ts("created_at").notNull().defaultNow(),
-  },
-  (t) => ({
-    concept_idx: index("library_event_concept_idx").on(t.concept_id, t.id.desc()),
-    org_recent_idx: index("library_event_org_recent_idx").on(t.org_id, t.id.desc()),
   }),
 );
 
@@ -1638,6 +1566,8 @@ export const workflow_definition = pgTable(
     owner_user_id: text("owner_user_id").notNull().default(""),
     origin_id: uuid("origin_id"),
     parent_id: uuid("parent_id"),
+    team_approved_by: text("team_approved_by"),
+    team_approved_at: ts("team_approved_at"),
     output_contract: jsonb("output_contract"),
     created_by_thread_id: uuid("created_by_thread_id").references(
       () => work_thread.id,
@@ -1967,7 +1897,7 @@ export const workflow_api_admission = pgTable(
     ),
     payload_location_check: check(
       "workflow_api_admission_payload_location",
-      sql`(${t.execution_mode} = 'single' and ${t.request_payload} is not null and ${t.input_file_path} is null and ${t.batch_contract} is null and ${t.accepted_records} is null) or (${t.execution_mode} = 'batch' and ${t.request_payload} is null and ${t.input_file_path} is not null and ${t.batch_contract} is not null and ${t.accepted_records} between 1 and 10000)`,
+      sql`(${t.status} = 'expired' and ${t.request_payload} is null and ${t.input_file_path} is null and ${t.batch_contract} is null) or (${t.execution_mode} = 'single' and ${t.request_payload} is not null and ${t.input_file_path} is null and ${t.batch_contract} is null and ${t.accepted_records} is null) or (${t.execution_mode} = 'batch' and ${t.request_payload} is null and ${t.input_file_path} is not null and ${t.batch_contract} is not null and ${t.accepted_records} between 1 and 10000)`,
     ),
     request_bounds_check: check(
       "workflow_api_admission_request_bounds",
@@ -2998,7 +2928,6 @@ export const skill_usage = pgTable(
     origin: text("origin").notNull(),
     pack_id: text("pack_id"),
     pack_version: text("pack_version"),
-    config_commit_sha: text("config_commit_sha"),
     source: text("source").notNull(),
     first_event_id: bigint("first_event_id", { mode: "number" }).notNull(),
     attempt: integer("attempt").notNull().default(1),
@@ -3082,29 +3011,6 @@ export const skill_learn_event = pgTable(
   }),
 );
 
-export const context_remote = pgTable("context_remote", {
-  org_id: text("org_id")
-    .primaryKey()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  url: text("url").notNull(),
-  mode: text("mode").notNull().default("push"),
-  branch: text("branch").notNull().default("main"),
-  kinds: jsonb("kinds").$type<string[]>().notNull().default(sql`'["skills", "skill-overlays", "workflows"]'::jsonb`),
-  username: text("username"),
-  token: text("token"),
-  ssh_private_key: text("ssh_private_key"),
-  ssh_public_key: text("ssh_public_key"),
-  ssh_known_hosts: text("ssh_known_hosts"),
-  ssh_host_confirmed: boolean("ssh_host_confirmed").notNull().default(false),
-  skill_bases: jsonb("skill_bases").$type<Record<string, string | { remote: string; local?: string }>>().notNull().default(sql`'{}'::jsonb`),
-  last_published_at: timestamp("last_published_at", { withTimezone: true }),
-  last_publish_status: text("last_publish_status"),
-  last_publish_detail: text("last_publish_detail"),
-  last_publish_link: text("last_publish_link"),
-  updated_by_user_id: text("updated_by_user_id").references(() => app_user.id, { onDelete: "set null" }),
-  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
 export const spend_limit = pgTable(
   "spend_limit",
   {
@@ -3184,6 +3090,7 @@ export const spend_ledger = pgTable(
     priced: text("priced").notNull(),
     cost_source: text("cost_source"),
     pricing_version: text("pricing_version"),
+    task: text("task"),
     created_at: ts("created_at").notNull().defaultNow(),
   },
   (t) => ({

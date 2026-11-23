@@ -1,0 +1,1204 @@
+{
+  "now": "2026-08-28T00:00:00.000Z",
+  "caps": [
+    {
+      "name": "price beyond limit escalates",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 2,
+        "rows": [
+          {
+            "beforeImage": {
+              "price": 100
+            },
+            "afterImage": {
+              "product": {
+                "price": 125
+              }
+            }
+          }
+        ],
+        "caps": {
+          "maxPriceDeltaPercent": 10
+        }
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 1,
+        "violations": [],
+        "escalations": [
+          "Price delta 25.00% exceeds the 10% automatic-execution limit and requires administrator approval"
+        ],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "price tie rounds half up",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 2,
+        "rows": [
+          {
+            "beforeImage": {
+              "price": 800
+            },
+            "afterImage": {
+              "product": {
+                "price": 897
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 1,
+        "violations": [],
+        "escalations": [
+          "Price delta 12.13% exceeds the 10% automatic-execution limit and requires administrator approval"
+        ],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "price within limit stays class 2",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 2,
+        "rows": [
+          {
+            "beforeImage": {
+              "price": "100.00"
+            },
+            "afterImage": {
+              "product": {
+                "price": "105"
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 2,
+        "violations": [],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "custom attribute values pair by position",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 2,
+        "rows": [
+          {
+            "beforeImage": {
+              "price": 50,
+              "custom_attributes": [
+                {
+                  "attribute_code": "special_price",
+                  "value": "40"
+                },
+                {
+                  "attribute_code": "color",
+                  "value": "49"
+                }
+              ]
+            },
+            "afterImage": {
+              "product": {
+                "price": 52,
+                "custom_attributes": [
+                  {
+                    "attribute_code": "special_price",
+                    "value": "20"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 1,
+        "violations": [],
+        "escalations": [
+          "Price delta 50.00% exceeds the 10% automatic-execution limit and requires administrator approval"
+        ],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "zero before price is skipped",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 2,
+        "rows": [
+          {
+            "beforeImage": {
+              "price": 0
+            },
+            "afterImage": {
+              "price": 10
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 2,
+        "violations": [],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "near-free promotion and missing expiry",
+      "input": {
+        "domain": "promotions",
+        "riskClass": 1,
+        "rows": [
+          {
+            "afterImage": {
+              "rule": {
+                "discount_amount": 100
+              }
+            }
+          }
+        ],
+        "projectedExposure": 100
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 0,
+        "violations": [
+          "A promotion that can create a free or near-free cart is not executable",
+          "Promotion expiry is required"
+        ],
+        "escalations": [],
+        "projectedExposure": 100,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "discount over ceiling",
+      "input": {
+        "domain": "promotions",
+        "operationId": "magentoUpdateSalesRule",
+        "riskClass": 1,
+        "rows": [
+          {
+            "afterImage": {
+              "rule": {
+                "discount_amount": "40",
+                "from_date": "2026-09-01",
+                "to_date": "2026-09-10"
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 1,
+        "violations": [
+          "Promotion discount exceeds the 30% ceiling"
+        ],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "coupon count over ceiling",
+      "input": {
+        "domain": "promotions",
+        "operationId": "magentoGenerateCoupons",
+        "riskClass": 1,
+        "rows": [
+          {
+            "afterImage": {
+              "couponSpec": {
+                "quantity": 1000000
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 1,
+        "violations": [
+          "Coupon count exceeds the 500 ceiling"
+        ],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "delete rule needs no dates",
+      "input": {
+        "domain": "promotions",
+        "operationId": "magentoDeleteSalesRule",
+        "riskClass": 1,
+        "rows": [
+          {
+            "afterImage": {
+              "couponSpec": {
+                "quantity": 2
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 1,
+        "violations": [],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "partial update uses existing expiry",
+      "input": {
+        "domain": "promotions",
+        "operationId": "magentoUpdateSalesRule",
+        "riskClass": 1,
+        "rows": [
+          {
+            "beforeImage": {
+              "to_date": "2026-10-01"
+            },
+            "afterImage": {
+              "rule": {
+                "description": "Updated"
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 1,
+        "violations": [],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "removed expiry is refused",
+      "input": {
+        "domain": "promotions",
+        "operationId": "magentoUpdateSalesRule",
+        "riskClass": 1,
+        "rows": [
+          {
+            "beforeImage": {
+              "to_date": "2026-10-01"
+            },
+            "afterImage": {
+              "rule": {
+                "to_date": ""
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 1,
+        "violations": [
+          "Promotion expiry is required"
+        ],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "promotion shorter than minimum",
+      "input": {
+        "domain": "promotions",
+        "operationId": "magentoUpdateSalesRule",
+        "riskClass": 1,
+        "rows": [
+          {
+            "afterImage": {
+              "rule": {
+                "from_date": "2026-09-01 08:00:00",
+                "to_date": "2026-09-01 20:00:00"
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 1,
+        "violations": [
+          "Promotion duration must be at least 1 day(s)"
+        ],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "unparsable dates are not a duration violation",
+      "input": {
+        "domain": "promotions",
+        "operationId": "magentoUpdateSalesRule",
+        "riskClass": 1,
+        "rows": [
+          {
+            "afterImage": {
+              "rule": {
+                "from_date": "soon",
+                "to_date": "later"
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 1,
+        "violations": [],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "exposure over ceiling",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 2,
+        "rows": [
+          {
+            "afterImage": {
+              "name": "A"
+            }
+          }
+        ],
+        "projectedExposure": 7500.5
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 2,
+        "violations": [
+          "Projected exposure 7500.5 exceeds the 5000 ceiling"
+        ],
+        "escalations": [],
+        "projectedExposure": 7500.5,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "missing exposure stays null",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 2,
+        "rows": [
+          {
+            "afterImage": {
+              "product": {
+                "name": "A"
+              }
+            }
+          }
+        ],
+        "projectedExposure": null
+      },
+      "output": {
+        "allowed": true,
+        "riskClass": 2,
+        "violations": [],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "daily cap and cooldown",
+      "input": {
+        "domain": "inventory",
+        "riskClass": 2,
+        "rows": [
+          {
+            "afterImage": {
+              "sourceItems": [
+                {
+                  "sku": "SKU-1",
+                  "quantity": 4
+                }
+              ]
+            }
+          }
+        ],
+        "autoExecution": true,
+        "autoActionsToday": 5,
+        "cooldownBreaches": [
+          "SKU-1:default"
+        ],
+        "caps": {
+          "maxDailyAutoActions": 5
+        }
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 2,
+        "violations": [
+          "Daily automatic-action cap of 5 is exhausted",
+          "Cooldown is still active for SKU-1:default"
+        ],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 5,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": true,
+          "autoActionsToday": 5
+        }
+      }
+    },
+    {
+      "name": "automatic class 1 is refused",
+      "input": {
+        "domain": "catalog",
+        "riskClass": 1,
+        "rows": [
+          {
+            "afterImage": {
+              "name": "A"
+            }
+          }
+        ],
+        "autoExecution": true
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 1,
+        "violations": [
+          "This change requires administrator approval and cannot execute automatically"
+        ],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 500,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 1,
+          "autoExecution": true,
+          "autoActionsToday": 0
+        }
+      }
+    },
+    {
+      "name": "rows over cap",
+      "input": {
+        "domain": "content",
+        "riskClass": 2,
+        "rows": [
+          {
+            "afterImage": {
+              "title": "a"
+            }
+          },
+          {
+            "afterImage": {
+              "title": "b"
+            }
+          },
+          {
+            "afterImage": {
+              "title": "c"
+            }
+          }
+        ],
+        "caps": {
+          "maxRowsPerChangeset": 2
+        }
+      },
+      "output": {
+        "allowed": false,
+        "riskClass": 2,
+        "violations": [
+          "Change-set has 3 rows; maximum is 2"
+        ],
+        "escalations": [],
+        "projectedExposure": null,
+        "snapshot": {
+          "caps": {
+            "maxRowsPerChangeset": 2,
+            "maxPriceDeltaPercent": 10,
+            "maxDiscountPercent": 30,
+            "maxCouponCount": 500,
+            "maxProjectedExposure": 5000,
+            "maxDailyAutoActions": 25,
+            "maxStoreCredit": 50,
+            "minPromotionDays": 1,
+            "skuCooldownSeconds": 3600
+          },
+          "evaluatedAt": "2026-08-28T00:00:00.000Z",
+          "rowCount": 3,
+          "autoExecution": false,
+          "autoActionsToday": 0
+        }
+      }
+    }
+  ],
+  "classify": [
+    {
+      "name": "unreviewed attribute",
+      "input": {
+        "domain": "catalog",
+        "entityType": "product",
+        "operationId": "magentoUpdateProduct",
+        "defaultClass": 2,
+        "body": {
+          "product": {
+            "name": "Known",
+            "future_magento_attribute": "unknown"
+          }
+        }
+      },
+      "output": {
+        "riskClass": 1,
+        "attributes": [
+          {
+            "attribute": "future_magento_attribute",
+            "riskClass": 1,
+            "category": "operational",
+            "reviewed": false
+          },
+          {
+            "attribute": "name",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          }
+        ],
+        "reasons": [
+          "Unreviewed attribute future_magento_attribute requires administrator approval"
+        ]
+      }
+    },
+    {
+      "name": "reviewed cms content",
+      "input": {
+        "domain": "content",
+        "entityType": "cms",
+        "operationId": "magentoUpdateCmsPage",
+        "defaultClass": 2,
+        "body": {
+          "page": {
+            "title": "Shipping",
+            "content": "Updated content",
+            "is_active": true
+          }
+        }
+      },
+      "output": {
+        "riskClass": 2,
+        "attributes": [
+          {
+            "attribute": "content",
+            "riskClass": 2,
+            "category": "content",
+            "reviewed": true
+          },
+          {
+            "attribute": "is_active",
+            "riskClass": 2,
+            "category": "content",
+            "reviewed": true
+          },
+          {
+            "attribute": "title",
+            "riskClass": 2,
+            "category": "content",
+            "reviewed": true
+          }
+        ],
+        "reasons": []
+      }
+    },
+    {
+      "name": "custom attributes",
+      "input": {
+        "domain": "catalog",
+        "entityType": "product",
+        "operationId": "magentoUpdateProduct",
+        "defaultClass": 2,
+        "body": {
+          "product": {
+            "name": "Jacket",
+            "custom_attributes": [
+              {
+                "attribute_code": "Short_Description",
+                "value": "x"
+              }
+            ]
+          }
+        }
+      },
+      "output": {
+        "riskClass": 1,
+        "attributes": [
+          {
+            "attribute": "attribute_code",
+            "riskClass": 1,
+            "category": "operational",
+            "reviewed": false
+          },
+          {
+            "attribute": "name",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          },
+          {
+            "attribute": "short_description",
+            "riskClass": 2,
+            "category": "content",
+            "reviewed": true
+          },
+          {
+            "attribute": "value",
+            "riskClass": 2,
+            "category": "financial",
+            "reviewed": true
+          }
+        ],
+        "reasons": [
+          "Unreviewed attribute attribute_code requires administrator approval"
+        ]
+      }
+    },
+    {
+      "name": "cost is class 1",
+      "input": {
+        "domain": "catalog",
+        "entityType": "product",
+        "operationId": "magentoUpdateProduct",
+        "defaultClass": 2,
+        "body": {
+          "product": {
+            "cost": 4,
+            "price": 9
+          }
+        }
+      },
+      "output": {
+        "riskClass": 1,
+        "attributes": [
+          {
+            "attribute": "cost",
+            "riskClass": 1,
+            "category": "financial",
+            "reviewed": true
+          },
+          {
+            "attribute": "price",
+            "riskClass": 2,
+            "category": "financial",
+            "reviewed": true
+          }
+        ],
+        "reasons": []
+      }
+    },
+    {
+      "name": "online refund is handoff only",
+      "input": {
+        "domain": "orders",
+        "entityType": "order",
+        "operationId": "magentoOnlineRefund",
+        "defaultClass": 1,
+        "body": {}
+      },
+      "output": {
+        "riskClass": 0,
+        "attributes": [],
+        "reasons": [
+          "This operation must be completed by a human in Magento Admin"
+        ]
+      }
+    },
+    {
+      "name": "order comment",
+      "input": {
+        "domain": "orders",
+        "entityType": "order",
+        "operationId": "magentoAddOrderComment",
+        "defaultClass": 2,
+        "body": {
+          "statusHistory": {
+            "comment": "Packed",
+            "is_customer_notified": 1,
+            "is_visible_on_front": 0
+          }
+        }
+      },
+      "output": {
+        "riskClass": 2,
+        "attributes": [
+          {
+            "attribute": "comment",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          },
+          {
+            "attribute": "is_customer_notified",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          },
+          {
+            "attribute": "is_visible_on_front",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          }
+        ],
+        "reasons": []
+      }
+    },
+    {
+      "name": "inventory source items",
+      "input": {
+        "domain": "inventory",
+        "entityType": "source_item",
+        "operationId": "magentoUpdateSourceItems",
+        "defaultClass": 2,
+        "body": {
+          "sourceItems": [
+            {
+              "sku": "A",
+              "source_code": "default",
+              "quantity": 3,
+              "status": 1,
+              "extra": null
+            }
+          ]
+        }
+      },
+      "output": {
+        "riskClass": 1,
+        "attributes": [
+          {
+            "attribute": "extra",
+            "riskClass": 1,
+            "category": "operational",
+            "reviewed": false
+          },
+          {
+            "attribute": "quantity",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          },
+          {
+            "attribute": "sku",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          },
+          {
+            "attribute": "source_code",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          },
+          {
+            "attribute": "status",
+            "riskClass": 2,
+            "category": "operational",
+            "reviewed": true
+          }
+        ],
+        "reasons": [
+          "Unreviewed attribute extra requires administrator approval"
+        ]
+      }
+    },
+    {
+      "name": "stored wildcard classification",
+      "input": {
+        "domain": "catalog",
+        "entityType": "product",
+        "operationId": "magentoUpdateProduct",
+        "defaultClass": 2,
+        "body": {
+          "product": {
+            "name": "A",
+            "Colour": "red"
+          }
+        },
+        "classifications": [
+          {
+            "domain": "catalog",
+            "entityType": "*",
+            "attribute": "colour",
+            "riskClass": 2,
+            "category": "content",
+            "rationale": "r"
+          },
+          {
+            "domain": "catalog",
+            "entityType": "product",
+            "attribute": "name",
+            "riskClass": 1,
+            "category": "content",
+            "rationale": "r"
+          }
+        ]
+      },
+      "output": {
+        "riskClass": 1,
+        "attributes": [
+          {
+            "attribute": "colour",
+            "riskClass": 2,
+            "category": "content",
+            "reviewed": true
+          },
+          {
+            "attribute": "name",
+            "riskClass": 1,
+            "category": "content",
+            "reviewed": true
+          }
+        ],
+        "reasons": []
+      }
+    }
+  ],
+  "handoff": [
+    {
+      "operationId": "magentoOnlineRefund",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoIssueOnlineCreditmemo",
+      "handoffOnly": false
+    },
+    {
+      "operationId": "magentoApproveReturn",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoRmaApprove",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoUpdateTaxConfig",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoUpdatePaymentConfiguration",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoSetCurrencyRate",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoCreateIntegration",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoUpdateAdminUser",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoUpdateAuthorizationRole",
+      "handoffOnly": true
+    },
+    {
+      "operationId": "magentoUpdateProduct",
+      "handoffOnly": false
+    },
+    {
+      "operationId": "magentoCreateSalesRule",
+      "handoffOnly": false
+    },
+    {
+      "operationId": "magentoUpdateSourceItems",
+      "handoffOnly": false
+    }
+  ]
+}

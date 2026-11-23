@@ -182,7 +182,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/workflows/${workflowId}/api-access`, {
+      const response = await fetch(`/api/v1/workflows/${workflowId}/api-access`, {
         cache: "no-store",
       });
       if (response.status === 403) {
@@ -222,7 +222,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
       setError(null);
       setNotice(null);
       try {
-        const response = await fetch(`/api/workflows/${workflowId}/api-access`, {
+        const response = await fetch(`/api/v1/workflows/${workflowId}/api-access`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action }),
@@ -277,7 +277,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/workflows/${workflowId}/api-access`, {
+      const response = await fetch(`/api/v1/workflows/${workflowId}/api-access`, {
         method: "DELETE",
       });
       const body = (await response.json().catch(() => ({}))) as {
@@ -312,7 +312,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/workflows/${workflowId}/api-access`, {
+      const response = await fetch(`/api/v1/workflows/${workflowId}/api-access`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ limits }),
@@ -340,7 +340,7 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/workflows/${workflowId}/api-access`, {
+      const response = await fetch(`/api/v1/workflows/${workflowId}/api-access`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ includeTelemetry }),

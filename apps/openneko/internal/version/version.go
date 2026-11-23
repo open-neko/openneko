@@ -10,10 +10,6 @@ var Version = "0.0.0-dev"
 var Commit = "unknown"
 var CommitTimestamp = "unknown"
 
-// LibrarianImage is injected by release CI after the multi-architecture
-// manifest exists. It includes both the release tag and immutable digest.
-var LibrarianImage = ""
-
 const (
 	DocumentationURL = "https://openneko.app"
 	LicenseName      = "Apache License 2.0"

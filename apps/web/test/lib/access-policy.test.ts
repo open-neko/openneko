@@ -58,28 +58,10 @@ describe("access policy", () => {
     const adminRoutes = (await routeFiles(appDirectory))
       .map(routePath)
       .filter((path) => path.startsWith("/admin") || path.startsWith("/api/admin"));
-    expect(adminRoutes.length).toBeGreaterThan(20);
+    expect(adminRoutes.length).toBeGreaterThan(15);
     for (const path of adminRoutes) {
       if (path.startsWith("/admin/settings/sso")) continue;
       expect(accessPolicyFor(path)?.rule).toBe("admin");
-    }
-  });
-
-  it("lets every file in public/ past the gate", async () => {
-    const { config } = await import("@/proxy");
-    const matcher = new RegExp(`^${config.matcher[0]}$`);
-    // The gate 404s a path it does not recognise, so a matched asset
-    // would lose the mascot and the tab icon.
-    for (const file of ["/cat.png", "/icon.png", "/file.svg", "/robots.txt"]) {
-      expect(matcher.test(file)).toBe(false);
-    }
-    // The hot-reload socket and the RSC payloads keep the app alive in
-    // dev; a 404 there leaves a page that renders but never hydrates.
-    for (const internal of ["/_next/webpack-hmr", "/_next/static/chunks/main.js", "/_next/image"]) {
-      expect(matcher.test(internal)).toBe(false);
-    }
-    for (const page of ["/admin/users", "/api/admin/groups", "/profile", "/"]) {
-      expect(matcher.test(page)).toBe(true);
     }
   });
 
@@ -87,5 +69,32 @@ describe("access policy", () => {
     for (const policy of ACCESS_POLICIES) {
       if (policy.rule === "public" || policy.rule === "token") expect(policy.why ?? policy.prefix).toBeTruthy();
     }
+  });
+});
+
+describe("api v1 paths", () => {
+  it("gives an /api alias the rule of its /api/v1 route", () => {
+    for (const [alias, rule] of [
+      ["/api/auth/callback", "public"],
+      ["/api/admin/groups", "admin"],
+      ["/api/work/threads", "signed-in"],
+      ["/api/hooks/reckon", "token"],
+      ["/api/pack-accounts/magento/main/callback", "token"],
+    ] as const) {
+      expect(accessPolicyFor(alias)?.rule).toBe(rule);
+      expect(accessPolicyFor(alias.replace("/api/", "/api/v1/"))?.rule).toBe(rule);
+    }
+  });
+
+  it("keeps the bearer-token workflow API apart from the signed-in workflow routes", () => {
+    expect(accessPolicyFor("/api/v1/workflows/wf_1/runs")?.rule).toBe("token");
+    expect(accessPolicyFor("/api/v1/workflows/wf_1/runs/run_1/artifact")?.rule).toBe("token");
+    expect(accessPolicyFor("/api/v1/workflows/wf_1/manual-runs")?.rule).toBe("signed-in");
+    expect(accessPolicyFor("/api/v1/workflows/wf_1")?.rule).toBe("signed-in");
+    expect(accessPolicyFor("/api/v1/workflows")?.rule).toBe("signed-in");
+  });
+
+  it("refuses an unknown area under /api/v1", () => {
+    expect(accessPolicyFor("/api/v1/brand-new-area")).toBeNull();
   });
 });

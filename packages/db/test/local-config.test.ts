@@ -12,6 +12,7 @@ import {
   hasCustomPassword,
   localConfigPath,
   readLocalConfig,
+  secretsBackendError,
   writeLocalConfig,
 } from "../src/local-config";
 
@@ -54,31 +55,19 @@ describe("local-config (~/.config/openneko/config.json)", () => {
   });
 
   it("writeLocalConfig deep-merges into existing pg config", () => {
-    writeLocalConfig({
-      pg: { password: "first", host: "h1" },
-      recordsPg: { password: "records-first", host: "r1" },
-    });
-    writeLocalConfig({
-      pg: { password: "second" },
-      recordsPg: { password: "records-second" },
-    });
+    writeLocalConfig({ pg: { password: "first", host: "h1" } });
+    writeLocalConfig({ pg: { password: "second" } });
     const cfg = readLocalConfig();
     // host preserved from first write; password updated by second.
     expect(cfg.pg).toEqual({ password: "second", host: "h1" });
-    expect(cfg.recordsPg).toEqual({ password: "records-second", host: "r1" });
   });
 
   it("writeLocalConfig produces a JSON file with the password encrypted at rest", async () => {
-    writeLocalConfig({
-      pg: { password: "p" },
-      recordsPg: { password: "records-p" },
-    });
+    writeLocalConfig({ pg: { password: "p" } });
     const raw = await readFile(localConfigPath(), "utf8");
     const parsed = JSON.parse(raw);
     expect(parsed.pg.password).toMatch(/^enc:v1:/);
-    expect(parsed.recordsPg.password).toMatch(/^enc:v1:/);
     expect(readLocalConfig().pg?.password).toBe("p");
-    expect(readLocalConfig().recordsPg?.password).toBe("records-p");
   });
 
   it("readLocalConfig tolerates malformed JSON (returns empty)", async () => {
@@ -90,14 +79,23 @@ describe("local-config (~/.config/openneko/config.json)", () => {
 
   it("hasCustomPassword ignores the bootstrap password", () => {
     expect(hasCustomPassword()).toBe(false);
-    writeLocalConfig({
-      pg: { password: "secret" },
-      recordsPg: { password: "records-secret" },
-    });
+    writeLocalConfig({ pg: { password: "secret" } });
     expect(hasCustomPassword()).toBe(false);
     writeLocalConfig({ pg: { password: "p" } });
-    expect(hasCustomPassword()).toBe(false);
-    writeLocalConfig({ recordsPg: { password: "records-p" } });
     expect(hasCustomPassword()).toBe(true);
+  });
+
+  it("refuses any secrets backend other than the local file", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(join(tempHome, ".config", "openneko"), { recursive: true });
+    await writeFile(
+      localConfigPath(),
+      JSON.stringify({ secrets: { backend: "infisical", infisical: { siteUrl: "https://vault.test", projectId: "p" } } }),
+    );
+    const problem = secretsBackendError(readLocalConfig());
+    expect(problem).toContain('secrets.backend to "infisical"');
+    expect(problem).toContain("openneko secrets set");
+    expect(secretsBackendError({})).toBeNull();
+    expect(secretsBackendError({ secrets: { backend: "file" } })).toBeNull();
   });
 });

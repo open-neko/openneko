@@ -178,12 +178,3 @@ export async function listOpenSpendAlerts(orgId: string, limit = 20): Promise<Sp
     createdAt: row.created_at.toISOString(),
   }));
 }
-
-export async function acknowledgeSpendAlert(orgId: string, alertId: string, actorUserId: string | null): Promise<boolean> {
-  const { rowCount } = await pool().query(
-    `update behavior_alert set acknowledged_at = now(), acknowledged_by = $3
-      where org_id = $1 and id = $2::uuid and kind like 'spend.%' and acknowledged_at is null`,
-    [orgId, alertId, actorUserId],
-  );
-  return (rowCount ?? 0) > 0;
-}

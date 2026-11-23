@@ -1,62 +1,42 @@
-# Development backing services. Web and worker run on the host with hot
-# reload (`pnpm dev`); `pnpm dev:up` starts these services with compose.yml,
-# compose.openshell.yml, compose.adventureworks.yml and
-# compose.graphjin-agent.yml (sources-mode customer GraphJin).
+# Development backing services. Web and serve run on the host with hot
+# reload (`pnpm dev`); `pnpm dev:up` starts these services with compose.yml
+# and compose.adventureworks.yml, in sources mode.
 #
 # Every service a host process calls publishes a loopback port, and GraphJin
-# config directories live on the host so the worker manages them.
+# config directories live on the host so web manages them.
 services:
-  # Development databases have no managed backup lifecycle. With archiving
-  # enabled, a missing stanza pins WAL forever even while the stack is idle.
-  neko-db:
-    command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
-
-  records-db:
-    command: [postgres, -c, archive_mode=off, -c, wal_compression=on, -c, temp_file_limit=5GB]
-
-  embedding:
-    ports:
-      - "127.0.0.1:${OPENNEKO_EMBEDDING_PORT:-5003}:5003"
-
-  librarian:
-    ports:
-      - "127.0.0.1:${OPENNEKO_LIBRARIAN_PORT:-5001}:5001"
-
-  records-graphjin-config-init:
+  openneko-serve-init:
+    environment:
+      OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_GRAPHJIN_SEED: /seed/dev.sources.yml
     volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config
+      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
+      - openneko-serve-credentials:/credentials
+      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config/graphjin
 
-  records-graphjin:
-    ports:
-      - "127.0.0.1:${OPENNEKO_RECORDS_GRAPHJIN_PORT:-8090}:8090"
-    volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config:ro
-
-  records-watch-graphjin:
-    ports:
-      - "127.0.0.1:${OPENNEKO_RECORDS_WATCH_GRAPHJIN_PORT:-8091}:8090"
-    volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/records-graphjin:/config:ro
-
-  graphjin-config-init:
-    volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config
-      - ./db/graphjin/dev.sources.example.yml:/seed/agentic.yml:ro
-      - ./scripts/graphjin-supervisor.sh:/seed/graphjin-supervisor.sh:ro
-
-  # scripts/dev-up.sh writes the JWT secret from source before GraphJin
-  # starts, so GraphJin does not wait on the worker-image secret init.
-  graphjin:
+  # scripts/dev-up.sh runs openneko-serve-init before it starts serve.
+  openneko-serve:
     depends_on: !override
-      graphjin-config-init:
-        condition: service_completed_successfully
+      neko-db:
+        condition: service_healthy
       adventureworks-init:
         condition: service_completed_successfully
     environment: !override
-      GO_ENV: agentic
-      GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
-      GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-google-gemini}
-      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gemini-3.8-flash}
-      GJ_AGENT_BASE_URL: ${GRAPHJIN_AGENT_BASE_URL:-}
+      OPENNEKO_SERVE_CREDENTIALS: /credentials
+      OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
+      OPENNEKO_FILES_DIR: /data/files
+      OPENNEKO_FILES_INDEX_DIR: /data/file-index
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/check/check.sock
+      OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
+      OPENNEKO_SANDBOX_KEY_FILE: /run/secrets/sandbox-key
+      OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
     volumes: !override
-      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-run:/run/openneko
+      - openneko-serve-credentials:/credentials:ro
+      - openneko-files:/data
+      - ${OPENNEKO_DEV_STATE:-./.openneko/dev}/graphjin:/config/graphjin
+      - ./:/workspace:ro
+      - adventureworks-cache:/cache

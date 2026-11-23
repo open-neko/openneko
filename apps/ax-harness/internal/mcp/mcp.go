@@ -2,9 +2,11 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -15,9 +17,12 @@ import (
 const (
 	maxPages       = 32
 	maxTools       = 512
-	maxResultBytes = 8 << 20 // below the MCP SDK 16 MiB frame limit
+	maxResultBytes = 8 << 20
 	maxDescription = 1000
 	maxSchemaBytes = 16384
+	// MaxHostBytes bounds a bridge message and a host call's result. A
+	// 64 MiB script data answer can grow 4 times as text in JSON in JSON.
+	MaxHostBytes = 4*(64<<20) + 16<<20
 )
 
 type resourceLink struct {
@@ -45,6 +50,29 @@ func Connect(ctx context.Context, cmd *exec.Cmd, prefix string, effects map[stri
 		return nil, nil, err
 	}
 	return capabilities, session.Close, nil
+}
+
+// Caller calls a tool of the session by its MCP name, listed or not.
+type Caller func(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error)
+
+// ConnectStream is Connect for an MCP server reached over stream, which it
+// closes with the session. The Caller is for host code, never for the model.
+func ConnectStream(ctx context.Context, stream io.ReadWriteCloser, prefix string, effects map[string]string) ([]agent.Capability, Caller, func() error, error) {
+	client := protocol.NewClient(&protocol.Implementation{Name: "ax-harness", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &protocol.IOTransport{Reader: stream, Writer: stream, MaxLineLength: MaxHostBytes}, nil)
+	if err != nil {
+		_ = stream.Close()
+		return nil, nil, nil, fmt.Errorf("MCP connection failed: %w", err)
+	}
+	capabilities, err := Capabilities(ctx, session, prefix, effects)
+	if err != nil {
+		_ = session.Close()
+		return nil, nil, nil, err
+	}
+	caller := func(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error) {
+		return call(ctx, session, name, input, MaxHostBytes)
+	}
+	return capabilities, caller, session.Close, nil
 }
 
 // Capabilities lists the tools of an open session. A tool whose prefixed name
@@ -105,7 +133,7 @@ func Capabilities(ctx context.Context, session *protocol.ClientSession, prefix s
 		capabilities = append(capabilities, agent.Capability{Name: name, Version: "1", Origin: "mcp", Effect: effect,
 			Description: description, InputSchema: schema,
 			Call: func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-				return call(ctx, session, remote, input)
+				return call(ctx, session, remote, input, maxResultBytes)
 			}})
 	}
 	return capabilities, nil
@@ -126,7 +154,7 @@ func inputSchema(value any) (json.RawMessage, bool) {
 	return raw, true
 }
 
-func call(ctx context.Context, session *protocol.ClientSession, name string, input json.RawMessage) (json.RawMessage, error) {
+func call(ctx context.Context, session *protocol.ClientSession, name string, input json.RawMessage, limit int) (json.RawMessage, error) {
 	var args map[string]any
 	if err := json.Unmarshal(input, &args); err != nil {
 		return nil, err
@@ -156,14 +184,17 @@ func call(ctx context.Context, session *protocol.ClientSession, name string, inp
 			return nil, fmt.Errorf("unsupported MCP content")
 		}
 	}
-	encoded, err := json.Marshal(struct {
+	var encoded bytes.Buffer
+	enc := json.NewEncoder(&encoded)
+	enc.SetEscapeHTML(false)
+	err = enc.Encode(struct {
 		Content    []string       `json:"content"`
 		Resources  []resourceLink `json:"resource_links,omitempty"`
 		Structured any            `json:"structured_content,omitempty"`
 		IsError    bool           `json:"is_error"`
 	}{texts, resources, result.StructuredContent, result.IsError})
-	if err != nil || len(encoded) > maxResultBytes {
+	if err != nil || encoded.Len()-1 > limit {
 		return nil, fmt.Errorf("MCP result exceeds limit")
 	}
-	return encoded, nil
+	return bytes.TrimSuffix(encoded.Bytes(), []byte("\n")), nil
 }

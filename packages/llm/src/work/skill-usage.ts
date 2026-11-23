@@ -9,7 +9,6 @@ import {
 } from "@neko/db";
 import { join } from "node:path";
 import type { AgentEvent } from "../agent-backend";
-import { readConfigHead } from "../config-vcs";
 import { appendWorkRunEvent } from "./store";
 import { fingerprintEffectiveSkill } from "./skill-overlay";
 import { getOrgAgentRoot, readSkillOrigin } from "./workspace";
@@ -69,12 +68,11 @@ async function persistSkillUsage(input: {
 }): Promise<void> {
   const orgRoot = getOrgAgentRoot(input.orgId);
   const skillDir = join(orgRoot, "skills", input.detected.name);
-  const [contentHash, pack, configCommitSha, originHint] = await Promise.all([
+  const [contentHash, pack, originHint] = await Promise.all([
     fingerprintEffectiveSkill(orgRoot, input.detected.name, skillDir).catch(
       () => null,
     ),
     lookupPackSkill(input.orgId, input.detected.name),
-    readConfigHead(orgRoot),
     readSkillOrigin(skillDir),
   ]);
   if (!contentHash) return;
@@ -93,7 +91,6 @@ async function persistSkillUsage(input: {
     origin,
     firstEventId: input.firstEventId,
     ...(pack ? { packId: pack.packId, packVersion: pack.version } : {}),
-    ...(configCommitSha ? { configCommitSha } : { configCommitSha: null }),
   };
 
   const inserted = await db()
@@ -106,7 +103,6 @@ async function persistSkillUsage(input: {
       origin,
       pack_id: pack?.packId ?? null,
       pack_version: pack?.version ?? null,
-      config_commit_sha: configCommitSha,
       source: input.detected.source,
       first_event_id: input.firstEventId,
       attempt: 1,

@@ -1,7 +1,7 @@
 # OpenNeko agent MCP runtime
 
 This package owns the runtime contract between the Ax agent, OpenNeko's sandbox
-bridge, the trusted worker control plane, GraphJin, and the A2UI renderer.
+bridge, the trusted control plane (`openneko web`), GraphJin, and the A2UI renderer.
 
 ## GraphJin MCP
 
@@ -37,7 +37,7 @@ config at `OPENNEKO_GRAPHJIN_CONFIG` proves every database source is
 API sources can take governed writes. The shipped config sets
 `mcp.allow_mutations: true` and `system.capabilities.raw_graphql.mutate: true`
 (in sources mode the capability overwrites the MCP flag at startup) and lists
-the `member` and `service` roles the worker mints. GraphJin generates a
+the `member` and `service` roles that `openneko web` mints. GraphJin generates a
 source's `access.write` block only for listed roles; an unlisted JWT role gets
 no block. A write against an API source still needs, per source, `read_only`
 unset, `capabilities.api.write: true`, `access.write` set to `authenticated` or
@@ -45,8 +45,8 @@ unset, `capabilities.api.write: true`, `access.write` set to `authenticated` or
 
 ### Governed API writes through the config workflow
 
-Nobody edits the GraphJin file by hand. The `graphjin-secret-init` one-shot
-and the worker's boot pass run `reconcileGraphjinWritePolicy`, which brings an
+Nobody edits the GraphJin file by hand. `openneko serve-init` and
+`reconcileGraphjinWritePolicy` in `openneko web` bring an
 existing sources-mode config up to the shipped policy (`mcp.allow_mutations`,
 `raw_graphql.mutate`, the `member` and `service` roles) before GraphJin starts.
 
@@ -92,7 +92,7 @@ database block:
 
 ```sh
 export XDG_CONFIG_HOME=/tmp/neko-live-xdg   # fresh install key for the tests
-SECRET=$(apps/worker/node_modules/.bin/tsx -e 'import("./packages/llm/src/graphjin/token.ts").then(m => process.stdout.write(m.graphjinSigningSecretB64("org-gj4-live")))')
+SECRET=$(packages/contract/node_modules/.bin/tsx -e 'import("./packages/llm/src/graphjin/token.ts").then(m => process.stdout.write(m.graphjinSigningSecretB64("org-gj4-live")))')
 docker network create neko-live
 docker run -d --name neko-live-pg --network neko-live -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=app postgres:16-alpine
 sleep 5 && docker exec neko-live-pg psql -U postgres -d app -c "create table orders(id serial primary key, note text); insert into orders(note) values ('seed');"
@@ -102,12 +102,12 @@ sed -e "s|REPLACE_WITH_PER_ORG_SECRET_B64|$SECRET|" \
     -e 's|^sources: \[\]|sources:\n  - name: app\n    kind: database\n    type: postgres\n    host: neko-live-pg\n    port: 5432\n    dbname: app\n    user: postgres\n    password: pg\n    read_only: true\n    access:\n      read: authenticated|' \
     db/graphjin/customer.sources.example.yml > /tmp/neko-live-gj/agentic.yml
 docker run -d --name neko-gj-live --network neko-live -p 127.0.0.1:8090:8080 -e GO_ENV=agentic \
-  -v /tmp/neko-live-gj:/config dosco/graphjin:3.21.16 serve --path /config
+  -v /tmp/neko-live-gj:/config dosco/graphjin:3.21.18 serve --path /config
 pnpm --filter @neko/llm exec vitest run test/integration/graphjin-mcp-live.test.ts
 docker rm -f neko-gj-live neko-live-pg && docker network rm neko-live
 ```
 
-A database source needs `access.read: authenticated` for the worker's roles to
+A database source needs `access.read: authenticated` for the roles that `openneko web` mints to
 read it; OpenNeko sets that on every source it registers. `query_catalog` is
 absent from the tool list until a source is configured.
 
@@ -149,7 +149,26 @@ and `null` / `false` / `""` placeholders.
 
 The source configuration form is a separate tool, `present_source_form`, on the
 `neko_source_config_manager` server; the host builds that form from the
-agent's prefill values.
+agent's prefill values. Its password field (`SourceSecretInput` in the web
+catalog) posts to the source-secrets API and puts only the stored name in the
+form, so a password never reaches the model. `describe_source_config` on the same server returns
+GraphJin's `gj_config` row with GraphJin's redaction applied again on our
+side (`src/graphjin/config-redact.ts`), and `summary`, the same config in
+plain sentences (`src/graphjin/config-describe.ts`). The server and the `graphjin-config`
+skill reach admin web runs only (`src/work/admin-skills.ts`).
+`check_source` runs the source check (`src/graphjin/source-check.ts`) with the
+stored password named by `secretRef`. The form's `SourceConnectionCheck`
+component runs the Go copy of the check through `POST /api/v1/settings/source-check` and
+writes the tables the admin clears into `/form/blockedTables`.
+`present_pack_setup` shows a pack's setup card (`PackSetup` in the web
+catalog) for a system that has a pack. The card calls the admin pack routes
+itself; the model passes only the pack ID.
+`request_source_config_change` returns `problems` (`{ field, message,
+detail? }`, from `src/graphjin/config-problems.ts`) when a check fails. For a
+`register_source` proposal it shows the form again with each message bound to
+`/problems/<field>`; `TextField`, `ChoicePicker` and `SourceSecretInput` render
+an `error` property beside the input. `src/graphjin/config-file-check.ts`
+asks serve to load the merged file with the pinned loader.
 
 Every tool schema uses the portable JSON Schema subset in
 [`src/tool-schema-portability.ts`](src/tool-schema-portability.ts): declared

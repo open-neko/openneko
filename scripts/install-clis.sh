@@ -9,7 +9,7 @@
 #   ./scripts/install-clis.sh
 set -euo pipefail
 
-GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.21.16}"
+GRAPHJIN_VERSION="${GRAPHJIN_VERSION:-3.21.18}"
 
 SKIP_GRAPHJIN=false
 for arg in "$@"; do

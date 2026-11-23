@@ -3,10 +3,10 @@ package config
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 // Mirrors packages/llm/src/secrets.ts exactly: AES-256-GCM, key =
@@ -43,7 +45,7 @@ func loadOrCreateKey(overrideDir string) ([]byte, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := ownonly.Mkdir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	fresh := make([]byte, 32)
@@ -52,11 +54,16 @@ func loadOrCreateKey(overrideDir string) ([]byte, error) {
 	}
 	secret := base64.StdEncoding.EncodeToString(fresh)
 	// Exclusive create: two overlapping CLI invocations (a deploy `upgrade`
-	// racing a cron `status`) must never mint different keys — the derived
-	// openshell DB role password and every enc:v1 value hang off this file.
+	// racing a cron `status`) must never mint different keys — every enc:v1
+	// value hangs off this file.
 	// The loser of O_EXCL re-reads the winner's key.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err == nil {
+		if err := ownonly.Set(path); err != nil {
+			_ = f.Close()
+			_ = os.Remove(path)
+			return nil, err
+		}
 		_, werr := f.WriteString(secret)
 		cerr := f.Close()
 		if werr != nil {
@@ -90,6 +97,11 @@ func loadOrCreateKey(overrideDir string) ([]byte, error) {
 	}
 	sum := sha256.Sum256([]byte(existing))
 	return sum[:], nil
+}
+
+func EnsureSecretKey(overrideDir string) error {
+	_, err := loadOrCreateKey(overrideDir)
+	return err
 }
 
 // EncryptValue encrypts a plaintext value to the enc:v1 wire format.
@@ -165,18 +177,20 @@ func IsEncrypted(value string) bool {
 	return strings.HasPrefix(value, encPrefix)
 }
 
-// OpenShellDBPassword derives the openshell-gateway's dedicated DB-role
-// password from the host secret-key. It is deterministic, per-install, and
-// stable — the same value on every run, derived independently of the `neko`
-// admin password the operator rotates. That decoupling is the point: rotating
-// the admin password never strands the gateway, so no gateway restart is
-// needed. Hex output (no quotes/backslashes/specials) is safe both in a SQL
-// password literal and in a connection URL.
-func OpenShellDBPassword(overrideDir string) (string, error) {
-	key, err := loadOrCreateKey(overrideDir)
+// SigningSecret matches deriveSigningSecret in packages/secret-crypt. It
+// never creates the key file: a reader with a missing key must fail.
+func SigningSecret(overrideDir, label string) ([]byte, error) {
+	path := keyPath(overrideDir)
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	sum := sha256.Sum256(append(key, []byte("openneko:openshell-db:v1")...))
-	return hex.EncodeToString(sum[:]), nil
+	secret := strings.TrimSpace(string(raw))
+	if secret == "" {
+		return nil, fmt.Errorf("secret-key at %s is empty", path)
+	}
+	sum := sha256.Sum256([]byte(secret))
+	mac := hmac.New(sha256.New, sum[:])
+	mac.Write([]byte(label))
+	return mac.Sum(nil), nil
 }

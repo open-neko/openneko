@@ -29,7 +29,7 @@ var (
 	latestOpenNekoReleaseURL = "https://github.com/open-neko/openneko/releases/latest"
 	openNekoReleaseBaseURL   = "https://github.com/open-neko/openneko/releases/download"
 	releaseTagPattern        = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
-	upgradeHTTPClient        = &http.Client{Timeout: 2 * time.Minute}
+	upgradeHTTPClient        = &http.Client{Timeout: 2 * time.Minute, CheckRedirect: httpsOnlyRedirect}
 	upgradeExecutable        = os.Executable
 	upgradeExec              = syscall.Exec
 )

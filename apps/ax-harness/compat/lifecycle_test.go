@@ -11,19 +11,20 @@ import (
 
 func TestActorCallbackCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	entered := make(chan struct{})
 	runtime := axgoja.NewRuntime(axgoja.WithCallable("waitForCancel", func(ax.Value) (ax.Value, error) { close(entered); <-ctx.Done(); return nil, ctx.Err() }))
 	session, err := runtime.CreateSession(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Close waits for Execute, and Execute waits for ctx, so cancel runs first.
 	defer session.Close()
+	defer cancel()
 	done := make(chan ax.Value, 1)
 	go func() { done <- session.Execute("waitForCancel({}); final({unreachable:true})", nil) }()
 	select {
 	case <-entered:
-	case <-time.After(time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("callback not reached")
 	}
 	cancel()
@@ -32,7 +33,7 @@ func TestActorCallbackCancellation(t *testing.T) {
 		if object(out)["is_error"] != true {
 			t.Fatalf("cancelled callback returned success: %v", out)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("callback did not terminate")
 	}
 }

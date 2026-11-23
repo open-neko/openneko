@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,30 +26,44 @@ func TestEnvTruthy(t *testing.T) {
 	}
 }
 
-func TestOpenShellDBPasswordEnvironmentOverride(t *testing.T) {
-	t.Setenv(openShellDBPasswordEnv, "container-provided-password")
-	t.Setenv(requireExplicitOpenShellDBPasswordEnv, "1")
-	got, err := openShellDBPassword()
-	if err != nil {
+func TestMigrateConfigRepoDryRun(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("OPENNEKO_DATABASE_URL", "")
+	t.Setenv("DATABASE_URL", "")
+	root := filepath.Join(home, ".config", "openneko", "agents", "orgs", "org")
+	if runtime.GOOS == "windows" {
+		root = filepath.Join(home, "OpenNeko", "agents", "orgs", "org")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "skills", "report"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got != "container-provided-password" {
-		t.Fatalf("password = %q", got)
+	if err := os.WriteFile(filepath.Join(root, "skills", "report", "SKILL.md"), []byte("---\nname: report\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestOpenShellDBPasswordManagedMigrationFailsClosed(t *testing.T) {
-	configHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-	t.Setenv(openShellDBPasswordEnv, "")
-	t.Setenv(requireExplicitOpenShellDBPasswordEnv, "1")
-
-	_, err := openShellDBPassword()
-	if err == nil || !strings.Contains(err.Error(), openShellDBPasswordEnv) ||
-		!strings.Contains(err.Error(), "refusing") {
-		t.Fatalf("error = %v, want fail-closed missing-credential error", err)
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"commit", "-qm", "team"}} {
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.com"}, args...)...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
 	}
-	if _, statErr := os.Stat(filepath.Join(configHome, "openneko", "secret-key")); !os.IsNotExist(statErr) {
-		t.Fatalf("managed migration derived a container-local secret-key: %v", statErr)
+	var out bytes.Buffer
+	cmd := newMigrateCmd()
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"config-repo", "--dry-run"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "config repository would move: "+filepath.Join(root, ".git")) ||
+		!strings.Contains(out.String(), "rename .git (kept as .git.pre-plain)") {
+		t.Errorf("output: %s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
+		t.Error("the dry run moved the repository")
 	}
 }

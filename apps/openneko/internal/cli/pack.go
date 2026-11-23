@@ -21,8 +21,6 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/prompt"
 )
 
-const defaultWorkerAdminURL = "http://127.0.0.1:4100"
-
 type packListEntry struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -97,7 +95,7 @@ func newPackManageCmd() *cobra.Command {
 		Short:   "Show pack health and common administration commands",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			packID := args[0]
@@ -141,7 +139,7 @@ func newPackDoctorCmd() *cobra.Command {
 		Short: "Recheck pack connectivity, permissions, and capability readiness",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			var response packDoctorResponse
@@ -175,7 +173,7 @@ func newPackConfigureCmd() *cobra.Command {
 		Short: "Update pack configuration or credentials and re-run readiness checks",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			if args[0] != "magento" || generic.used(cmd) {
@@ -225,7 +223,7 @@ func newPackUpgradeCmd() *cobra.Command {
 		Short: "Apply an available pack version while preserving operator changes",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			body := map[string]any{"idempotencyKey": uuid.NewString()}
@@ -258,7 +256,7 @@ func newPackUninstallCmd() *cobra.Command {
 		Short: "Safely remove unchanged pack configuration while retaining history and data",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			body := map[string]any{"idempotencyKey": uuid.NewString()}
@@ -286,7 +284,7 @@ func newPackListCmd() *cobra.Command {
 		Short: "List first-party and uploaded solution packs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			var response struct {
@@ -325,10 +323,10 @@ func newPackInspectCmd() *cobra.Command {
 		Short: "Show a pack's metadata, requirements, and permissions",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
-			path := "/admin/packs/" + url.PathEscape(args[0])
+			path := "/admin/packs/" + url.PathEscape(args[0]) + "/inspect"
 			var response struct {
 				Manifest struct {
 					Metadata struct {
@@ -391,7 +389,7 @@ func newPackPlanCmd() *cobra.Command {
 		Short: "Preview the artifact changes for a pack install or upgrade",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			var response struct {
@@ -437,7 +435,7 @@ func newPackStatusCmd() *cobra.Command {
 		Short: "Show pack installation and capability readiness",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			var response packStatusResponse
@@ -465,7 +463,7 @@ func newPackInstallCmd() *cobra.Command {
 		Short: "Install every artifact in a solution pack",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code, proxied := MaybeProxyToWorker(cmd); proxied {
+			if code, proxied := MaybeProxyToWeb(cmd); proxied {
 				return WithExit(code, nil)
 			}
 			if args[0] != "magento" || generic.used(cmd) {
@@ -673,11 +671,15 @@ func packReadinessReason(reason string) string {
 }
 
 func requestPackAPI(ctx context.Context, method, path string, body any, destination any) ([]byte, error) {
-	base := strings.TrimRight(os.Getenv("WORKER_ADMIN_URL"), "/")
-	if base == "" {
-		base = defaultWorkerAdminURL
-	}
-	endpoint := base + path
+	return requestWebAdminAPI(ctx, "pack service", method, path, body, destination)
+}
+
+func requestWebAdminAPI(ctx context.Context, service, method, path string, body any, destination any) ([]byte, error) {
+	socket := webAdminSocket()
+	return requestAPI(ctx, service, "http://web"+path, webAdminClient(socket), func(err error) error { return webAdminUnreachable(socket, err) }, method, body, destination)
+}
+
+func requestAPI(ctx context.Context, service, endpoint string, client *http.Client, unreachable func(error) error, method string, body any, destination any) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
 		if archive, ok := body.([]byte); ok {
@@ -702,9 +704,9 @@ func requestPackAPI(ctx context.Context, method, path string, body any, destinat
 			req.Header.Set("Content-Type", "application/zip")
 		}
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("pack service at %s is unreachable: %w", base, err)
+		return nil, unreachable(err)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 2<<20))
@@ -722,11 +724,11 @@ func requestPackAPI(ctx context.Context, method, path string, body any, destinat
 		if errorBody.Error == "" {
 			errorBody.Error = http.StatusText(res.StatusCode)
 		}
-		return nil, fmt.Errorf("pack service: %s (HTTP %s)", errorBody.Error, strconv.Itoa(res.StatusCode))
+		return nil, fmt.Errorf("%s: %s (HTTP %s)", service, errorBody.Error, strconv.Itoa(res.StatusCode))
 	}
 	if destination != nil {
 		if err := json.Unmarshal(raw, destination); err != nil {
-			return nil, fmt.Errorf("pack service returned invalid JSON: %w", err)
+			return nil, fmt.Errorf("%s returned invalid JSON: %w", service, err)
 		}
 	}
 	return raw, nil

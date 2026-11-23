@@ -2,33 +2,42 @@ package dockerproxy
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
-func TestFindRunningWorkerRecursionGuard(t *testing.T) {
+func TestResolveRunningServiceRecursionGuard(t *testing.T) {
 	t.Setenv(EnvMarker, "1")
-	if got := FindRunningWorker(); got != "" {
-		t.Fatalf("expected '' when EnvMarker is set, got %q", got)
+	if got, err := ResolveRunningService("", "web"); got != "" || err != nil {
+		t.Fatalf("expected '' when EnvMarker is set, got %q %v", got, err)
 	}
 }
 
-func TestFindRunningWorkerNoDocker(t *testing.T) {
-	// Force docker to fail by clobbering PATH so the binary isn't found.
+func TestResolveRunningServiceNoDocker(t *testing.T) {
 	t.Setenv("PATH", "/nonexistent-path-for-dockerproxy-test")
 	t.Setenv(EnvMarker, "")
-	if got := FindRunningWorker(); got != "" {
-		t.Fatalf("expected '' when docker is unreachable, got %q", got)
+	if got, err := ResolveRunningService("", "web"); got != "" || err == nil {
+		t.Fatalf("expected an error when docker is unreachable, got %q %v", got, err)
 	}
 }
 
-// TestEnvMarkerConstant guards the marker name from accidental rename; the
-// embedded worker binary must use the same constant to honor the recursion
-// guard, and changing it would silently break the proxy.
+// The openneko inside an older web image reads the same marker name.
 func TestEnvMarkerConstant(t *testing.T) {
 	if EnvMarker != "OPENNEKO_PROXIED" {
-		t.Fatalf("EnvMarker changed; coordinate with worker binary build")
+		t.Fatalf("EnvMarker changed")
 	}
-	_ = os.Environ // keep import
+}
+
+func TestTheProxyNamesNoWorker(t *testing.T) {
+	for _, name := range []string{"proxy.go", "../cli/root.go"} {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.ToLower(string(raw)), "worker") {
+			t.Errorf("%s still names the removed worker", name)
+		}
+	}
 }
 
 func TestShouldAttachStdin(t *testing.T) {
@@ -95,40 +104,40 @@ func contains(s []string, v string) bool {
 }
 
 // With prod and demo both running, `docker ps` order used to decide which
-// stack a plugin install landed in. Ambiguity must refuse, not guess.
-func TestSelectWorker(t *testing.T) {
-	if name, amb := selectWorker([]string{""}); name != "" || amb != nil {
+// stack a command landed in. Ambiguity must refuse, not guess.
+func TestSelectService(t *testing.T) {
+	if name, amb := selectServiceForProject([]string{""}, "", "web"); name != "" || amb != nil {
 		t.Fatalf("empty input: got %q %v", name, amb)
 	}
-	if name, amb := selectWorker([]string{
+	if name, amb := selectServiceForProject([]string{
 		"openneko-demo-web-1",
-		"openneko-demo-worker-1",
-		"unrelated-worker-1",
-	}); name != "openneko-demo-worker-1" || amb != nil {
+		"openneko-demo-openneko-serve-1",
+		"unrelated-web-1",
+	}, "", "web"); name != "openneko-demo-web-1" || amb != nil {
 		t.Fatalf("single match: got %q %v", name, amb)
 	}
-	name, amb := selectWorker([]string{
-		"openneko-prod-worker-1",
-		"openneko-demo-worker-1",
-	})
+	name, amb := selectServiceForProject([]string{
+		"openneko-prod-web-1",
+		"openneko-demo-web-1",
+	}, "", "web")
 	if name != "" {
 		t.Fatalf("ambiguous match must refuse, got %q", name)
 	}
-	if len(amb) != 2 || amb[0] != "openneko-demo-worker-1" {
+	if len(amb) != 2 || amb[0] != "openneko-demo-web-1" {
 		t.Fatalf("ambiguous candidates = %v", amb)
 	}
 }
 
-func TestSelectWorkerTargetsNamedProject(t *testing.T) {
+func TestSelectServiceTargetsNamedProject(t *testing.T) {
 	lines := []string{
-		"openneko-acme-prod-worker-1",
-		"openneko-globex-prod-worker-1",
+		"openneko-acme-prod-web-1",
+		"openneko-globex-prod-web-1",
 	}
-	name, ambiguous := selectWorkerForProject(lines, "openneko-globex-prod")
-	if name != "openneko-globex-prod-worker-1" || ambiguous != nil {
+	name, ambiguous := selectServiceForProject(lines, "openneko-globex-prod", "web")
+	if name != "openneko-globex-prod-web-1" || ambiguous != nil {
 		t.Fatalf("targeted selection = %q %v", name, ambiguous)
 	}
-	name, ambiguous = selectWorkerForProject(lines, "openneko-missing-prod")
+	name, ambiguous = selectServiceForProject(lines, "openneko-missing-prod", "web")
 	if name != "" || ambiguous != nil {
 		t.Fatalf("missing target = %q %v", name, ambiguous)
 	}

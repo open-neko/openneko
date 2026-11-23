@@ -16,7 +16,6 @@ import {
   createWorkThread,
 } from "../../src/work/store";
 import { enableWorkflowApiAccess, updateWorkflowApiLimits } from "../../src/workflows/api-access";
-import { admitWorkflowApiRun } from "../../src/workflows/api-admission";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -125,37 +124,6 @@ describeIfDb("workflow store", () => {
     });
   });
 
-  it("admits a workflow run against the real rolling-budget query", async () => {
-    await withTestOrg(async (orgId) => {
-      const { workflow } = await saveWorkflow({
-        orgId,
-        name: "API admission SQL regression",
-        steps: [{ id: "inspect", description: "Inspect the supplied record" }],
-      });
-      const { token } = await enableWorkflowApiAccess({
-        orgId,
-        workflowId: workflow.id,
-        actor: { userId: null, role: "admin" },
-      });
-
-      const admitted = await admitWorkflowApiRun({
-        workflowId: workflow.id,
-        token,
-        idempotencyKey: "real-postgres-admission-v1",
-        mode: "single",
-        value: { orderId: "1042" },
-        clientFingerprint: `integration-${orgId}`,
-      });
-
-      expect(admitted).toMatchObject({
-        mode: "single",
-        replay: false,
-        status: "queued",
-      });
-      expect(admitted.statusUrl).toContain(admitted.runId);
-    });
-  });
-
   it("updates API limits for a workflow whose access is already enabled", async () => {
     await withTestOrg(async (orgId) => {
       const { workflow } = await saveWorkflow({
@@ -190,38 +158,6 @@ describeIfDb("workflow store", () => {
         [workflow.id],
       );
       expect(row.rows[0]).toEqual({ enabled: true, has_token: true });
-    });
-  });
-
-  it("rejects API admission with spend_budget_exhausted when a spend budget is full", async () => {
-    await withTestOrg(async (orgId) => {
-      const { workflow } = await saveWorkflow({
-        orgId,
-        name: "API spend budget",
-        steps: [{ id: "inspect", description: "Inspect the supplied record" }],
-      });
-      const { token } = await enableWorkflowApiAccess({
-        orgId,
-        workflowId: workflow.id,
-        actor: { userId: null, role: "admin" },
-      });
-      await pool().query(
-        "update spend_limit set workflow_daily_micros = 4000000 where org_id = $1 and workflow_id is null",
-        [orgId],
-      );
-
-      const rejected = await admitWorkflowApiRun({
-        workflowId: workflow.id,
-        token,
-        idempotencyKey: "spend-budget-admission-v1",
-        mode: "single",
-        value: { orderId: "1042" },
-        clientFingerprint: `integration-${orgId}`,
-      }).catch((error) => error);
-
-      expect(rejected).toMatchObject({ code: "spend_budget_exhausted", status: 429 });
-      const runs = await pool().query("select count(*)::int as n from work_run where org_id = $1", [orgId]);
-      expect(runs.rows[0].n).toBe(0);
     });
   });
 

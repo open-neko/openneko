@@ -11,10 +11,9 @@ type Result struct {
 	Reason    string
 }
 
-// Check reports whether the OpenShell sandbox runtime is expected to run on
-// this host (SEC9: OpenShell is the only runtime). The gateway and every
-// sandbox run as containers, so the requirement is Docker — not KVM, which
-// was a microsandbox-era constraint.
+// Check reports whether the OpenNeko stack is expected to run on this host.
+// Every service, the agent runtime included, runs as a container, so the
+// requirement is Docker — not KVM, which was a microsandbox-era constraint.
 func Check() Result {
 	return checkWith(runtime.GOOS, runtime.GOARCH, hasDocker)
 }
@@ -34,14 +33,14 @@ func checkWith(goos, goarch string, docker func() bool) Result {
 			return Result{
 				Supported: false,
 				Triple:    triple,
-				Reason:    goos + " " + goarch + " is not supported — the OpenShell sandbox images ship for amd64 and arm64.",
+				Reason:    goos + " " + goarch + " is not supported — the OpenNeko images ship for amd64 and arm64.",
 			}
 		}
 		if !docker() {
 			return Result{
 				Supported: false,
 				Triple:    triple,
-				Reason:    "docker not found on PATH — the OpenShell gateway and plugin sandboxes run as containers.",
+				Reason:    "docker not found on PATH — the OpenNeko stack and its agent runtime run as containers.",
 			}
 		}
 		return Result{Supported: true, Triple: triple}
@@ -49,8 +48,27 @@ func checkWith(goos, goarch string, docker func() bool) Result {
 	return Result{
 		Supported: false,
 		Triple:    triple,
-		Reason:    "Windows is not currently supported. WSL2 viability is being evaluated.",
+		Reason:    "the Docker install runs on Linux and macOS; on Windows, install the native release with install-native.ps1.",
 	}
+}
+
+// Native reports whether the native release, which needs no Docker, runs on
+// this host.
+func Native() Result {
+	return nativeCheck(runtime.GOOS, runtime.GOARCH)
+}
+
+func nativeCheck(goos, goarch string) Result {
+	triple := goos + "-" + goarch
+	switch goos {
+	case "linux", "darwin", "windows":
+	default:
+		return Result{Triple: triple, Reason: "the native release is for Linux, macOS and Windows."}
+	}
+	if goarch != "amd64" && goarch != "arm64" {
+		return Result{Triple: triple, Reason: "the native release is for amd64 and arm64."}
+	}
+	return Result{Supported: true, Triple: triple}
 }
 
 func hasDocker() bool {

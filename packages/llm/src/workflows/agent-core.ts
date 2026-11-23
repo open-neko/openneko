@@ -5,16 +5,13 @@ import type {
   AgentRunResult,
   AgentWorkspace,
 } from "../agent-backend";
-import type { AllowedLibrary } from "../library/staging";
 import type { AgentControlPlane } from "../work/control-plane";
-import type { GraphjinDataPath } from "../work/graphjin-tool-policy";
 import {
-  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
-  buildLibraryServer,
-  buildRecordsReadServer,
+  buildFilesServer,
   buildWorkMemoryServer,
 } from "../work/tools";
+import { filesEnabled } from "../files/client";
 import { buildWorkflowActionServer } from "./action-tool-server";
 import { buildWorkflowOutputServer } from "./output-tool-server";
 import { formatScriptStepResults, runScriptSteps } from "./script-steps";
@@ -33,13 +30,11 @@ export interface RunWorkflowAgentBackendInput {
   mode: "live" | "headless";
   networkHosts: string[];
   triggeredByObservationId?: string | null;
-  /** "agent" when the org opted in to GraphJin's server-side agent. */
-  graphjinDataPath?: GraphjinDataPath;
   workspace: AgentWorkspace;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  /** Team library files the actor holds. Undefined means the whole team library. */
-  allowedLibrary?: AllowedLibrary;
+  /** The run person's own skills in the scope; staged over team skills of the same name. */
+  ownSkills?: readonly string[];
   /** In-process on the host; broker-backed inside the agent sandbox. */
   controlPlane: AgentControlPlane;
   emit: (event: AgentEvent) => Promise<void>;
@@ -61,7 +56,7 @@ export interface RunWorkflowAgentBackendInput {
 /**
  * Sandbox-runnable workflow agent loop. The DB-bound prologue/epilogue stays in
  * runWorkflowTurn; this core only rebuilds workflow MCP tools and calls the
- * backend. Inside OpenShell, tools reach persistence through the broker-backed
+ * backend. In the runner, tools reach persistence through the broker-backed
  * control plane.
  */
 export async function runWorkflowAgentBackend(
@@ -78,7 +73,6 @@ export async function runWorkflowAgentBackend(
     mode,
     triggeredByObservationId,
     networkHosts,
-    graphjinDataPath = "direct",
     workspace,
     controlPlane,
     emit,
@@ -94,9 +88,7 @@ export async function runWorkflowAgentBackend(
   const mcp = backend.capabilities.mcpTools;
   const mcpServers = mcp
     ? {
-        ...(graphjinDataPath === "agent"
-          ? { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
-          : { neko_graphjin: buildGraphjinMcpServer({ orgId, runId, controlPlane }) }),
+        neko_graphjin: buildGraphjinMcpServer({ orgId, runId, controlPlane }),
         neko_workflow_output: buildWorkflowOutputServer({
           orgId,
           workflowRunId,
@@ -120,13 +112,9 @@ export async function runWorkflowAgentBackend(
           },
           { controlPlane },
         ),
-        // Search-only: workflows consult the document library the same
-        // way chat turns do (layering resolved from the run binding).
-        neko_library: buildLibraryServer(
-          { orgId, threadId, runId },
-          { controlPlane },
-        ),
-        neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
+        ...(filesEnabled()
+          ? { neko_files: buildFilesServer({ orgId, threadId, runId }, { controlPlane }) }
+          : {}),
       }
     : undefined;
 

@@ -1,0 +1,157 @@
+//go:build linux
+
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "egress" {
+		egressMain(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "egress-probe" {
+		egressProbeMain()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "publish" {
+		publishMain(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "ipc-clean" {
+		ipcCleanMain()
+		return
+	}
+	flags := flag.NewFlagSet("openneko-sandbox", flag.ExitOnError)
+	listen := flags.String("listen", envOr("OPENNEKO_SANDBOX_LISTEN", "unix:///run/openneko-sandbox/sandbox.sock"), "unix:///path or host:port")
+	_ = flags.Parse(os.Args[1:])
+	baseUID, users, err := userRangeFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "openneko sandbox: %v\n", err)
+		os.Exit(1)
+	}
+	server := &Server{
+		Workspaces:  envOr("OPENNEKO_SANDBOX_WORKSPACES", "/var/lib/openneko/sandbox-runs"),
+		Homes:       envOr("OPENNEKO_SANDBOX_HOMES", "/var/lib/openneko/sandbox"),
+		Key:         os.Getenv("OPENNEKO_SANDBOX_KEY"),
+		BaseUID:     baseUID,
+		Users:       users,
+		GID:         intEnv("OPENNEKO_SANDBOX_GID", os.Getgid()),
+		SwitchUsers: os.Geteuid() == 0,
+		PATH:        envOr("PATH", "/usr/local/bin:/usr/bin:/bin"),
+		NodePath:    os.Getenv("NODE_PATH"),
+
+		EgressProxy:   os.Getenv("OPENNEKO_SANDBOX_EGRESS_PROXY"),
+		EgressControl: os.Getenv("OPENNEKO_SANDBOX_EGRESS_CONTROL"),
+	}
+	if err := server.checkUserRange(); err != nil {
+		fmt.Fprintf(os.Stderr, "openneko sandbox: %v\n", err)
+		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if server.SwitchUsers {
+		if err := confineRuns(ctx, server); err != nil {
+			fmt.Fprintf(os.Stderr, "openneko sandbox: cannot close the network of the runs, so the sandbox does not start: %v\n", err)
+			os.Exit(1)
+		}
+		server.Probe = server.probeAsRunUser
+		if err := keepRunsApart(server); err != nil {
+			fmt.Fprintf(os.Stderr, "openneko sandbox: cannot keep the runs apart, so the sandbox does not start: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "openneko sandbox: not root, so commands run as this user and the sandbox reports egress open")
+	}
+	if err := server.ListenAndServe(ctx, *listen); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func egressMain(args []string) {
+	flags := flag.NewFlagSet("openneko-sandbox egress", flag.ExitOnError)
+	listen := flags.String("listen", ":3128", "host:port for the runs' proxy requests")
+	control := flags.String("control", "unix:///run/openneko-egress/control.sock", "the sandbox's egress control socket")
+	_ = flags.Parse(args)
+	proxy := &Proxy{Control: *control, Log: os.Stdout}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := proxy.ListenAndServe(ctx, *listen); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// publishMain publishes the sandbox's TCP listener from a container that
+// joins the sandbox's internal network and one network that Docker can
+// publish a port on.
+func publishMain(args []string) {
+	flags := flag.NewFlagSet("openneko-sandbox publish", flag.ExitOnError)
+	listen := flags.String("listen", ":8091", "host:port to accept connections on")
+	to := flags.String("to", "", "host:port of the sandbox's TCP listener")
+	_ = flags.Parse(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := publish(ctx, *listen, *to); err != nil {
+		fmt.Fprintf(os.Stderr, "openneko-sandbox publish: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func publish(ctx context.Context, listen, to string) error {
+	if _, _, err := net.SplitHostPort(to); err != nil {
+		return fmt.Errorf("--to must be host:port: %w", err)
+	}
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "openneko-sandbox publish: %s to %s\n", listener.Addr(), to)
+	relayTo(ctx, listener, to)
+	return nil
+}
+
+func confineRuns(ctx context.Context, server *Server) error {
+	var relay net.Listener
+	if server.EgressProxy != "" {
+		var err error
+		if relay, err = net.Listen("tcp", relayAddress); err != nil {
+			return fmt.Errorf("the relay to the egress proxy: %w", err)
+		}
+	}
+	if err := server.confine(relay); err != nil {
+		if relay != nil {
+			_ = relay.Close()
+		}
+		return err
+	}
+	if relay != nil {
+		go relayTo(ctx, relay, server.EgressProxy)
+	}
+	return nil
+}
+
+func keepRunsApart(server *Server) error {
+	closed, err := server.closeShared("/")
+	if len(closed) > 0 {
+		fmt.Fprintf(os.Stderr, "openneko sandbox: closed to run users: %s\n", strings.Join(closed, " "))
+	}
+	return err
+}
+
+func userRangeFromEnv() (baseUID, users int, err error) {
+	if baseUID, err = strictIntEnv("OPENNEKO_SANDBOX_BASE_UID", defaultBaseUID); err != nil {
+		return 0, 0, err
+	}
+	users, err = strictIntEnv("OPENNEKO_SANDBOX_USERS", defaultUsers)
+	return baseUID, users, err
+}

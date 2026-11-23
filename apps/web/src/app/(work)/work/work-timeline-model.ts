@@ -39,77 +39,6 @@ function policyDenialFromToolEnd(
   };
 }
 
-function parseNestedToolResult(value: unknown): Record<string, unknown> | null {
-  let current = value;
-  for (let depth = 0; depth < 4; depth += 1) {
-    if (typeof current === "string") {
-      try {
-        current = JSON.parse(current);
-        continue;
-      } catch {
-        return null;
-      }
-    }
-    if (!current || typeof current !== "object" || Array.isArray(current)) {
-      return null;
-    }
-    const record = current as Record<string, unknown>;
-    if (
-      typeof record.result === "string" &&
-      !("action_request_id" in record)
-    ) {
-      current = record.result;
-      continue;
-    }
-    return record;
-  }
-  return null;
-}
-
-/**
- * Older sandbox brokers persisted the action request but dropped the
- * action_request_emit event. Recover the approval from the successful MCP
- * tool result so historical pending requests remain actionable.
- */
-function approvalFromToolResult(
-  tool: ToolItem | undefined,
-  event: Extract<WorkEvent, { type: "tool_end" }>,
-): ApprovalItem | null {
-  if (!tool) return null;
-  const input =
-    tool.input && typeof tool.input === "object"
-      ? (tool.input as Record<string, unknown>)
-      : {};
-  const title = `${tool.name} ${String(input.title ?? "")}`.toLowerCase();
-  const isInstall = title.includes("plugin_manager_request_plugin_install");
-  const isUninstall = title.includes("plugin_manager_request_plugin_uninstall");
-  if (!isInstall && !isUninstall) return null;
-
-  const result = parseNestedToolResult(event.result);
-  const actionRequestId =
-    typeof result?.action_request_id === "string"
-      ? result.action_request_id
-      : null;
-  if (!actionRequestId || result?.ok !== true) return null;
-  const rawInput =
-    input.rawInput && typeof input.rawInput === "object"
-      ? (input.rawInput as Record<string, unknown>)
-      : {};
-  const intent =
-    typeof rawInput.intent === "string" ? rawInput.intent : null;
-  return {
-    actionRequestId,
-    actionKind: isInstall ? "plugin_install" : "plugin_uninstall",
-    intent,
-    summary: intent,
-    decision:
-      result.decision === "approved"
-        ? "auto_approved"
-        : "pending_approval",
-    result: null,
-  };
-}
-
 function toolSources(event: Extract<WorkEvent, { type: "tool_start" }>): string[] {
   const raw =
     typeof (event.input as { title?: unknown })?.title === "string"
@@ -134,6 +63,7 @@ function toolSources(event: Extract<WorkEvent, { type: "tool_start" }>): string[
 export function buildRunTimeline(events: WorkEvent[], runId: string): {
   items: TimelineItem[];
   lastStatus: string | null;
+  statusIsNewest: boolean;
   isDone: boolean;
   vitals: AnswerVital[];
   followups: string[];
@@ -158,6 +88,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
   let followups: string[] = [];
   let pendingText = "";
   let lastStatus: string | null = null;
+  let statusIsNewest = false;
   let isDone = false;
 
   const flushTextSegment = () => {
@@ -174,6 +105,18 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         pendingText += event.content;
         break;
       }
+      case "answer_reset": {
+        pendingText = "";
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i].kind === "text" || items[i].kind === "card_pending") items.splice(i, 1);
+        }
+        break;
+      }
+      case "card_pending": {
+        flushTextSegment();
+        items.push({ kind: "card_pending" });
+        break;
+      }
       case "interim": {
         flushTextSegment();
         items.push({ kind: "interim", id: event.id, content: event.content });
@@ -181,6 +124,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       }
       case "progress": {
         flushTextSegment();
+        statusIsNewest = false;
         const existing = progressById.get(event.id);
         if (existing) {
           existing.content += event.content;
@@ -196,11 +140,13 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         break;
       }
       case "tool_start": {
+        statusIsNewest = false;
         // A tool_start can arrive twice (e.g. a replayed in-flight run);
         // update the existing row in place rather than emitting a duplicate.
         const existing = toolsById.get(event.id);
         if (existing) {
           existing.name = event.name;
+          existing.label = event.label;
           existing.input = event.input;
           break;
         }
@@ -208,6 +154,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         const item: ToolItem = {
           id: event.id,
           name: event.name,
+          label: event.label,
           input: event.input,
           deltas: [],
         };
@@ -233,18 +180,6 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       case "tool_end": {
         const item = toolsById.get(event.id);
         if (item) item.end = event;
-        const recoveredApproval = approvalFromToolResult(item, event);
-        if (
-          recoveredApproval &&
-          item &&
-          !approvalToolByRequest.has(recoveredApproval.actionRequestId)
-        ) {
-          item.approval = recoveredApproval;
-          approvalToolByRequest.set(
-            recoveredApproval.actionRequestId,
-            item,
-          );
-        }
         const denial = policyDenialFromToolEnd(event);
         if (denial) {
           const key = `${denial.host}:${denial.port ?? 443}`;
@@ -258,6 +193,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
       }
       case "status": {
         lastStatus = event.message;
+        statusIsNewest = true;
         break;
       }
       case "error": {
@@ -266,8 +202,16 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
         items.push(stopped ? { kind: "stopped" } : { kind: "error", message: event.message });
         break;
       }
+      case "notice": {
+        flushTextSegment();
+        items.push({ kind: "notice", message: event.message });
+        break;
+      }
       case "surface": {
         flushTextSegment();
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i].kind === "card_pending") items.splice(i, 1);
+        }
         if (!surfaceItem) {
           surfaceItem = { kind: "surface", messages: [] };
           items.push(surfaceItem);
@@ -354,6 +298,7 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
           actionKind: event.kind,
           intent: event.intent ?? null,
           summary: event.summary ?? null,
+          facts: event.facts ?? null,
           decision: event.decision,
           result: null,
         };
@@ -450,10 +395,23 @@ export function buildRunTimeline(events: WorkEvent[], runId: string): {
   return {
     items,
     lastStatus,
+    statusIsNewest,
     isDone,
     vitals,
     followups,
     sources: sourceList,
     artifacts,
   };
+}
+
+export const TRAIL_KINDS = new Set<TimelineItem["kind"]>(["progress", "tools", "interim"]);
+
+export function liveFoldIndexes(items: TimelineItem[]): Set<number> {
+  const trail = items.flatMap((item, index) => (TRAIL_KINDS.has(item.kind) ? [index] : []));
+  if (trail.length < 2) return new Set();
+  const last = items[trail[trail.length - 1]];
+  const before = items[trail[trail.length - 2]];
+  const keep = last.kind === "tools" && before.kind === "progress" ? 2 : 1;
+  const folded = trail.slice(0, -keep);
+  return folded.length >= 2 ? new Set(folded) : new Set();
 }

@@ -15,7 +15,7 @@ preserved_zip="$cache_dir/.openneko-eval-adventureworks-ms.zip"
   echo "[eval-seed] refusing to clean unexpected cache directory: $cache_dir" >&2
   exit 1
 }
-[ -f "$eval_dir/source.sha256" ] && [ -f /app/load-adventureworks.js ] || {
+[ -f "$eval_dir/source.sha256" ] && command -v openneko >/dev/null 2>&1 || {
   echo "[eval-seed] required eval and loader mounts are absent; refusing cache cleanup" >&2
   exit 1
 }
@@ -49,4 +49,4 @@ if [ -f "$preserved_zip" ]; then
   mv "$preserved_zip" "$zip_file"
 fi
 
-exec node /app/load-adventureworks.js
+exec openneko seed adventureworks --load

@@ -6,7 +6,6 @@ import {
   eq,
   inArray,
   observation,
-  source_change_log,
   sql,
   subscription,
   workflow_definition,
@@ -212,26 +211,6 @@ export async function deleteWorkflow(
   return rows[0] ?? null;
 }
 
-/**
- * OL7 "pause for today": re-enable workflows whose pause timer has
- * passed. The cron sweep calls this every tick so a paused workflow
- * resumes within ~a minute of its paused_until.
- */
-export async function reEnablePausedWorkflows(): Promise<number> {
-  const rows = await db()
-    .update(workflow_definition)
-    .set({ enabled: true, paused_until: null, updated_at: new Date() })
-    .where(
-      and(
-        eq(workflow_definition.enabled, false),
-        sql`${workflow_definition.paused_until} is not null`,
-        sql`${workflow_definition.paused_until} <= now()`,
-      ),
-    )
-    .returning({ id: workflow_definition.id });
-  return rows.length;
-}
-
 export async function listCronWorkflows(): Promise<WorkflowRecord[]> {
   const rows = await db()
     .select()
@@ -330,172 +309,20 @@ export async function saveWorkflow(
   return { action: "created", workflow: created };
 }
 
-/**
- * CV0: serialize the definitional half of a workflow to
- * workflows/<name>.md in the org config repo and commit. Best-effort —
- * never fails the save. Operational state (enabled, budgets, run history)
- * stays in the DB.
- */
-function workflowSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 80);
-}
-
-function workflowMarkdown(workflow: WorkflowRecord): string {
-  return [
-    "---",
-    // OKF v0.2 conformance: `type` is the one required field.
-    "type: Workflow",
-    `name: ${JSON.stringify(workflow.name)}`,
-    `goal: ${JSON.stringify(workflow.goal)}`,
-    `cron: ${workflow.cron ? JSON.stringify(workflow.cron) : "null"}`,
-    `cron_timezone: ${JSON.stringify(workflow.cronTimezone)}`,
-    "---",
-    "",
-    workflow.description,
-    "",
-    "## Steps",
-    ...workflow.steps.map(
-      (s, i) => `${i + 1}. ${typeof s === "object" && s && "description" in s ? String((s as { description: unknown }).description) : String(s)}`,
-    ),
-    ...(workflow.systemPromptOverlay
-      ? ["", "## System prompt overlay", "", workflow.systemPromptOverlay]
-      : []),
-    "",
-  ].join("\n");
-}
-
-/** CV4: a member's personal workflow files, for their `user/<id>` ref snapshot. */
-export async function personalWorkflowFiles(
-  orgId: string,
-  ownerUserId: string,
-): Promise<Array<{ path: string; content: string }>> {
-  const rows = await db()
-    .select()
-    .from(workflow_definition)
-    .where(
-      and(
-        eq(workflow_definition.org_id, orgId),
-        eq(workflow_definition.owner_user_id, ownerUserId),
-      ),
-    );
-  return rows.map(toRecord).map((workflow) => ({
-    path: `workflows/${workflowSlug(workflow.name)}.md`,
-    content: workflowMarkdown(workflow),
-  }));
-}
-
 async function versionWorkflowDefinition(
   workflow: WorkflowRecord,
   verb: "Added" | "Updated",
 ): Promise<void> {
-  try {
-    const { getOrgAgentRoot } = await import("../work/workspace");
-    const root = getOrgAgentRoot(workflow.orgId);
-    const slug = workflowSlug(workflow.name);
-    const body = workflowMarkdown(workflow);
-
-    // CV4 / DATA_LIFECYCLE §3: personal workflows never touch main's
-    // tree — they commit to the member's own ref, deletable whole.
-    if (workflow.ownerUserId) {
-      const { commitToUserRef } = await import("../config-vcs/forks");
-      const { insertConfigChangeRow } = await import("../config-vcs");
-      const sha = await commitToUserRef({
-        workspaceRoot: root,
-        userId: workflow.ownerUserId,
-        files: [{ path: `workflows/${slug}.md`, content: body }],
-        message: `${verb} workflow: ${workflow.name}`,
-        mode: "overlay",
-      });
-      if (sha) {
-        await insertConfigChangeRow({
-          orgId: workflow.orgId,
-          artifactKind: "workflow",
-          artifactRef: workflow.name,
-          actorUserId: workflow.ownerUserId,
-          commitSha: sha,
-          summary: `${verb} workflow: ${workflow.name}`,
-          scope: "user",
-          userId: workflow.ownerUserId,
-        });
-      }
-      return;
-    }
-
-    const { recordConfigChange } = await import("../config-vcs");
-    const { mkdir, writeFile } = await import("node:fs/promises");
-    const { join } = await import("node:path");
-    await mkdir(join(root, "workflows"), { recursive: true });
-    await writeFile(join(root, "workflows", `${slug}.md`), body, "utf8");
-    await recordConfigChange({
-      workspaceRoot: root,
-      orgId: workflow.orgId,
-      paths: [`workflows/${slug}.md`],
-      message: `${verb} workflow: ${workflow.name}`,
-      artifactKind: "workflow",
-      artifactRef: workflow.name,
-    });
-  } catch (err) {
-    console.warn(
-      `[config-vcs] workflow versioning failed (save succeeded): ${err instanceof Error ? err.message : err}`,
-    );
-  }
-}
-
-/**
- * CV4 "Adopt for the team": copy a member's personal workflow into the
- * team layer as a new team-owned definition (content cherry-pick — the
- * member's ref is never merged). The personal copy stays theirs.
- */
-export async function adoptWorkflowForTeam(
-  orgId: string,
-  workflowId: string,
-  adoptedBy: string | null,
-): Promise<WorkflowRecord> {
-  const source = await getWorkflow(orgId, workflowId);
-  if (!source || !source.ownerUserId) {
-    throw new Error(`Personal workflow not found: ${workflowId}`);
-  }
-  const { workflow } = await saveWorkflow({
-    orgId,
-    name: source.name,
-    description: source.description,
-    systemPromptOverlay: source.systemPromptOverlay,
-    steps: source.steps,
-    goal: source.goal,
-    triggers: {
-      cron: source.cron ?? undefined,
-      timezone: source.cronTimezone,
-      enabled: source.cronEnabled,
-    },
-    dailyRunBudget: source.dailyRunBudget,
-    outputContract: source.outputContract,
-    ownerUserId: "",
+  const { insertConfigChangeRow } = await import("../work/config-change");
+  await insertConfigChangeRow({
+    orgId: workflow.orgId,
+    artifactKind: "workflow",
+    artifactRef: workflow.name,
+    summary: `${verb} workflow: ${workflow.name}`,
+    ...(workflow.ownerUserId
+      ? { actorUserId: workflow.ownerUserId, scope: "user" as const, userId: workflow.ownerUserId }
+      : {}),
   });
-  const [row] = await db()
-    .update(workflow_definition)
-    .set({ parent_id: source.id, updated_at: new Date() })
-    .where(eq(workflow_definition.id, workflow.id))
-    .returning();
-  try {
-    const { insertConfigChangeRow } = await import("../config-vcs");
-    await insertConfigChangeRow({
-      orgId,
-      artifactKind: "workflow",
-      artifactRef: source.name,
-      actorUserId: adoptedBy,
-      summary: `Adopted workflow for the team: ${source.name}`,
-      scope: "team",
-      userId: source.ownerUserId,
-      status: "adopted",
-    });
-  } catch {
-    // audit row is best-effort
-  }
-  return toRecord(row);
 }
 
 export type WorkflowRunRecord = {
@@ -904,20 +731,6 @@ export async function listSubscriptionsByWorkflow(
   return rows.map(toSubscriptionRecord);
 }
 
-export async function setSubscriptionEnabled(
-  id: string,
-  enabled: boolean,
-): Promise<void> {
-  await db()
-    .update(subscription)
-    .set({ enabled, updated_at: new Date() })
-    .where(eq(subscription.id, id));
-}
-
-export async function deleteSubscription(id: string): Promise<void> {
-  await db().delete(subscription).where(eq(subscription.id, id));
-}
-
 export type ObservationConsumerKind = "workflow" | "human";
 
 export type ObservationRecord = {
@@ -1081,34 +894,6 @@ export async function countWorkflowRunsForSubscription(
   return rows.length;
 }
 
-export async function countSubscriptionsMatchingOutput(
-  outputId: string,
-  sinceMs: number,
-): Promise<number> {
-  const since = new Date(Date.now() - sinceMs);
-  const rows = await db()
-    .select({ id: observation.id })
-    .from(observation)
-    .where(
-      and(
-        eq(observation.source_output_id, outputId),
-        sql`${observation.created_at} >= ${since}`,
-      ),
-    );
-  return rows.length;
-}
-
-export async function getWorkflowRunChainDepth(
-  workflowRunId: string,
-): Promise<number | null> {
-  const rows = await db()
-    .select({ chain_depth: workflow_run.chain_depth })
-    .from(workflow_run)
-    .where(eq(workflow_run.id, workflowRunId))
-    .limit(1);
-  return rows[0]?.chain_depth ?? null;
-}
-
 /**
  * Start of the current UTC day. Workflow daily budgets reset at this
  * boundary; we deliberately don't track per-org timezones for v1 — UTC
@@ -1259,51 +1044,3 @@ export async function appendWorkflowRunSourceWrite(args: {
   return rows.length === 1;
 }
 
-/**
- * Has any recent workflow_run of `workflowId` mutated (table, primaryKey)?
- * Backs the source_change cycle check — a responder workflow that writes
- * back to the table it's subscribed to would otherwise re-trigger itself.
- * Adapters populate `workflow_run.source_writes` (jsonb array of
- * `{table, primary_key}`); we check containment via `@>`.
- */
-export async function hasRecentSourceWriteForWorkflow(args: {
-  workflowId: string;
-  table: string;
-  primaryKey: Record<string, unknown>;
-  sinceMs: number;
-}): Promise<boolean> {
-  const since = new Date(Date.now() - args.sinceMs);
-  const needle = JSON.stringify([
-    { table: args.table, primary_key: args.primaryKey },
-  ]);
-  const rows = await db()
-    .select({ id: workflow_run.id })
-    .from(workflow_run)
-    .where(
-      and(
-        eq(workflow_run.workflow_id, args.workflowId),
-        sql`${workflow_run.created_at} >= ${since}`,
-        sql`${workflow_run.source_writes} @> ${needle}::jsonb`,
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
-}
-
-export async function writeSourceChangeLog(args: {
-  orgId: string;
-  sourceId: string;
-  tableName: string;
-  changeKind: string;
-  payload: Record<string, unknown>;
-}): Promise<void> {
-  await db()
-    .insert(source_change_log)
-    .values({
-      org_id: args.orgId,
-      source_id: args.sourceId,
-      table_name: args.tableName,
-      change_kind: args.changeKind,
-      payload: args.payload,
-    });
-}

@@ -1,123 +1,106 @@
+"use client";
+
 import Link from "next/link";
-import { connection } from "next/server";
-import { data_source, db, eq, hasCustomPassword, pool } from "@neko/db";
 import { ArrowUpRight } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
-import { AdminDenied } from "@/app/admin/AdminShell";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { getSetupCompleteAt } from "@/lib/org-state";
-import {
-  getDataSourceSettings,
-  hasDataSourceSetup,
-} from "@/lib/data-source-settings";
-import {
-  getProviderSettingsPayload,
-  hasPrimaryProviderSetup,
-  resolveResearchStatus,
-} from "@/lib/provider-settings";
-import {
-  getAgentSettingsPayload,
-} from "@/lib/agent-backend-settings";
-import { getGraphjinConfigSettingsPayload } from "@/lib/graphjin-config-settings";
-import { getAuthGateStatus } from "@/lib/auth";
-import { getInstallPolicy } from "@/lib/install-policy-settings";
-import { getContextRemote } from "@neko/llm/config-vcs";
-import { getSpendSettings } from "@neko/llm/spend";
+import AdminLoad from "@/app/admin/AdminLoad";
+import type { AdminOverview, SigninStatus } from "@/app/admin/page";
 import SetupWizard from "./SetupWizard";
 
-/**
- * Single admin surface — wizard until first-run is finished, then a
- * card index for ongoing edits. The wizard's gating (linear steps,
- * required-prereqs check on Finish) is preserved; the only thing
- * collapsed is the URL surface — admins no longer juggle /setup +
- * /settings as separate pages.
- *
- * The branch is decided server-side by setup_complete_at, so admins
- * can't bypass first-run gating by hitting a different URL.
- */
-export default async function SettingsPage() {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
+type WizardInitial = Parameters<typeof SetupWizard>[0]["initial"];
 
-  const orgId = await getOrgId();
-  const setupCompleteAt = await getSetupCompleteAt(orgId);
+type SpendStatus = {
+  limits: { warnPercent: number };
+  org: { day: { spentUsd: number; heldUsd: number; limitUsd: number } };
+  alerts: unknown[];
+};
 
-  // ── First-run mode: render the linear wizard. ──
-  if (!setupCompleteAt) {
-    const [dataSource, providers, agent] = await Promise.all([
-      getDataSourceSettings(orgId),
-      getProviderSettingsPayload(orgId),
-      getAgentSettingsPayload(orgId),
-    ]);
-    return (
-      <SetupWizard
-        initial={{
-          dataSource,
-          providers,
-          agent,
-          passwordChanged: hasCustomPassword(),
-        }}
-      />
-    );
-  }
+export default function SettingsPage() {
+  return (
+    <AdminLoad title="Workspace settings" paths={["/api/v1/admin/overview"]}>
+      {([overview]) =>
+        (overview as AdminOverview).setupComplete ? (
+          <AdminLoad
+            title="Workspace settings"
+            paths={[
+              "/api/v1/admin/signin/status",
+              "/api/v1/settings/graphjin-config",
+              "/api/v1/admin/spend",
+              "/api/v1/settings/install-policy",
+            ]}
+          >
+            {([signin, graphjin, spend, install]) => (
+              <SettingsIndex
+                overview={overview as AdminOverview}
+                authGate={signin as SigninStatus}
+                sourceConfigEnabled={
+                  (graphjin as { settings: { sourceConfigEnabled: boolean } }).settings
+                    .sourceConfigEnabled
+                }
+                spend={spend as SpendStatus}
+                allowGitUrlInstalls={
+                  (install as { policy: { allowGitUrlInstalls: boolean } }).policy
+                    .allowGitUrlInstalls
+                }
+              />
+            )}
+          </AdminLoad>
+        ) : (
+          <AdminLoad
+            title="Workspace settings"
+            paths={[
+              "/api/v1/settings/data-source",
+              "/api/v1/settings/provider",
+              "/api/v1/settings/agent",
+              "/api/v1/admin/change-password",
+            ]}
+          >
+            {([dataSource, providers, agent, password]) => (
+              <SetupWizard
+                initial={
+                  {
+                    dataSource,
+                    providers,
+                    agent,
+                    passwordChanged: (password as { changed: boolean }).changed,
+                  } as WizardInitial
+                }
+              />
+            )}
+          </AdminLoad>
+        )
+      }
+    </AdminLoad>
+  );
+}
 
-  // ── Ongoing-edits mode: card index linking to focused sub-pages. ──
-  const [
-    dataReady,
-    primaryReady,
-    researchStatus,
-    sources,
-    graphjinConfig,
-    spend,
-    authGate,
-    installPolicy,
-    workflowOrgLimits,
-    contextRemote,
-  ] = await Promise.all([
-    hasDataSourceSetup(orgId),
-    hasPrimaryProviderSetup(orgId),
-    resolveResearchStatus(orgId),
-    db()
-      .select({
-        id: data_source.id,
-        authMode: data_source.auth_mode,
-        enabled: data_source.enabled,
-      })
-      .from(data_source)
-      .where(eq(data_source.org_id, orgId)),
-    getGraphjinConfigSettingsPayload(orgId),
-    getSpendSettings(orgId),
-    getAuthGateStatus(),
-    getInstallPolicy(orgId),
-    pool().query<{ org_id: string }>(
-      "select org_id from workflow_api_org_limits where org_id = $1",
-      [orgId],
-    ),
-    getContextRemote(orgId),
-  ]);
-  const signInPlugin = authGate.provider?.pluginName ?? null;
-  const pendingPlugin = authGate.pending?.pluginName ?? null;
-  const authStatus = (plugin: string) =>
-    signInPlugin === plugin
+function SettingsIndex({
+  overview,
+  authGate,
+  sourceConfigEnabled,
+  spend,
+  allowGitUrlInstalls,
+}: {
+  overview: AdminOverview;
+  authGate: SigninStatus;
+  sourceConfigEnabled: boolean;
+  spend: SpendStatus;
+  allowGitUrlInstalls: boolean;
+}) {
+  const { dataReady, primaryReady, enabledSources, jwtSources } = overview;
+  const liveProvider = authGate.provider?.pluginName ?? null;
+  const pendingProvider = authGate.pending?.pluginName ?? null;
+  const authStatus = (provider: "scalekit" | "magic-link") =>
+    liveProvider === provider
       ? { status: "Live", statusTone: "success" as const }
-      : pendingPlugin === plugin
+      : pendingProvider === provider
         ? { status: "Setup pending", statusTone: "watch" as const }
-        : { status: "Not installed", statusTone: "neutral" as const };
-  const extraMarketplaces = installPolicy.allowedMarketplaces.length;
-  const securityStatus = installPolicy.allowUnverified || installPolicy.allowGitUrlInstalls
-    ? { status: "Exceptions allowed", statusTone: "watch" as const }
-    : extraMarketplaces > 0
-      ? { status: `${extraMarketplaces + 1} marketplaces`, statusTone: "success" as const }
-      : { status: "Official marketplace only", statusTone: "success" as const };
-
-  const enabledSources = sources.filter((source) => source.enabled);
-  const jwtSources = enabledSources.filter(
-    (source) => source.authMode === "jwt",
-  ).length;
+        : { status: "Off", statusTone: "neutral" as const };
+  const securityStatus = allowGitUrlInstalls
+    ? { status: "Git-URL skills allowed", statusTone: "watch" as const }
+    : { status: "Locked down", statusTone: "success" as const };
 
   type SettingsCard = {
     href: string;
@@ -146,17 +129,22 @@ export default async function SettingsPage() {
           statusTone: "success",
         },
         {
+          href: "/admin/settings/channels",
+          title: "Channels",
+          copy: "Slack, Telegram, and other places where people talk to OpenNeko. Each one turns on when its settings are saved.",
+        },
+        {
           href: "/admin/settings/graphjin",
           title: "Data access rules",
           copy: "How OpenNeko signs in to each source, and what each role can read.",
-          status: graphjinConfig.settings.sourceConfigEnabled
-            ? enabledSources.length === 0
+          status: sourceConfigEnabled
+            ? enabledSources === 0
               ? "Ask-based config on · No source"
-              : `Ask-based config on · ${jwtSources} of ${enabledSources.length} signed`
+              : `Ask-based config on · ${jwtSources} of ${enabledSources} signed`
             : "Ask-based config off",
-          statusTone: !graphjinConfig.settings.sourceConfigEnabled
+          statusTone: !sourceConfigEnabled
             ? "neutral"
-            : enabledSources.length > 0 && jwtSources === enabledSources.length
+            : enabledSources > 0 && jwtSources === enabledSources
               ? "success"
               : "watch",
         },
@@ -173,22 +161,16 @@ export default async function SettingsPage() {
           statusTone: primaryReady ? "success" : "watch",
         },
         {
-          href: "/admin/settings/repository",
-          title: "Context repository",
-          copy: "Version history of skills and workflows, published to GitHub, GitLab or another git host.",
-          status: contextRemote
-            ? contextRemote.lastPublish?.status === "failed"
-              ? "Last publish failed"
-              : new URL(contextRemote.url).hostname
-            : "Not connected",
-          statusTone: contextRemote ? (contextRemote.lastPublish?.status === "failed" ? "watch" : "success") : "neutral",
+          href: "/admin/settings/models",
+          title: "Models and task routes",
+          copy: "More models, a model for each task, and a fallback model when a provider fails.",
         },
         {
           href: "/admin/settings/research",
           title: "Industry research",
           copy: "Optional research on your industry that OpenNeko runs during setup.",
-          status: researchStatus === "enabled" ? "On" : "Off",
-          statusTone: researchStatus === "enabled" ? "success" : "neutral",
+          status: overview.researchOn ? "On" : "Off",
+          statusTone: overview.researchOn ? "success" : "neutral",
         },
       ],
     },
@@ -199,18 +181,18 @@ export default async function SettingsPage() {
           href: "/admin/settings/sso",
           title: "Single sign-on",
           copy: "People sign in with Okta, Entra ID, or another identity provider. Their groups map to roles.",
-          ...authStatus("@open-neko/plugin-scalekit"),
+          ...authStatus("scalekit"),
         },
         {
           href: "/admin/settings/signin",
           title: "Email-link sign-in",
           copy: "Invited people sign in with a one-time link sent to their email.",
-          ...authStatus("@open-neko/plugin-magic-link"),
+          ...authStatus("magic-link"),
         },
         {
           href: "/admin/settings/security",
           title: "Install policy",
-          copy: "The marketplaces that plugins and skills can come from.",
+          copy: "Whether operators can install community skills from git URLs.",
           ...securityStatus,
         },
       ],
@@ -234,8 +216,8 @@ export default async function SettingsPage() {
         {
           href: "/admin/settings/workflows",
           title: "Workflow API",
-          copy: "Public URL and budgets for workflows that other systems start through the API.",
-          status: workflowOrgLimits.rows.length > 0 ? "Custom budget" : "Default budget",
+          copy: "Owners of workflows that have none, and the public URL and budgets for workflows that other systems start through the API.",
+          status: overview.customWorkflowBudget ? "Custom budget" : "Default budget",
           statusTone: "neutral",
         },
       ],

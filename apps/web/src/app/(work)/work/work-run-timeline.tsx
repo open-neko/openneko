@@ -1,8 +1,8 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import { useMemo } from "react";
+import ReactMarkdown from "@/lib/safe-markdown";
+import { Fragment, useMemo } from "react";
 import {
   WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
   linkifyWorkspacePaths,
@@ -26,15 +26,15 @@ import {
   AnswerInProgress,
   CapabilityDeniedNotice,
   NeedsInputNotice,
+  StreamingBlockPlaceholder,
   WorkFailureNotice,
 } from "./work-notices";
-import { ProviderProgress, WorkTrail, progressPreview, useElapsed } from "./work-progress";
+import { holdOpenBlock } from "./work-streaming-text";
+import { ProviderProgress, WorkTrail, liveStep, useElapsed } from "./work-progress";
 import { SurfaceBlock } from "./work-surface";
-import { buildRunTimeline } from "./work-timeline-model";
+import { TRAIL_KINDS, buildRunTimeline, liveFoldIndexes } from "./work-timeline-model";
 import { ToolGroup } from "./work-tool-rows";
 import type { RunRecord, TimelineItem, WorkEvent } from "./work-types";
-
-const TRAIL_KINDS = new Set<TimelineItem["kind"]>(["progress", "tools", "interim"]);
 
 function FenceAwareBubble({
   keyPrefix,
@@ -142,7 +142,9 @@ export function RunTimeline({
     Boolean(persistedText) ||
     persistedVitals.length > 0;
 
-  const lastProgress = presentation.items.map((item) => item.kind).lastIndexOf("progress");
+  const kinds = presentation.items.map((item) => item.kind);
+  const lastProgress = kinds.lastIndexOf("progress");
+  const lastTools = kinds.lastIndexOf("tools");
   const elapsed = useElapsed(run?.createdAt, pending);
   const renderItem = (item: TimelineItem, index: number) => {
     if (item.kind === "text") {
@@ -155,6 +157,15 @@ export function RunTimeline({
           />
         );
       }
+      if (pending && index > lastTools) {
+        const { shown, held } = holdOpenBlock(item.content);
+        return (
+          <Fragment key={`text-${index}`}>
+            <FenceAwareBubble keyPrefix={`text-${index}`} raw={shown} />
+            {held ? <StreamingBlockPlaceholder block={held} /> : null}
+          </Fragment>
+        );
+      }
       return (
         <FenceAwareBubble
           key={`text-${index}`}
@@ -162,6 +173,9 @@ export function RunTimeline({
           raw={item.content}
         />
       );
+    }
+    if (item.kind === "card_pending") {
+      return pending ? <StreamingBlockPlaceholder key={`card-pending-${index}`} block="card" /> : null;
     }
     if (item.kind === "interim") {
       return (
@@ -204,7 +218,6 @@ export function RunTimeline({
           key={`capability-${item.denial.host}-${index}`}
           denial={item.denial}
           canAdminister={run?.actorRole === "admin"}
-          onRequest={(prompt) => insertComposerRef.current?.(prompt)}
         />
       );
     }
@@ -217,6 +230,9 @@ export function RunTimeline({
         />
       );
     }
+    if (item.kind === "notice") {
+      return <p key={`notice-${index}`} className="work-run-stopped" role="status">{item.message}</p>;
+    }
     if (item.kind === "stopped") {
       return <p key={`stopped-${index}`} className="work-run-stopped">Stopped.</p>;
     }
@@ -228,6 +244,8 @@ export function RunTimeline({
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => TRAIL_KINDS.has(item.kind));
   const foldTrail = !reasoningExpanded && !pending && trail.length > 0 && (hasText || hasSurface || Boolean(persistedText));
+  const liveFold = !reasoningExpanded && pending ? liveFoldIndexes(presentation.items) : new Set<number>();
+  const firstLiveFold = liveFold.size ? Math.min(...liveFold) : -1;
 
   // An approval asks the operator to act, so it never folds into the trail.
   const approvals = presentation.items.flatMap((item) =>
@@ -245,9 +263,18 @@ export function RunTimeline({
       {approvals.map((tool) => (
         <ActionApprovalRow key={`approval-${tool.id}`} threadId={threadId} runId={run?.id ?? ""} tool={tool} />
       ))}
-      {presentation.items.map((item, index) =>
-        (foldTrail && TRAIL_KINDS.has(item.kind)) || (!pending && item.kind === "surface") ? null : renderItem(item, index),
-      )}
+      {presentation.items.map((item, index) => {
+        if (index === firstLiveFold) {
+          const folded = [...liveFold].map((i) => ({ item: presentation.items[i], index: i }));
+          return (
+            <WorkTrail key="live-trail" run={null} items={folded.map((f) => f.item)} title="Earlier steps" className="work-trail work-live-trail">
+              {folded.map((f) => renderItem(f.item, f.index))}
+            </WorkTrail>
+          );
+        }
+        if (liveFold.has(index)) return null;
+        return (foldTrail && TRAIL_KINDS.has(item.kind)) || (!pending && item.kind === "surface") ? null : renderItem(item, index);
+      })}
 
       {fallbackIsTechnicalFailure ? (
         <WorkFailureNotice message={fallbackContent} />
@@ -270,7 +297,7 @@ export function RunTimeline({
       {pending && !hasSurface ? (
         <AnswerInProgress
           since={run?.createdAt}
-          step={lastProgress >= 0 ? progressPreview((presentation.items[lastProgress] as Extract<TimelineItem, { kind: "progress" }>).content) : null}
+          step={liveStep(presentation.items, presentation.lastStatus, presentation.statusIsNewest)}
           sources={presentation.sources}
         />
       ) : null}

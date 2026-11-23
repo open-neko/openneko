@@ -26,15 +26,6 @@ function stubControlPlane(): AgentControlPlane {
     queryGraphjinRead: unused as AgentControlPlane["queryGraphjinRead"],
     listGraphjinTools: unused as AgentControlPlane["listGraphjinTools"],
     callGraphjinTool: unused as AgentControlPlane["callGraphjinTool"],
-    askGraphjinDataAgent:
-      unused as AgentControlPlane["askGraphjinDataAgent"],
-    listRecordCatalog: unused as AgentControlPlane["listRecordCatalog"],
-    findRecords: unused as AgentControlPlane["findRecords"],
-    getRecord: unused as AgentControlPlane["getRecord"],
-    findRecycledRecords:
-      unused as AgentControlPlane["findRecycledRecords"],
-    getRecycledRecord: unused as AgentControlPlane["getRecycledRecord"],
-    listRecordBlueprints: unused as AgentControlPlane["listRecordBlueprints"],
     saveWorkflowWithTrigger:
       unused as AgentControlPlane["saveWorkflowWithTrigger"],
     emitWorkflowOutput: unused as AgentControlPlane["emitWorkflowOutput"],
@@ -44,7 +35,6 @@ function stubControlPlane(): AgentControlPlane {
     upsertActionPolicyByName:
       unused as AgentControlPlane["upsertActionPolicyByName"],
     listActionPolicies: unused as AgentControlPlane["listActionPolicies"],
-    listPlugins: unused as AgentControlPlane["listPlugins"],
     listUsers: unused as AgentControlPlane["listUsers"],
     listChannels: unused as AgentControlPlane["listChannels"],
     listDataSources: unused as AgentControlPlane["listDataSources"],
@@ -54,8 +44,8 @@ function stubControlPlane(): AgentControlPlane {
       unused as AgentControlPlane["listSourceSecretNames"],
     importOpenApiSpec: unused as AgentControlPlane["importOpenApiSpec"],
     listOpenApiSpecs: unused as AgentControlPlane["listOpenApiSpecs"],
-    askSourceConfigAgent:
-      unused as AgentControlPlane["askSourceConfigAgent"],
+    describeSourceConfig:
+      unused as AgentControlPlane["describeSourceConfig"],
     previewSourceConfigChange:
       unused as AgentControlPlane["previewSourceConfigChange"],
   };
@@ -81,7 +71,7 @@ describe("startAgentBroker token registry", () => {
       expect(handle.tokenFor({ runId: "r1", orgId: "o1", kind: "work" })).toBe(a); // reused
       expect(handle.tokenFor({ runId: "r2", orgId: "o1", kind: "work" })).not.toBe(a); // per-run
 
-      expect(handle.url).toBe(`http://host.openshell.internal:${handle.port}`);
+      expect(handle.url).toBe(`http://127.0.0.1:${handle.port}`);
 
       expect((await postEvents(handle.port, a)).status).toBe(200);
       expect((await postEvents(handle.port, "unknown")).status).toBe(401);
@@ -111,42 +101,6 @@ describe("startAgentBroker token registry", () => {
     });
     try {
       expect(handle.url).toBe(`http://10.200.0.1:${handle.port}`);
-    } finally {
-      await handle.close();
-    }
-  });
-
-  it("binds native records reads to the token's org and run", async () => {
-    const cp = stubControlPlane();
-    cp.listRecordCatalog = vi.fn(async () => ({ apps: [] }));
-    const handle = await startAgentBroker({ controlPlane: cp, port: 0 });
-    try {
-      const token = handle.tokenFor({
-        runId: "trusted-run",
-        orgId: "trusted-org",
-        kind: "work",
-      });
-      const response = await fetch(
-        new URL("/v1/records/catalog", `http://127.0.0.1:${handle.port}`),
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            orgId: "other-org",
-            runId: "other-run",
-            appId: "equipment",
-          }),
-        },
-      );
-      expect(response.status).toBe(200);
-      expect(cp.listRecordCatalog).toHaveBeenCalledWith({
-        orgId: "trusted-org",
-        runId: "trusted-run",
-        appId: "equipment",
-      });
     } finally {
       await handle.close();
     }

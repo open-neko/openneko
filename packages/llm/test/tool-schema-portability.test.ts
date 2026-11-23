@@ -11,7 +11,6 @@ import * as tools from "../src/work/tools";
 const KNOWN_UNPORTABLE = new Set([
   "neko_user_manager.request_data_access_change",
   "neko_source_config_manager.request_source_config_change",
-  "neko_records.find_records",
   "neko_skills.create_skill",
 ]);
 
@@ -22,16 +21,13 @@ function staticServers(): NekoMcpServer[] {
   const memory = { orgId: "org", runId: "run" } as never;
   return [
     tools.buildRenderCardsServer(emit),
-    tools.buildPluginManagerServer(base),
     tools.buildUserManagerServer(base),
     tools.buildChannelManagerServer(base),
     tools.buildDataSourceManagerServer(base),
     tools.buildSourceConfigManagerServer(base),
     tools.buildAuditViewerServer(base),
-    tools.buildGraphjinAgentServer(base),
-    tools.buildRecordsReadServer(base),
     tools.buildWorkMemoryServer(memory, { controlPlane }),
-    tools.buildLibraryServer(memory, { controlPlane }),
+    tools.buildFilesServer(memory, { controlPlane }),
     tools.buildSkillBuilderServer("/tmp/openneko-portability-skills"),
     buildAskUserQuestionServer({ runId: "run", wantsCards: true, emit }),
   ];

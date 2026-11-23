@@ -42,6 +42,9 @@ export const ComponentTypes = {
   Conditional: "Conditional",
   OpenApiSpecInput: "OpenApiSpecInput",
   ManagedFileSourceInput: "ManagedFileSourceInput",
+  SourceSecretInput: "SourceSecretInput",
+  SourceConnectionCheck: "SourceConnectionCheck",
+  PackSetup: "PackSetup",
   Compare: "Compare",
   WhatIf: "WhatIf",
   AnswerMap: "AnswerMap",
@@ -290,6 +293,8 @@ export interface TextFieldProps {
   value?: string | number;
   placeholder?: string;
   variant?: "longText" | "number" | "shortText" | "obscured";
+  /** A problem with this answer, shown beside the field. */
+  error?: string;
 }
 
 export interface CheckBoxProps {
@@ -306,6 +311,8 @@ export interface ChoicePickerProps {
   variant?: "multipleSelection" | "mutuallyExclusive";
   displayStyle?: "checkbox" | "chips";
   filterable?: boolean;
+  /** A problem with this answer, shown beside the field. */
+  error?: string;
 }
 
 export interface ConditionalProps {
@@ -320,6 +327,8 @@ export interface OpenApiSpecInputProps {
   component: "OpenApiSpecInput";
   label?: string;
   value?: unknown;
+  url?: string;
+  baseUrl?: string;
 }
 
 export interface ManagedFileSourceInputProps {
@@ -327,6 +336,37 @@ export interface ManagedFileSourceInputProps {
   label?: string;
   sourceName?: string;
   value?: unknown;
+}
+
+export interface SourceSecretInputProps {
+  component: "SourceSecretInput";
+  label?: string;
+  sourceName?: string;
+  type?: unknown;
+  host?: unknown;
+  port?: unknown;
+  dbname?: unknown;
+  user?: unknown;
+  value?: unknown;
+  /** A problem with this answer, shown beside the field. */
+  error?: string;
+}
+
+export interface SourceConnectionCheckProps {
+  component: "SourceConnectionCheck";
+  label?: string;
+  type?: unknown;
+  host?: unknown;
+  port?: unknown;
+  dbname?: unknown;
+  user?: unknown;
+  secretRef?: unknown;
+  value?: unknown;
+}
+
+export interface PackSetupProps {
+  component: "PackSetup";
+  packId: string;
 }
 
 export interface ConfirmationProps {
@@ -382,6 +422,9 @@ export type ComponentProps =
   | ConditionalProps
   | OpenApiSpecInputProps
   | ManagedFileSourceInputProps
+  | SourceSecretInputProps
+  | SourceConnectionCheckProps
+  | PackSetupProps
   | CompareProps
   | WhatIfProps
   | AnswerMapProps

@@ -18,6 +18,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentWorkspace } from "../agent-backend";
+import { skillRunnable } from "./sandbox-service";
 import {
   composeSkillTree,
   overlayAppliesToBase,
@@ -49,6 +50,21 @@ export function resolveBuiltinSkillsRoot(
   );
 }
 
+export function resolveSandboxSkillsRoot(
+  moduleUrl = import.meta.url,
+  configuredRoot = process.env.OPENNEKO_SANDBOX_SKILLS_ROOT,
+  pathExists: (candidate: string) => boolean = existsSync,
+): string {
+  if (configuredRoot?.trim()) return resolve(configuredRoot);
+  const moduleDir = dirname(fileURLToPath(moduleUrl));
+  const candidates = [
+    resolve(moduleDir, "assets", "sandbox-skills"),
+    resolve(/* turbopackIgnore: true */ moduleDir, "..", "..", "assets", "sandbox-skills"),
+    resolve(/* turbopackIgnore: true */ moduleDir, "..", "..", "..", "..", "recipes", "sandbox", "skills"),
+  ];
+  return candidates.find((candidate) => pathExists(candidate)) ?? candidates[0];
+}
+
 export const SKILL_ORIGIN_FILE = ".openneko-origin";
 
 export type SkillOriginRecord = {
@@ -57,9 +73,26 @@ export type SkillOriginRecord = {
 };
 
 const BUILTIN_SKILLS_ROOT = resolveBuiltinSkillsRoot();
+const SANDBOX_SKILLS_ROOT = resolveSandboxSkillsRoot();
 
 export function getBuiltinSkillsRoot(): string {
   return BUILTIN_SKILLS_ROOT;
+}
+
+export function bundledSkillDir(name: string): string {
+  const sandboxCopy = join(SANDBOX_SKILLS_ROOT, name);
+  return existsSync(join(sandboxCopy, "SKILL.md")) ? sandboxCopy : join(BUILTIN_SKILLS_ROOT, name);
+}
+
+async function bundledSkillNames(): Promise<string[]> {
+  const names = new Set<string>();
+  for (const entry of await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true })) {
+    if (entry.isDirectory()) names.add(entry.name);
+  }
+  for (const entry of await readdir(SANDBOX_SKILLS_ROOT, { withFileTypes: true }).catch(() => [] as Dirent[])) {
+    if (entry.isDirectory() && existsSync(join(SANDBOX_SKILLS_ROOT, entry.name, "SKILL.md"))) names.add(entry.name);
+  }
+  return [...names].sort();
 }
 
 function useHostWebDevelopmentHome(): boolean {
@@ -162,7 +195,7 @@ export async function ensureWorkWorkspace(
  *
  * Job agents must never receive the durable org workspace: it can contain
  * member memories, uploads, prior run state, and client credentials from
- * unrelated turns. The OpenShell launcher uploads this empty tree instead,
+ * unrelated turns. The launcher stages this empty tree instead,
  * then the caller exposes only the current run's explicit brokered
  * capabilities. Source endpoints and service credentials stay host-side.
  */
@@ -271,7 +304,40 @@ export async function materializeBuiltinSkills(
   allowedSkills?: readonly string[],
 ): Promise<void> {
   await mkdir(skillsRoot, { recursive: true });
+  await removeRetiredBuiltinSkills(skillsRoot);
   await seedBuiltinSkills(skillsRoot, allowedSkills);
+}
+
+const RETIRED_BUILTIN_SKILLS: readonly string[] = [
+  "3-statement-model",
+  "comps-analysis",
+  "dcf-model",
+  "document-extraction",
+  "docx",
+  "excel-author",
+  "internal-comms",
+  "lbo-model",
+  "merger-model",
+  "pdf",
+  "pptx",
+  "pptx-author",
+  "xlsx",
+];
+
+/**
+ * Removes unchanged seeded copies of retired built-ins, so a later built-in
+ * with the same name seeds fresh. A changed copy stays as the org's own skill.
+ */
+async function removeRetiredBuiltinSkills(skillsRoot: string): Promise<void> {
+  for (const name of RETIRED_BUILTIN_SKILLS) {
+    const dir = join(skillsRoot, name);
+    const origin = await readSkillOrigin(dir);
+    if (!origin) continue;
+    if ((await fingerprintSkillTree(dir).catch(() => "")) !== origin.sourceHash) continue;
+    const bundled = bundledSkillDir(name);
+    if (existsSync(bundled) && origin.sourceHash === (await builtinFingerprint(name, bundled))) continue;
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 const builtinSkillFingerprints = new Map<string, Promise<string>>();
@@ -335,40 +401,19 @@ function builtinFingerprint(name: string, root: string): Promise<string> {
   return pending;
 }
 
-/** Whether a workspace skill still matches the built-in copy it was seeded from. */
-async function isUnmodifiedBuiltin(skillDir: string, name: string): Promise<boolean> {
-  try {
-    const workspaceHash = await fingerprintSkillTree(skillDir);
-    const origin = await readSkillOrigin(skillDir);
-    if (origin?.kind === "builtin") return origin.sourceHash === workspaceHash;
-    return workspaceHash === (await builtinFingerprint(name, join(BUILTIN_SKILLS_ROOT, name)));
-  } catch {
-    return false;
-  }
-}
-
-/** Built-in skills in a workspace that nobody has changed. */
-export async function unmodifiedBuiltinSkills(skillsRoot: string): Promise<string[]> {
-  const builtins = await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true }).catch(() => [] as Dirent[]);
-  const names: string[] = [];
-  for (const entry of builtins) {
-    if (entry.isDirectory() && (await isUnmodifiedBuiltin(join(skillsRoot, entry.name), entry.name))) names.push(entry.name);
-  }
-  return names.sort();
-}
-
 /**
  * Copy only skills that the agent image cannot reconstruct itself: custom
  * organization skills and locally modified built-ins. Full skill bodies stay
  * off the per-turn transfer for the common, unmodified built-in case. A
  * security-required system skill is copied from the current bundled source,
- * so an old durable workspace cannot pin records behavior across upgrades.
+ * so an old durable workspace cannot pin its behavior across upgrades.
  */
 export async function copySkillOverrides(
   skillsRoot: string,
   destinationRoot: string,
   forceNames: readonly string[] = [],
   allowedSkills?: readonly string[],
+  terminal?: boolean,
 ): Promise<string[]> {
   await mkdir(destinationRoot, { recursive: true });
   const forced = new Set(forceNames);
@@ -384,8 +429,9 @@ export async function copySkillOverrides(
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory()) continue;
     if (allowed && !allowed.has(entry.name)) continue;
+    if (!forced.has(entry.name) && !skillRunnable(entry.name, terminal)) continue;
     const workspaceSource = join(skillsRoot, entry.name);
-    const bundled = join(BUILTIN_SKILLS_ROOT, entry.name);
+    const bundled = bundledSkillDir(entry.name);
     const source = forced.has(entry.name) ? bundled : workspaceSource;
     let isUnmodifiedBuiltin = false;
     let workspaceHash = "";
@@ -430,21 +476,20 @@ export async function copySkillOverrides(
 
 async function seedBuiltinSkills(skillsRoot: string, allowedSkills?: readonly string[]): Promise<void> {
   const allowed = allowedSkills ? new Set(allowedSkills) : null;
-  const entries = await readdir(BUILTIN_SKILLS_ROOT, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (allowed && !allowed.has(entry.name)) continue;
-    const dest = join(skillsRoot, entry.name);
+  for (const name of await bundledSkillNames()) {
+    if (allowed && !allowed.has(name)) continue;
+    if (!skillRunnable(name)) continue;
+    const dest = join(skillsRoot, name);
     try {
       await access(dest, fsConstants.F_OK);
       continue;
     } catch {
-      const source = join(BUILTIN_SKILLS_ROOT, entry.name);
+      const source = bundledSkillDir(name);
       await cp(source, dest, {
         recursive: true,
         errorOnExist: false,
       });
-      const sourceHash = await builtinFingerprint(entry.name, source);
+      const sourceHash = await builtinFingerprint(name, source);
       await writeBuiltinOrigin(dest, sourceHash);
     }
   }

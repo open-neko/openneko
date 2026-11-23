@@ -23,11 +23,8 @@ func newResetCmd() *cobra.Command {
 		Short: "Tear down the stack and clear local state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := configureBackupEnvironment(); err != nil {
-				return err
-			}
 			sup := compose.New(assets.ComposeFS)
-			files, err := sup.Materialize(compose.ModeDemo)
+			files, err := allStackFiles(sup)
 			if err != nil {
 				return err
 			}
@@ -37,10 +34,9 @@ func newResetCmd() *cobra.Command {
 			for _, m := range []compose.Mode{compose.ModeProd, compose.ModeDev, compose.ModeDemo} {
 				_, _ = sup.Run(context.Background(), compose.ProjectNameForMode(m), files, []string{"down", "-v"}, os.Stdout, os.Stderr)
 			}
-			oldRepository := os.Getenv("OPENNEKO_BACKUP_REPOSITORY")
-			_, newID, err := sup.RotateInstallationID()
+			project, err := sup.ProjectName("")
 			if err != nil {
-				return fmt.Errorf("data volumes were removed but backup namespace rotation failed: %w", err)
+				return err
 			}
 
 			cfgFile := filepath.Join(config.Dir(""), "config.json")
@@ -48,20 +44,22 @@ func newResetCmd() *cobra.Command {
 				return err
 			}
 			if all {
+				// marketplaces.json and plugins.json are left over from the
+				// removed plugin system; clear them too on a full reset.
 				for _, name := range []string{"secrets.json", "marketplaces.json", "plugins.json", "compose.override.yml"} {
 					if err := removeIfExists(filepath.Join(config.Dir(""), name)); err != nil {
 						return err
 					}
 				}
 			} else if !keepSecrets {
-				// Default: keep secrets + marketplaces; only config.json is wiped.
+				// Default: keep secrets; only config.json is wiped.
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "reset complete; backups preserved at %s; next start will use installation %s\n", oldRepository, newID)
+			fmt.Fprintf(cmd.OutOrStdout(), "reset complete; %s\n", backupsKeptNote(sup, project))
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&keepSecrets, "keep-secrets", true, "Preserve ~/.config/openneko/secrets.json")
-	cmd.Flags().BoolVar(&all, "all", false, "Also remove secrets, marketplaces, plugins manifest, compose override")
+	cmd.Flags().BoolVar(&all, "all", false, "Also remove secrets and the compose override")
 	return cmd
 }
 

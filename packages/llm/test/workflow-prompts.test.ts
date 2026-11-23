@@ -72,7 +72,16 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(first.indexOf("<long_term_memory>")).toBeGreaterThan(first.indexOf("<files>"));
     expect(splitStablePrompt(first).stable).toBe(stable.trimEnd());
     expect(splitStablePrompt(second).stable).toBe(stable.trimEnd());
-    expect(splitStablePrompt(second).turn).toMatch(/^<files>\nSave every report or file you make under \/tmp\/org\/runs\/r2\/artifacts/);
+    expect(splitStablePrompt(second).turn).toMatch(/^<files>\nThe run folder is \/tmp\/org\/runs\/r2\. The skills folder is \/tmp\/org\/skills\.\n[\s\S]*\nSave every report or file you make under \/tmp\/org\/runs\/r2\/artifacts/);
+  });
+
+  it("names a skill folder in a step by $SKILLS_DIR", () => {
+    const prompt = buildWorkflowRunnerPrompt({
+      ...base,
+      mcpTools: true,
+      workflow: { ...base.workflow, steps: [{ id: "s1", description: "Follow skills/stock-check/SKILL.md; keep myskills/x" }] },
+    });
+    expect(prompt).toContain("  1. Follow $SKILLS_DIR/stock-check/SKILL.md; keep myskills/x\n");
   });
 
   it("uses MCP tool names when mcpTools=true", () => {
@@ -104,46 +113,10 @@ describe("buildWorkflowRunnerPrompt", () => {
     ).toThrow(/native GraphJin broker tool/);
   });
 
-  it("surfaces installed plugin action kinds to the native tool path", () => {
-      const prompt = buildWorkflowRunnerPrompt({
-        ...base,
-        mcpTools: true,
-        pluginActions: [
-          {
-            kind: "send_slack_dm",
-            description: "Send a DM to a Slack user.",
-            example: { user: "amit", text: "Stock is low." },
-          },
-          {
-            kind: "lookup_slack_entity",
-            description: "Look up a Slack user.",
-            default_mode: "deny",
-          },
-        ],
-      });
-      expect(prompt).toContain("send_slack_dm");
-      // the example payload is surfaced verbatim so the agent copies the shape
-      expect(prompt).toContain('example payload: {"user":"amit","text":"Stock is low."}');
-      // denied-everywhere kinds are not advertised
-      expect(prompt).not.toContain("lookup_slack_entity");
-  });
-
-  it("surfaces an internal record action's scope to the native action tool", () => {
-    const prompt = buildWorkflowRunnerPrompt({
-      ...base,
-      mcpTools: true,
-      pluginActions: [
-        {
-          kind: "record_create",
-          scope: "internal",
-          description: "Create a generated-app record.",
-          default_mode: "ask",
-        },
-      ],
-    });
-
-    expect(prompt).toContain("`record_create` (scope: internal)");
-    expect(prompt).toContain("Always use the exact scope listed");
+  it("tells the runner to use an action kind that a step names", () => {
+    const prompt = buildWorkflowRunnerPrompt({ ...base, mcpTools: true });
+    expect(prompt).toContain("When a step names an action kind, use that exact kind.");
+    expect(prompt).not.toContain("Installed action kinds");
   });
 
   it("includes the workflow's overlay and steps", () => {
@@ -157,6 +130,7 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(prompt).toContain("<data_access>");
     expect(prompt).toContain("mcp_neko_graphjin_execute_graphql");
     expect(prompt).toContain("mcp_neko_graphjin_query_catalog");
+    expect(prompt).toContain("Never count back to the same calendar date");
     expect(prompt).not.toContain("graphjin cli");
   });
 

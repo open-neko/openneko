@@ -13,6 +13,7 @@ import (
 	"sort"
 
 	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 const StoreFilename = "secrets.json"
@@ -74,7 +75,7 @@ func ReadSoft(overrideDir string, warn func(string)) Store {
 
 func Write(store Store, overrideDir string) error {
 	file := Path(overrideDir)
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+	if err := ownonly.Mkdir(filepath.Dir(file)); err != nil {
 		return err
 	}
 
@@ -246,9 +247,9 @@ func Unset(store Store, plugin, key string) (Store, bool) {
 	return out, true
 }
 
-func ListKeysForPlugin(store Store, plugin string) []string {
-	keys := make([]string, 0, len(store[plugin]))
-	for k := range store[plugin] {
+func ListKeysForSection(store Store, section string) []string {
+	keys := make([]string, 0, len(store[section]))
+	for k := range store[section] {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -270,4 +271,76 @@ func AllValues(store Store) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// AllValuesFull is allSecretValuesFull() in packages/secrets: every value of
+// the env sections and every string inside an operator credential's tokens.
+func AllValuesFull(overrideDir string) ([]string, error) {
+	store, err := Read(overrideDir)
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]struct{}{}
+	for _, v := range AllValues(store) {
+		set[v] = struct{}{}
+	}
+	raw, err := os.ReadFile(Path(overrideDir))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	var parsed struct {
+		Operators map[string]map[string]json.RawMessage `json:"_operators"`
+	}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			parsed.Operators = nil
+		}
+	}
+	for _, connectors := range parsed.Operators {
+		for _, cred := range connectors {
+			collectTokenStrings(overrideDir, cred, set)
+		}
+	}
+	out := make([]string, 0, len(set))
+	for v := range set {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func collectTokenStrings(overrideDir string, cred json.RawMessage, set map[string]struct{}) {
+	var sealed string
+	if json.Unmarshal(cred, &sealed) == nil {
+		plain, err := config.MaybeDecryptValue(overrideDir, sealed)
+		if err != nil {
+			return
+		}
+		cred = json.RawMessage(plain)
+	}
+	var obj struct {
+		Tokens      map[string]any `json:"tokens"`
+		ConnectedAt *string        `json:"connectedAt"`
+	}
+	if json.Unmarshal(cred, &obj) != nil || obj.Tokens == nil || obj.ConnectedAt == nil {
+		return
+	}
+	var walk func(any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case string:
+			if t != "" {
+				set[t] = struct{}{}
+			}
+		case []any:
+			for _, item := range t {
+				walk(item)
+			}
+		case map[string]any:
+			for _, item := range t {
+				walk(item)
+			}
+		}
+	}
+	walk(obj.Tokens)
 }

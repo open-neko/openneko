@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
@@ -8,6 +8,7 @@ import {
   graphjinConfigHasSource,
   persistGraphjinSourceConfigUpdate,
 } from "../src/graphjin/persist-source-config";
+import { buildGraphjinConfigUpdate } from "../src/graphjin/config-change";
 
 const roots: string[] = [];
 
@@ -163,6 +164,97 @@ describe("persistGraphjinSourceConfigUpdate", () => {
     expect(raw).not.toContain("plain-integration-token");
     expect(raw).toContain(
       "gjsecret://sources/magento_operator/specs/magento-operator-v1/auth/token",
+    );
+  });
+
+  it("writes a role to disk and replaces a role of the same name", async () => {
+    const file = await configFile();
+    for (const [match, comment] of [["role = 'support'", "first"], ["role = 'helpdesk'", undefined]]) {
+      const { update } = await buildGraphjinConfigUpdate({
+        action: "add_role",
+        name: "Support",
+        match,
+        comment,
+      });
+      await persistGraphjinSourceConfigUpdate({ configFile: file, update });
+    }
+    const parsed = parse(await readFile(file, "utf8")) as {
+      roles: Array<Record<string, unknown>>;
+      sources: unknown[];
+    };
+    expect(parsed.roles).toEqual([{ name: "Support", match: "role = 'helpdesk'" }]);
+    expect(parsed.sources).toHaveLength(1);
+  });
+
+  it("does not add an empty sources list for a role-only change", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openneko-gj-config-"));
+    roots.push(root);
+    const file = join(root, "agentic.yml");
+    await writeFile(file, "production: true\n");
+    await persistGraphjinSourceConfigUpdate({
+      configFile: file,
+      update: { roles: [{ name: "support", match: "true" }] },
+    });
+    expect(parse(await readFile(file, "utf8"))).toEqual({
+      production: true,
+      roles: [{ name: "support", match: "true" }],
+    });
+  });
+
+  it("writes table lists in place of GraphJin's add and remove keys", async () => {
+    const file = await configFile();
+    const change = async (payload: Record<string, unknown>) => {
+      const { update } = await buildGraphjinConfigUpdate({
+        action: "set_source_tables",
+        source: "warehouse",
+        ...payload,
+      });
+      await persistGraphjinSourceConfigUpdate({ configFile: file, update });
+    };
+    await change({ blockedTables: ["salaries", "tokens"], adminTables: ["payroll"] });
+    await change({ adminTables: ["Salaries"], openTables: ["tokens"] });
+    const raw = await readFile(file, "utf8");
+    expect(raw).not.toMatch(/_add|_remove/);
+    const parsed = parse(raw) as { sources: Array<{ access: Record<string, unknown> }> };
+    expect(parsed.sources[0]!.access).toEqual({
+      read: "authenticated",
+      write: "blocked",
+      blocked_tables: [],
+      admin_tables: ["payroll", "Salaries"],
+    });
+  });
+
+  it("writes the seed config that the pinned GraphJin loader reads", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openneko-gj-config-"));
+    roots.push(root);
+    const file = join(root, "agentic.yml");
+    await copyFile(
+      resolve(__dirname, "../../../db/graphjin/customer.sources.example.yml"),
+      file,
+    );
+    const changes: Array<Record<string, unknown>> = [
+      { action: "add_role", name: "support", match: "role = 'support'" },
+      {
+        action: "register_source",
+        name: "shop",
+        kind: "database",
+        type: ["mysql"],
+        host: "shop-db",
+        port: 3306,
+        dbname: "shop",
+        user: "reader",
+        secretRef: "shop-password",
+        blockedTables: ["admin_user"],
+        adminTables: ["sales_invoice"],
+      },
+      { action: "set_source_tables", source: "shop", blockedTables: ["oauth_token"] },
+    ];
+    for (const payload of changes) {
+      const { update } = await buildGraphjinConfigUpdate(payload, async () => "pw");
+      await persistGraphjinSourceConfigUpdate({ configFile: file, update });
+    }
+    await expect(await readFile(file, "utf8")).toMatchFileSnapshot(
+      "fixtures/graphjin-persisted-config.yml",
     );
   });
 

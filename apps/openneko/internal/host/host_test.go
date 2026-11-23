@@ -2,8 +2,8 @@ package host
 
 import "testing"
 
-// SEC9: the only runtime is OpenShell — containers, so the requirement
-// is Docker, not KVM, and amd64 macs are fine.
+// The whole stack runs as containers, so the requirement is Docker, not KVM,
+// and amd64 macs are fine.
 
 func TestDarwinArm64WithDocker(t *testing.T) {
 	r := checkWith("darwin", "arm64", func() bool { return true })
@@ -52,5 +52,21 @@ func TestWindows(t *testing.T) {
 	r := checkWith("windows", "amd64", func() bool { return false })
 	if r.Supported {
 		t.Fatal("windows should not be supported")
+	}
+}
+
+func TestNativeRelease(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		for _, goarch := range []string{"amd64", "arm64"} {
+			if r := nativeCheck(goos, goarch); !r.Supported || r.Triple != goos+"-"+goarch {
+				t.Errorf("%s/%s: %+v", goos, goarch, r)
+			}
+		}
+		if r := nativeCheck(goos, "386"); r.Supported || r.Reason == "" {
+			t.Errorf("%s/386: %+v", goos, r)
+		}
+	}
+	if r := nativeCheck("freebsd", "amd64"); r.Supported || r.Reason == "" {
+		t.Errorf("freebsd: %+v", r)
 	}
 }

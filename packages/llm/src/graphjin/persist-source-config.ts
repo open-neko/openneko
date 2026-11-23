@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
+import {
+  type Document,
+  isMap,
+  isScalar,
+  isSeq,
+  parseDocument,
+  YAMLMap,
+  YAMLSeq,
+} from "yaml";
 
 type SourcePatch = Record<string, unknown> & { name?: unknown };
 
@@ -183,6 +191,86 @@ function mergeMap(target: YAMLMap, patch: Record<string, unknown>): void {
   }
 }
 
+const TABLE_LIST_PATCHES = ["public_tables", "admin_tables", "blocked_tables"] as const;
+
+function stringItems(node: unknown): string[] {
+  return isSeq(node) ? node.items.map((item) => String(isScalar(item) ? item.value : item)) : [];
+}
+
+function withoutFold(values: string[], name: string): string[] {
+  return values.filter((value) => value.trim().toLowerCase() !== name.trim().toLowerCase());
+}
+
+/** Mirrors GraphJin's classification patch: removes first, and an added table leaves the other lists. */
+function applyAccessPatch(source: YAMLMap, access: Record<string, unknown>): void {
+  const plain: Record<string, unknown> = {};
+  const lists = new Map<string, string[]>();
+  const found = source.get("access", true);
+  const accessNode: YAMLMap = isMap(found) ? found : new YAMLMap();
+  for (const group of TABLE_LIST_PATCHES) {
+    lists.set(group, stringItems(accessNode.get(group, true)));
+  }
+  let touched = false;
+  const removesFirst = Object.entries(access).sort(
+    ([left], [right]) => Number(right.endsWith("_remove")) - Number(left.endsWith("_remove")),
+  );
+  for (const [key, value] of removesFirst) {
+    const match = /^(public_tables|admin_tables|blocked_tables)_(add|remove)$/.exec(key);
+    if (!match) {
+      plain[key] = value;
+      continue;
+    }
+    if (!Array.isArray(value)) throw new Error(`GraphJin access.${key} must be a list`);
+    touched = true;
+    for (const name of value.map(String)) {
+      if (match[2] === "remove") {
+        lists.set(match[1], withoutFold(lists.get(match[1])!, name));
+        continue;
+      }
+      for (const group of TABLE_LIST_PATCHES) {
+        lists.set(group, withoutFold(lists.get(group)!, name));
+      }
+      lists.get(match[1])!.push(name.trim());
+    }
+  }
+  if (touched) {
+    for (const group of TABLE_LIST_PATCHES) {
+      const values = lists.get(group)!;
+      if (values.length > 0 || accessNode.has(group)) plain[group] = values;
+    }
+  }
+  if (!isMap(found)) source.set("access", accessNode);
+  mergeMap(accessNode, plain);
+}
+
+function persistRoles(document: Document, roles: unknown): void {
+  if (!Array.isArray(roles) || roles.length === 0) return;
+  let rolesNode = document.get("roles", true);
+  if (rolesNode == null) {
+    rolesNode = new YAMLSeq();
+    document.set("roles", rolesNode);
+  }
+  if (!isSeq(rolesNode)) throw new Error("GraphJin config roles must be a YAML list");
+  for (const value of roles) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("GraphJin roles contains an invalid role");
+    }
+    const role = value as Record<string, unknown>;
+    const name = typeof role.name === "string" ? role.name.trim() : "";
+    if (!name) throw new Error("GraphJin role persistence needs a role name");
+    const index = rolesNode.items.findIndex(
+      (item) =>
+        isMap(item) &&
+        String(item.get("name") ?? "").trim().toLowerCase() === name.toLowerCase(),
+    );
+    if (index >= 0) rolesNode.items[index] = document.createNode(role);
+    else {
+      rolesNode.flow = false;
+      rolesNode.add(document.createNode(role));
+    }
+  }
+}
+
 /**
  * Persist the already-approved source portion of a GraphJin config update.
  * GraphJin intentionally keeps production-mode gj_config writes in memory;
@@ -197,6 +285,30 @@ export async function persistGraphjinSourceConfigUpdate(input: {
     /* turbopackIgnore: true */ input.configFile,
     "utf8",
   );
+  const merged = mergeGraphjinSourceConfigUpdate(raw, input.update);
+  const previousMode = (
+    await stat(/* turbopackIgnore: true */ input.configFile)
+  ).mode & 0o777;
+  const temporary = join(
+    /* turbopackIgnore: true */ dirname(input.configFile),
+    `.${randomUUID()}.graphjin-config.tmp`,
+  );
+  await writeFile(
+    /* turbopackIgnore: true */ temporary,
+    merged,
+    { mode: previousMode },
+  );
+  await rename(
+    /* turbopackIgnore: true */ temporary,
+    input.configFile,
+  );
+}
+
+/** The config file text after the update, as the approval worker writes it. */
+export function mergeGraphjinSourceConfigUpdate(
+  raw: string,
+  update: Record<string, unknown>,
+): string {
   const document = parseDocument(raw);
   if (document.errors.length > 0) {
     throw new Error(
@@ -208,15 +320,18 @@ export async function persistGraphjinSourceConfigUpdate(input: {
   }
 
   let sourcesNode = document.get("sources", true);
+  const touchesSources = ["update_sources", "remove_sources", "source_patches"].some(
+    (key) => Array.isArray(update[key]) && (update[key] as unknown[]).length > 0,
+  );
   if (sourcesNode == null) {
     sourcesNode = new YAMLSeq();
-    document.set("sources", sourcesNode);
+    if (touchesSources) document.set("sources", sourcesNode);
   }
   if (!isSeq(sourcesNode)) {
     throw new Error("GraphJin config sources must be a YAML list");
   }
 
-  const updates = input.update.update_sources;
+  const updates = update.update_sources;
   if (Array.isArray(updates)) {
     for (const value of updates) {
       if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -226,11 +341,14 @@ export async function persistGraphjinSourceConfigUpdate(input: {
       const name = sourceName(patch);
       const existing = mapByName(sourcesNode, name);
       if (existing) mergeMap(existing, patch);
-      else sourcesNode.add(document.createNode(patch));
+      else {
+        sourcesNode.flow = false;
+        sourcesNode.add(document.createNode(patch));
+      }
     }
   }
 
-  const removals = input.update.remove_sources;
+  const removals = update.remove_sources;
   if (Array.isArray(removals)) {
     const names = new Set(
       removals.map((value, index) => {
@@ -245,36 +363,25 @@ export async function persistGraphjinSourceConfigUpdate(input: {
     );
   }
 
-  const accessPatches = input.update.source_patches;
+  const accessPatches = update.source_patches;
   if (Array.isArray(accessPatches)) {
     for (const value of accessPatches) {
       if (!value || typeof value !== "object" || Array.isArray(value)) {
         throw new Error("GraphJin source_patches contains an invalid source");
       }
-      const patch = value as SourcePatch;
+      const { access, ...patch } = value as SourcePatch;
       const name = sourceName(patch);
       const existing = mapByName(sourcesNode, name);
       if (!existing) {
         throw new Error(`GraphJin source ${name} is absent from the durable config`);
       }
       mergeMap(existing, patch);
+      if (access && typeof access === "object" && !Array.isArray(access)) {
+        applyAccessPatch(existing, access as Record<string, unknown>);
+      }
     }
   }
 
-  const previousMode = (
-    await stat(/* turbopackIgnore: true */ input.configFile)
-  ).mode & 0o777;
-  const temporary = join(
-    /* turbopackIgnore: true */ dirname(input.configFile),
-    `.${randomUUID()}.graphjin-config.tmp`,
-  );
-  await writeFile(
-    /* turbopackIgnore: true */ temporary,
-    document.toString(),
-    { mode: previousMode },
-  );
-  await rename(
-    /* turbopackIgnore: true */ temporary,
-    input.configFile,
-  );
+  persistRoles(document, update.roles);
+  return document.toString();
 }

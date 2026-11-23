@@ -18,7 +18,7 @@ export default function SkillLearnCard() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/settings/skill-learn", { cache: "no-store" })
+    void fetch("/api/v1/settings/skill-learn", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json() as Promise<Payload>;
@@ -46,7 +46,7 @@ export default function SkillLearnCard() {
     setEnabled(next);
     setSaving(true);
     try {
-      const response = await fetch("/api/settings/skill-learn", {
+      const response = await fetch("/api/v1/settings/skill-learn", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: next }),
@@ -78,8 +78,8 @@ export default function SkillLearnCard() {
         <div className="min-w-0">
           <h2 className="settings-card-title">Skill learning</h2>
           <p className="settings-card-copy">
-            When on, OpenNeko records a lesson from repeated skill use and adds
-            it to the skill. Authored skill files stay as written.
+            When on, OpenNeko proposes a lesson from repeated skill use. The
+            lesson reaches the skill only after an admin confirms it.
           </p>
         </div>
         {enabled === null ? null : (
@@ -103,9 +103,10 @@ export default function SkillLearnCard() {
       )}
       <Disclosure title="What this changes" className="mt-4">
         <p className="m-0 text-ui-body-sm leading-[1.55] text-text2">
-          OpenNeko writes a LEARNED.md overlay after the same lesson shows up
-          enough times. The overlay does not store customer data. A decision log
-          records each apply, skip, and reject. Off by default.
+          After the same lesson shows up enough times, OpenNeko proposes a
+          LEARNED.md overlay under Proposed team changes. An admin confirms or
+          rejects it there. The overlay does not store customer data, and
+          authored skill files stay as written. Off by default.
         </p>
       </Disclosure>
     </section>

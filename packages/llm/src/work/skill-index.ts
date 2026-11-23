@@ -1,20 +1,23 @@
-import { and, db, eq, inArray, isNotNull, skill_embedding, sql } from "@neko/db";
-import { embedText, vectorLiteral } from "../embedding";
+import { and, db, eq, inArray, notInArray, skill_embedding, sql } from "@neko/db";
+import { embedText, embeddingModel, vectorLiteral } from "../embedding";
 import { entitlementActorForRun, runHeldItemIds } from "./entitlement-scope";
+import { interleaveResults, keywordTsQuery } from "./keyword-search";
+import { sandboxForOrg } from "./sandbox-org";
+import { SANDBOX_SKILLS } from "./sandbox-service";
+import { matchOwnSkills, ownRunSkills, runSkillsWithOwn } from "./member-skills";
+import { getOrgAgentRoot } from "./workspace";
 
 export type SkillSearchResult = { name: string; score: number };
 
-const INLINE_EMBEDS = 64;
-
-/** A skill is indexed by its name and description; longer guide text blurs MiniLM's ranking. */
+/** A skill is indexed by its name and description; longer guide text blurs the ranking. */
 function skillDocument(skill: { name: string; description: string }): string {
   return [skill.name, skill.description].filter(Boolean).join("\n");
 }
 
 /**
  * Keeps the org's skill index in step with its installed skills. A new or
- * changed description clears the vector; up to 64 are embedded now and the embedding
- * job queue indexes the rest.
+ * changed description clears the vector; the embedding job indexes it in the
+ * background when embedding is on, so a chat turn never waits on the model.
  */
 export async function syncSkillIndex(
   orgId: string,
@@ -32,10 +35,10 @@ export async function syncSkillIndex(
     if (known.get(skill.name) === document) continue;
     await db()
       .insert(skill_embedding)
-      .values({ org_id: orgId, skill_name: skill.name, document, embedding: null })
+      .values({ org_id: orgId, skill_name: skill.name, document, embedding: null, embedding_model: null })
       .onConflictDoUpdate({
         target: [skill_embedding.org_id, skill_embedding.skill_name],
-        set: { document, embedding: null, updated_at: new Date() },
+        set: { document, embedding: null, embedding_model: null, updated_at: new Date() },
       });
   }
   const removed = existing.map((row) => row.name).filter((name) => !installed.has(name));
@@ -44,48 +47,115 @@ export async function syncSkillIndex(
       .delete(skill_embedding)
       .where(and(eq(skill_embedding.org_id, orgId), inArray(skill_embedding.skill_name, removed)));
   }
-
-  const pending = await db()
-    .select({ id: skill_embedding.id, document: skill_embedding.document })
-    .from(skill_embedding)
-    .where(and(eq(skill_embedding.org_id, orgId), sql`${skill_embedding.embedding} IS NULL`))
-    .limit(INLINE_EMBEDS);
-  for (const row of pending) {
-    const vector = vectorLiteral(await embedText(row.document));
-    // A guide changed in between keeps its null vector for the next pass.
-    await db()
-      .update(skill_embedding)
-      .set({ embedding: sql`${vector}::vector` })
-      .where(and(eq(skill_embedding.id, row.id), eq(skill_embedding.document, row.document)));
-  }
 }
 
-/** The installed skills closest in meaning to the query that the run's actor holds. */
+function runnableOnly(terminal: boolean, exclude: readonly string[] = []) {
+  const hidden = terminal ? exclude : [...SANDBOX_SKILLS, ...exclude];
+  return hidden.length ? [notInArray(skill_embedding.skill_name, [...hidden])] : [];
+}
+
+async function keywordSkillSearch(
+  orgId: string,
+  held: string[] | null | undefined,
+  query: string,
+  limit: number,
+  runnable: ReturnType<typeof runnableOnly>,
+  unindexedModel?: string,
+): Promise<SkillSearchResult[]> {
+  const tsquery = keywordTsQuery(query);
+  const document = sql`to_tsvector('english', ${skill_embedding.document})`;
+  const rank = sql<number>`ts_rank_cd(${document}, ${tsquery})`;
+  const rows = await db()
+    .select({ name: skill_embedding.skill_name, rank })
+    .from(skill_embedding)
+    .where(
+      and(
+        eq(skill_embedding.org_id, orgId),
+        ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
+        ...runnable,
+        ...(unindexedModel
+          ? [sql`(${skill_embedding.embedding} IS NULL OR ${skill_embedding.embedding_model} IS DISTINCT FROM ${unindexedModel})`]
+          : []),
+        sql`${document} @@ ${tsquery}`,
+      ),
+    )
+    .orderBy(sql`${rank} desc`, skill_embedding.skill_name)
+    .limit(limit);
+  return rows.map((row) => ({ name: row.name, score: Number(row.rank) || 0 }));
+}
+
+/**
+ * The installed skills that best match the query and that the run's actor
+ * holds. With embedding on, skills rank by meaning and skills with no current
+ * vector are found by keyword. With embedding off or failing, by keyword only.
+ */
 export async function searchSkillsForRun(input: {
   orgId: string;
   runId: string;
   query: string;
   limit?: number;
+  exclude?: readonly string[];
 }): Promise<SkillSearchResult[]> {
   const query = input.query.trim();
+  const exclude = input.exclude ?? [];
   if (!query) return [];
   const actor = await entitlementActorForRun(input.orgId, input.runId);
   if (!actor) return [];
   const held = await runHeldItemIds(actor, "skill");
-  if (held && held.length === 0) return [];
-  const vector = vectorLiteral(await embedText(query));
+  const terminal = (await sandboxForOrg(input.orgId)) !== undefined;
+  const { skills: own, ownNames } = runSkillsWithOwn(
+    [],
+    undefined,
+    actor.kind === "user" ? await ownRunSkills(getOrgAgentRoot(input.orgId), actor.userId) : [],
+    !exclude.includes("graphjin-config"),
+    terminal,
+  );
+  const ownHits = matchOwnSkills(own.filter((skill) => !exclude.includes(skill.name)), query)
+    .slice(0, Math.min(Math.max(input.limit ?? 3, 1), 10))
+    .map((skill) => ({ name: skill.name, score: 1 }));
+  const limit = Math.min(Math.max(input.limit ?? 3, 1), 10) - ownHits.length;
+  if ((held && held.length === 0) || limit === 0) return ownHits;
+  const runnable = runnableOnly(terminal, [...exclude, ...ownNames]);
+  return [...ownHits, ...(await indexedSkillSearch(input.orgId, held, query, limit, runnable))];
+}
+
+async function indexedSkillSearch(
+  orgId: string,
+  held: string[] | undefined,
+  query: string,
+  limit: number,
+  runnable: ReturnType<typeof runnableOnly>,
+): Promise<SkillSearchResult[]> {
+  const model = embeddingModel();
+  if (!model) return keywordSkillSearch(orgId, held, query, limit, runnable);
+  let vector: string;
+  try {
+    vector = vectorLiteral(await embedText(query));
+  } catch (error) {
+    console.warn(
+      "[skill-index] embedding unavailable; searching by keyword:",
+      error instanceof Error ? error.message : error,
+    );
+    return keywordSkillSearch(orgId, held, query, limit, runnable);
+  }
   const distance = sql<number>`${skill_embedding.embedding} <=> ${vector}::vector`;
-  const rows = await db()
-    .select({ name: skill_embedding.skill_name, distance })
-    .from(skill_embedding)
-    .where(
-      and(
-        eq(skill_embedding.org_id, input.orgId),
-        isNotNull(skill_embedding.embedding),
-        ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
-      ),
-    )
-    .orderBy(distance)
-    .limit(Math.min(Math.max(input.limit ?? 3, 1), 10));
-  return rows.map((row) => ({ name: row.name, score: 1 - Number(row.distance) }));
+  const [rows, unindexed] = await Promise.all([
+    db()
+      .select({ name: skill_embedding.skill_name, distance })
+      .from(skill_embedding)
+      .where(
+        and(
+          eq(skill_embedding.org_id, orgId),
+          eq(skill_embedding.embedding_model, model),
+          sql`${skill_embedding.embedding} IS NOT NULL`,
+          ...(held ? [inArray(skill_embedding.skill_name, held)] : []),
+          ...runnable,
+        ),
+      )
+      .orderBy(distance)
+      .limit(limit),
+    keywordSkillSearch(orgId, held, query, limit, runnable, model),
+  ]);
+  const semantic = rows.map((row) => ({ name: row.name, score: 1 - Number(row.distance) }));
+  return interleaveResults(semantic, unindexed, (result) => result.name, limit);
 }

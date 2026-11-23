@@ -27,7 +27,7 @@ function SignInBody() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        const res = await fetch("/api/v1/auth/status", { cache: "no-store" });
         const body = (await res.json()) as {
           provider: ProviderInfo | null;
           pending?: { providerLabel: string } | null;
@@ -77,7 +77,7 @@ function SignInBody() {
           Checking sign-in options…
         </div>
       ) : provider ? (
-        <form action="/api/auth/begin" method="GET" className="entry-fields">
+        <form action="/api/v1/auth/begin" method="GET" className="entry-fields">
           <input
             data-ui-bespoke-reason="sign-in entry fields"
             type="hidden"
@@ -112,9 +112,6 @@ function SignInBody() {
               ? "Email me a sign-in link"
               : `Sign in with ${provider.providerLabel}`}
           </Button>
-          <p className="entry-provider-note">
-            Provided by <code>{provider.pluginName}</code>
-          </p>
         </form>
       ) : pendingLabel ? (
         <div className="entry-empty">
@@ -128,13 +125,12 @@ function SignInBody() {
       ) : (
         <div className="entry-empty">
           <p className="entry-section-kicker">Single-operator mode</p>
-          <h3>No SSO plugin is installed</h3>
+          <h3>Sign-in is not set up</h3>
           <p>
-            An operator with shell access can install an authentication plugin
-            to enable enterprise sign-in. Until then, OpenNeko remains in
+            An administrator can turn on single sign-on or email-link sign-in
+            under Admin, Settings. Until then, OpenNeko remains in
             single-operator mode.
           </p>
-          <code>openneko install @open-neko/plugin-scalekit</code>
         </div>
       )}
     </EntryShell>

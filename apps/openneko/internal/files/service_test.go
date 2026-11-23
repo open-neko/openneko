@@ -1,0 +1,273 @@
+package files
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dosco/graphjin/core/v3/fstable"
+
+	"github.com/open-neko/neko/apps/openneko/internal/config"
+	"github.com/open-neko/neko/apps/openneko/internal/filecontent"
+	"github.com/open-neko/neko/apps/openneko/internal/filestore"
+	"github.com/open-neko/neko/apps/openneko/internal/filestore/s3test"
+	"github.com/open-neko/neko/apps/openneko/internal/testpg"
+)
+
+var testKey = []byte("0123456789abcdef0123456789abcdef")
+
+func mint(key []byte, org, user string, exp time.Time) string { return MintToken(key, org, user, exp) }
+
+func newServer(t *testing.T) (*httptest.Server, string) {
+	t.Helper()
+	root := t.TempDir()
+	store, err := fstable.NewLocal(fstable.LocalConfig{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newServerOn(t, store, 0), root
+}
+
+func newServerOn(t *testing.T, store fstable.Backend, maxFileBytes int64) *httptest.Server {
+	t.Helper()
+	ix, err := filecontent.Open(testpg.Pool(t, "0121_file_content.sql"), t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(store, ix, testKey, Options{DuckDB: os.Getenv("OPENNEKO_TEST_DUCKDB"), Refresh: time.Millisecond, MaxFileBytes: maxFileBytes})
+	srv := httptest.NewServer(svc.Handler())
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func call(t *testing.T, srv *httptest.Server, token, method, path string, body []byte) (int, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest(method, srv.URL+path, bytes.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out map[string]any
+	json.NewDecoder(res.Body).Decode(&out) //nolint:errcheck
+	return res.StatusCode, out
+}
+
+func put(t *testing.T, srv *httptest.Server, token, p string, data []byte) {
+	t.Helper()
+	if code, out := call(t, srv, token, http.MethodPut, "/v1/files/content?path="+url.QueryEscape(p), data); code != 200 {
+		t.Fatalf("put %s = %d %v", p, code, out)
+	}
+}
+
+func TestFilesArePrivateToTheirUser(t *testing.T) {
+	srv, root := newServer(t)
+	alice := mint(testKey, "org1", "alice", time.Now().Add(time.Minute))
+	bob := mint(testKey, "org1", "bob", time.Now().Add(time.Minute))
+
+	put(t, srv, alice, "policies/travel.md", []byte("# Per diem\nTier 1 cities pay 70 per day.\n"))
+	put(t, srv, alice, "pricing/q4 prices.csv", []byte("SKU,Price\nHI-1,12.5\nHI-2,7\n"))
+	put(t, srv, bob, "notes.md", []byte("# Per diem\nBob's per diem notes.\n"))
+	if _, err := os.Stat(filepath.Join(root, "orgs", "org1", "users", "alice", "policies", "travel.md")); err != nil {
+		t.Fatalf("file not in alice's folder: %v", err)
+	}
+	checkPrivateFiles(t, srv, alice, bob)
+}
+
+func TestFilesInABucket(t *testing.T) {
+	endpoint := s3test.Start(t)
+	name := s3test.Bucket(t, endpoint, "files-service")
+	store, err := filestore.Open(context.Background(), filestore.Config{Dir: t.TempDir(), Bucket: "s3://" + name + "/neko", Endpoint: endpoint, AccessKeyID: s3test.KeyID, SecretKey: s3test.Secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServerOn(t, store, 64)
+	alice := mint(testKey, "org1", "alice", time.Now().Add(time.Minute))
+	bob := mint(testKey, "org1", "bob", time.Now().Add(time.Minute))
+
+	code, out := call(t, srv, "", http.MethodGet, "/healthz", nil)
+	if code != 200 || out["file_store"] != "s3" || out["file_store_ok"] != true || !strings.Contains(fmt.Sprint(out["file_store_where"]), "s3://"+name) {
+		t.Fatalf("healthz = %d %v", code, out)
+	}
+	put(t, srv, alice, "policies/travel.md", []byte("# Per diem\nTier 1 cities pay 70 per day.\n"))
+	put(t, srv, alice, "pricing/q4 prices.csv", []byte("SKU,Price\nHI-1,12.5\nHI-2,7\n"))
+	put(t, srv, bob, "notes.md", []byte("# Per diem\nBob's per diem notes.\n"))
+	if _, err := store.Stat(context.Background(), "orgs/org1/users/alice/policies/travel.md"); err != nil {
+		t.Fatalf("file not in alice's folder in the bucket: %v", err)
+	}
+	checkTooLargeKeepsTheOldFile(t, srv, alice)
+	checkPrivateFiles(t, srv, alice, bob)
+
+	down, _ := filestore.Open(context.Background(), filestore.Config{Dir: t.TempDir(), Bucket: "s3://" + name, Endpoint: "http://127.0.0.1:1", AccessKeyID: s3test.KeyID, SecretKey: s3test.Secret})
+	srv = newServerOn(t, down, 0)
+	code, out = call(t, srv, "", http.MethodGet, "/healthz", nil)
+	if code != 200 || out["file_store_ok"] != false || out["file_store_error"] == nil {
+		t.Fatalf("healthz with the bucket down = %d %v", code, out)
+	}
+	if code, out := call(t, srv, alice, http.MethodPost, "/v1/files/search", []byte(`{"query":"per diem"}`)); code == 200 {
+		t.Fatalf("search with the bucket down = %d %v", code, out)
+	}
+}
+
+func TestTooLargeUploadKeepsTheOldFile(t *testing.T) {
+	root := t.TempDir()
+	store, err := fstable.NewLocal(fstable.LocalConfig{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServerOn(t, store, 64)
+	alice := mint(testKey, "org1", "alice", time.Now().Add(time.Minute))
+	put(t, srv, alice, "policies/travel.md", []byte("# Per diem\nTier 1 cities pay 70 per day.\n"))
+	checkTooLargeKeepsTheOldFile(t, srv, alice)
+}
+
+func checkTooLargeKeepsTheOldFile(t *testing.T, srv *httptest.Server, token string) {
+	t.Helper()
+	exact := bytes.Repeat([]byte("x"), 64)
+	put(t, srv, token, "exact.txt", exact)
+	code, out := call(t, srv, token, http.MethodPut, "/v1/files/content?path=policies/travel.md", bytes.Repeat([]byte("y"), 65))
+	if code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("65 bytes over a 64-byte limit = %d %v", code, out)
+	}
+	code, out = call(t, srv, token, http.MethodPost, "/v1/files/read", []byte(`{"path":"policies/travel.md"}`))
+	if code != 200 || !strings.HasPrefix(fmt.Sprint(out["text"]), "# Per diem") {
+		t.Fatalf("the refused upload replaced the old file: %d %v", code, out)
+	}
+	if code, _ := call(t, srv, token, http.MethodDelete, "/v1/files/content?path=exact.txt", nil); code != 200 {
+		t.Fatalf("delete exact.txt = %d", code)
+	}
+}
+
+func checkPrivateFiles(t *testing.T, srv *httptest.Server, alice, bob string) {
+	t.Helper()
+	code, out := call(t, srv, alice, http.MethodPost, "/v1/files/search", []byte(`{"query":"per diem tier 1"}`))
+	matches, _ := out["matches"].([]any)
+	if code != 200 || len(matches) == 0 {
+		t.Fatalf("search = %d %v", code, out)
+	}
+	for _, m := range matches {
+		if p := m.(map[string]any)["path"]; p == "notes.md" {
+			t.Fatalf("alice found bob's file: %v", out)
+		}
+	}
+	if first := matches[0].(map[string]any)["path"]; first != "policies/travel.md" {
+		t.Fatalf("first match = %v", first)
+	}
+
+	code, out = call(t, srv, alice, http.MethodPost, "/v1/files/read", []byte(`{"path":"policies/travel.md","max_chars":10}`))
+	if code != 200 || out["text"] != "# Per diem" || out["truncated"] != true {
+		t.Fatalf("read = %d %v", code, out)
+	}
+	for _, p := range []string{"notes.md", "../bob/notes.md", "/../../bob/notes.md"} {
+		body, _ := json.Marshal(map[string]string{"path": p})
+		if code, out := call(t, srv, alice, http.MethodPost, "/v1/files/read", body); code == 200 {
+			t.Fatalf("alice read %s: %v", p, out)
+		}
+	}
+
+	code, out = call(t, srv, bob, http.MethodGet, "/v1/files", nil)
+	if files, _ := out["files"].([]any); code != 200 || len(files) != 1 {
+		t.Fatalf("bob list = %d %v", code, out)
+	}
+
+	code, _ = call(t, srv, "", http.MethodGet, "/v1/files", nil)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("no token = %d", code)
+	}
+	for _, tok := range []string{
+		mint(testKey, "org1", "alice", time.Now().Add(-time.Second)),
+		mint([]byte("another key of thirty-two bytes!"), "org1", "alice", time.Now().Add(time.Minute)),
+		mint(testKey, "org1", "../bob", time.Now().Add(time.Minute)),
+	} {
+		if code, _ := call(t, srv, tok, http.MethodGet, "/v1/files", nil); code != http.StatusUnauthorized {
+			t.Fatalf("bad token accepted: %d", code)
+		}
+	}
+
+	if os.Getenv("OPENNEKO_TEST_DUCKDB") != "" {
+		code, out = call(t, srv, alice, http.MethodPost, "/v1/files/sql", []byte(`{"sql":"select sum(price) as total from q4_prices"}`))
+		if code != 200 || !strings.Contains(toJSON(out["rows"]), "19.5") {
+			t.Fatalf("sql = %d %v", code, out)
+		}
+		code, out = call(t, srv, bob, http.MethodPost, "/v1/files/sql", []byte(`{"sql":"select * from q4_prices"}`))
+		if code != http.StatusBadRequest {
+			t.Fatalf("bob queried alice's table: %d %v", code, out)
+		}
+	}
+
+	if code, _ := call(t, srv, alice, http.MethodDelete, "/v1/files/content?path=policies/travel.md", nil); code != 200 {
+		t.Fatalf("delete = %d", code)
+	}
+	_, out = call(t, srv, alice, http.MethodPost, "/v1/files/search", []byte(`{"query":"tier cities"}`))
+	if matches, _ := out["matches"].([]any); len(matches) != 0 {
+		t.Fatalf("deleted file still found: %v", out)
+	}
+}
+
+func toJSON(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func TestSigningSecretMatchesTheNodeDerivation(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "secret-key"), []byte("fixture-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, err := config.SigningSecret(dir, TokenLabel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "4fc869c2fcfaf11034f04f0ea823c141e82f489797c6da24a1571bc1fb052113"
+	if got := hex.EncodeToString(key); got != want {
+		t.Fatalf("SigningSecret = %s", got)
+	}
+}
+
+func TestContentReturnsTheCallersOwnBytes(t *testing.T) {
+	srv, _ := newServer(t)
+	alice := mint(testKey, "org1", "alice", time.Now().Add(time.Minute))
+	bob := mint(testKey, "org1", "bob", time.Now().Add(time.Minute))
+	sheet := []byte("PK\x03\x04 alternates sheet\x00\xff")
+	put(t, srv, alice, "library/abc/alternates.xlsx", sheet)
+
+	get := func(token, p string) (int, []byte) {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/files/content?path="+url.QueryEscape(p), nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var buf bytes.Buffer
+		buf.ReadFrom(res.Body) //nolint:errcheck
+		return res.StatusCode, buf.Bytes()
+	}
+	if code, body := get(alice, "library/abc/alternates.xlsx"); code != 200 || !bytes.Equal(body, sheet) {
+		t.Fatalf("alice reads her file = %d %q", code, body)
+	}
+	if code, _ := get(bob, "library/abc/alternates.xlsx"); code != http.StatusNotFound {
+		t.Fatalf("bob reads alice's path in his folder = %d, want 404", code)
+	}
+	if code, _ := get(bob, "../alice/library/abc/alternates.xlsx"); code != http.StatusBadRequest {
+		t.Fatalf("bob climbs to alice's folder = %d, want 400", code)
+	}
+	if code, _ := get("", "library/abc/alternates.xlsx"); code != http.StatusUnauthorized {
+		t.Fatalf("no token = %d, want 401", code)
+	}
+}

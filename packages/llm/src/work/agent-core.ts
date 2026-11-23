@@ -5,42 +5,31 @@ import type {
   AgentRunResult,
   AgentWorkspace,
 } from "../agent-backend";
-import type { AllowedLibrary } from "../library/staging";
 import { buildWorkflowBuilderServer } from "../workflows/builder-server";
 import { buildRuleBuilderServer } from "../workflows/rule-builder-server";
 import type { AgentControlPlane } from "./control-plane";
 import {
   GRAPHJIN_TOOL_POLICY_ENV,
   serializeGraphjinMcpToolPolicy,
-  type GraphjinDataPath,
   type GraphjinMcpToolPolicy,
 } from "./graphjin-tool-policy";
 import { buildAskUserQuestionServer } from "./interaction-server";
 import {
-  parseAppWorkContext,
-  parseRecordWorkContext,
-  type WorkDataSurface,
-} from "./data-surface";
-import {
-  buildPluginActionServer,
   buildPackActionServer,
-  buildPluginManagerServer,
   buildAuditViewerServer,
   buildChannelManagerServer,
   buildDataSourceManagerServer,
-  buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildSourceConfigManagerServer,
   buildUserManagerServer,
-  buildLibraryServer,
+  buildFilesServer,
   buildRenderCardsServer,
-  buildRecordsReadServer,
   buildSkillBuilderServer,
   buildWorkMemoryServer,
   buildSkillSearchServer,
-  type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./tools";
+import { filesEnabled } from "../files/client";
 
 export interface RunAgentBackendInput {
   /** Agent backend. In the sandbox it is reconstructed from config. */
@@ -54,19 +43,14 @@ export interface RunAgentBackendInput {
   backendState?: Record<string, unknown>;
   /** Skill names the run's actor holds. Undefined means every skill. */
   allowedSkills?: readonly string[];
-  /** Team library files the actor holds. Undefined means the whole team library. */
-  allowedLibrary?: AllowedLibrary;
-  pluginActions: readonly PluginActionDescriptor[];
-  /** Installed pack actions, discovered independently of plugins. */
+  /** The run person's own skills in the scope; staged over team skills of the same name. */
+  ownSkills?: readonly string[];
+  /** Installed pack actions. */
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
-  /** Selects the isolated data plane for this turn. */
-  dataSurface?: WorkDataSurface;
   /** Optional backend-neutral restriction for this run's GraphJin MCP. */
   graphjinToolPolicy?: GraphjinMcpToolPolicy;
-  /** "agent" when the org opted in to GraphJin's server-side agent. */
-  graphjinDataPath?: GraphjinDataPath;
   /** Optional per-run restriction on the backend's own sub-agent primitive. */
   nativeDelegation?: AgentNativeDelegationPolicy;
   /** In-process on the host; broker-backed inside the agent sandbox. */
@@ -101,12 +85,9 @@ export async function runAgentBackend(
     runId,
     workspace,
     backendState,
-    pluginActions,
     packActions = [],
     sourceConfigEnabled = false,
-    dataSurface = "customer",
     graphjinToolPolicy,
-    graphjinDataPath = "direct",
     nativeDelegation,
     controlPlane,
     wantsCards = true,
@@ -116,32 +97,7 @@ export async function runAgentBackend(
   } = input;
 
   const mcp = backend.capabilities.mcpTools;
-  const recordsOnly = dataSurface === "records";
-  const appContext = recordsOnly
-    ? parseAppWorkContext(backendState?.appContext)
-    : null;
-  const recordContext = recordsOnly
-    ? parseRecordWorkContext(backendState?.recordContext)
-    : null;
-  // Legacy record-context threads retain their original exact-object scope.
-  // App-owned chat uses the actor's normal records grants across apps.
-  const recordScope = !appContext && recordContext
-    ? {
-        appId: recordContext.appId,
-        objectApiName: recordContext.objectApiName,
-      }
-    : undefined;
-  const pluginActionServer = mcp && !recordsOnly
-    ? buildPluginActionServer({
-        orgId,
-        threadId,
-        runId,
-        descriptors: pluginActions,
-        emit,
-        controlPlane,
-      })
-    : null;
-  const packActionServer = mcp && !recordsOnly
+  const packActionServer = mcp
     ? buildPackActionServer({
         orgId,
         threadId,
@@ -153,21 +109,7 @@ export async function runAgentBackend(
     : null;
 
   const mcpServers = mcp
-    ? recordsOnly
-      ? {
-          neko_interaction: buildAskUserQuestionServer({
-            runId,
-            wantsCards,
-            emit,
-          }),
-          neko_records: buildRecordsReadServer({
-            orgId,
-            runId,
-            controlPlane,
-            ...(recordScope ? { scope: recordScope } : {}),
-          }),
-        }
-      : {
+    ? {
         // Work chat is interactive. Material ambiguity pauses the turn and
         // returns control to the operator through a deterministic form.
         neko_interaction: buildAskUserQuestionServer({
@@ -177,24 +119,19 @@ export async function runAgentBackend(
         }),
         // GraphJin is brokered through the trusted host. No binary, source
         // URL, or credential enters the box.
-        ...(graphjinDataPath === "agent"
-          ? { neko_graphjin_agent: buildGraphjinAgentServer({ orgId, runId, controlPlane }) }
-          : {
-              neko_graphjin: buildGraphjinMcpServer({
-                orgId,
-                runId,
-                controlPlane,
-                ...(graphjinToolPolicy ? { toolPolicy: graphjinToolPolicy } : {}),
-              }),
-            }),
+        neko_graphjin: buildGraphjinMcpServer({
+          orgId,
+          runId,
+          controlPlane,
+          ...(graphjinToolPolicy ? { toolPolicy: graphjinToolPolicy } : {}),
+        }),
         // Rendering is per-channel: the card server only ships to web turns.
         ...(wantsCards ? { neko_ui: buildRenderCardsServer(emit, { rich: cardSchema === "rich" }) } : {}),
         neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
         neko_memory: buildWorkMemoryServer({ orgId, threadId, runId }, { controlPlane }),
         // Ax's discover() reaches the semantic skill index through this server.
         ...(backend.id === "ax" ? { neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }) } : {}),
-        neko_library: buildLibraryServer({ orgId, threadId, runId }, { controlPlane }),
-        neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
+        ...(filesEnabled() ? { neko_files: buildFilesServer({ orgId, threadId, runId }, { controlPlane }) } : {}),
         neko_workflow_builder: buildWorkflowBuilderServer({
           orgId,
           createdByThreadId: threadId,
@@ -206,12 +143,6 @@ export async function runAgentBackend(
           orgId,
           createdByThreadId: threadId,
           createdByRunId: runId,
-          emit,
-          controlPlane,
-        }),
-        neko_plugin_manager: buildPluginManagerServer({
-          orgId,
-          runId,
           emit,
           controlPlane,
         }),
@@ -244,7 +175,6 @@ export async function runAgentBackend(
             }
           : {}),
         neko_audit: buildAuditViewerServer({ orgId, runId, controlPlane }),
-        ...(pluginActionServer ? { neko_plugin_actions: pluginActionServer } : {}),
         ...(packActionServer ? { neko_pack_actions: packActionServer } : {}),
       }
     : undefined;
@@ -275,15 +205,7 @@ export async function runAgentBackend(
                   serializeGraphjinMcpToolPolicy(graphjinToolPolicy),
               }
             : {}),
-          OPENNEKO_MCP_PLUGIN_ACTIONS: JSON.stringify(
-            recordsOnly ? [] : (pluginActions ?? []),
-          ),
-          OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(
-            recordsOnly ? [] : packActions,
-          ),
-          ...(recordScope
-            ? { OPENNEKO_MCP_RECORD_SCOPE: JSON.stringify(recordScope) }
-            : {}),
+          OPENNEKO_MCP_PACK_ACTIONS: JSON.stringify(packActions),
         }
       : undefined,
     ...(nativeDelegation ? { nativeDelegation } : {}),

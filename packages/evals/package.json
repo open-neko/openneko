@@ -10,20 +10,28 @@
     "./cli": "./src/cli.ts"
   },
   "scripts": {
+    "eval": "tsx scripts/openneko-eval.ts",
+    "eval:cards": "tsx scripts/eval-render-cards.ts",
     "schemas:generate": "tsx scripts/generate-json-schemas.ts",
     "semantics:generate": "tsx scripts/generate-semantics.ts",
     "repo:check": "tsx scripts/check-repository.ts",
-    "test": "vitest run",
+    "test": "vitest run test/canonical.test.ts test/load.test.ts test/pricing.test.ts test/runner.test.ts test/scoring.test.ts test/eval-openneko-backend-fixture.test.ts test/eval-scripted-model.test.ts test/eval-responder-grades.test.ts",
+    "test:drivers": "vitest run test/eval-install.test.ts test/eval-openneko-backend.test.ts test/eval-openneko-lifecycle.test.ts test/eval-openneko-work.test.ts test/eval-adventureworks-metric.test.ts test/eval-trace-parity.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@neko/db": "workspace:*",
+    "@neko/llm": "workspace:*",
     "@neko/telemetry": "workspace:*",
+    "pg": "^8.20.0",
+    "pg-boss": "^10.1.5",
     "yaml": "^2.8.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "tsx": "^4.19.2",
     "typescript": "^5",
     "vitest": "^2.1.8"

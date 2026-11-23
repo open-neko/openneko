@@ -49,8 +49,6 @@ capabilities:
   - action.execute
   - action.rejection
   - channel.delivery
-  - work.records
-  - records.blueprint
   - work.compaction
   - work.multi-turn-resume
   - state-machine

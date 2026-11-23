@@ -17,10 +17,10 @@ func isolateConfig(t *testing.T) {
 
 func sampleFS() fstest.MapFS {
 	return fstest.MapFS{
-		"compose/core.yml":      {Data: []byte("services: { web: {} }\n")},
-		"compose/dev.yml":       {Data: []byte("services: { dev: {} }\n")},
-		"compose/demo.yml":      {Data: []byte("services: { demo: {} }\n")},
-		"compose/openshell.yml": {Data: []byte("services: { openshell-gateway: {} }\n")},
+		"compose/core.yml":       {Data: []byte("services: { web: {} }\n")},
+		"compose/dev.yml":        {Data: []byte("services: { dev: {} }\n")},
+		"compose/demo.yml":       {Data: []byte("services: { demo: {} }\n")},
+		"compose/bundled-db.yml": {Data: []byte("services: { neko-db: {} }\n")},
 	}
 }
 
@@ -36,8 +36,7 @@ func TestMaterializeProd(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	// SEC9: OpenShell is the only runtime — its overlay always applies.
-	want := []string{"core.yml", "openshell.yml"}
+	want := []string{"core.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -55,29 +54,34 @@ func TestMaterializeDemo(t *testing.T) {
 	for _, f := range files {
 		got = append(got, filepath.Base(f))
 	}
-	want := []string{"core.yml", "demo.yml", "openshell.yml"}
+	want := []string{"core.yml", "bundled-db.yml", "demo.yml"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unexpected order: %v", got)
 	}
 }
 
-func TestMaterializeOpenShellAlwaysOn(t *testing.T) {
+func TestMaterializeStackGivesProdTheBundledDatabaseOnlyOnRequest(t *testing.T) {
 	isolateConfig(t)
-	dir := t.TempDir()
-	for _, goos := range []string{"darwin", "linux"} {
-		s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: dir, GOOS: goos}
-		files, err := s.Materialize(ModeProd)
+	s := &Supervisor{AssetsFS: sampleFS(), RuntimeDir: t.TempDir(), GOOS: "linux"}
+	for _, tc := range []struct {
+		mode    Mode
+		bundled bool
+		want    string
+	}{
+		{ModeProd, false, "core.yml"},
+		{ModeProd, true, "core.yml,bundled-db.yml"},
+		{ModeDev, true, "core.yml,bundled-db.yml,dev.yml"},
+	} {
+		files, err := s.MaterializeStack(tc.mode, tc.bundled)
 		if err != nil {
 			t.Fatal(err)
 		}
-		found := false
+		var got []string
 		for _, f := range files {
-			if filepath.Base(f) == "openshell.yml" {
-				found = true
-			}
+			got = append(got, filepath.Base(f))
 		}
-		if !found {
-			t.Fatalf("openshell overlay must always apply (SEC9): %v", files)
+		if strings.Join(got, ",") != tc.want {
+			t.Fatalf("%s bundled=%v: got %v want %s", tc.mode, tc.bundled, got, tc.want)
 		}
 	}
 }
@@ -133,7 +137,7 @@ func TestRuntimeDirUsesNamedInstanceStateOutsideWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join("/var/state", "openneko", "instances", "acme", "runtime")
+	want, _ := filepath.Abs(filepath.Join("/var/state", "openneko", "instances", "acme", "runtime"))
 	if got != want {
 		t.Fatalf("runtime dir = %q, want %q", got, want)
 	}
@@ -226,28 +230,6 @@ func TestInstallationIDIsStableAndRuntimeScoped(t *testing.T) {
 	}
 	if secondID == firstID {
 		t.Fatal("different runtime directories shared an installation identity")
-	}
-}
-
-func TestRotateInstallationIDPreservesOldIdentityAndPersistsNewOne(t *testing.T) {
-	s := &Supervisor{RuntimeDir: t.TempDir()}
-	first, err := s.InstallationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldID, newID, err := s.RotateInstallationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if oldID != first || newID == first {
-		t.Fatalf("rotation old=%q new=%q first=%q", oldID, newID, first)
-	}
-	readBack, err := s.InstallationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if readBack != newID {
-		t.Fatalf("rotated identity was not persisted: got %q want %q", readBack, newID)
 	}
 }
 

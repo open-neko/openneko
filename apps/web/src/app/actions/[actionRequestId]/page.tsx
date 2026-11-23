@@ -15,10 +15,7 @@ import {
   systemForActionKind,
 } from "@/lib/action-outcome";
 import { cn } from "@/lib/cn";
-import {
-  parseRecordUpdatePayload,
-  RecordActionDiff,
-} from "@/components/records/RecordActionDiff";
+import { createApprovalPasskeyAssertion, sendApproval, type PasskeyAssertionPayload } from "@/lib/passkey";
 import { Button } from "@/components/ui/button";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,6 +48,7 @@ type ActionDetailPayload = {
     riskLevel: string | null;
     status: string;
     summary: string | null;
+    facts?: { headline: string; lines: string[]; flags: string[] } | null;
     approvedByUserId: string | null;
     approvedAt: string | null;
     rejectionReason: string | null;
@@ -137,7 +135,7 @@ export default function ActionPage() {
   const load = useCallback(async () => {
     if (!actionRequestId) return;
     try {
-      const res = await fetch(`/api/action-requests/${actionRequestId}`, {
+      const res = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -178,25 +176,60 @@ export default function ActionPage() {
       setBusy(true);
       setDecisionError(null);
       try {
-        const response = await fetch(`/api/action-requests/${actionRequestId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, reason }),
-        });
+        const send = (passkey?: PasskeyAssertionPayload) =>
+          fetch(`/api/v1/action-requests/${actionRequestId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decision, reason, ...(passkey ? { passkey } : {}) }),
+          });
+        const response =
+          decision === "approve" ? await sendApproval(actionRequestId, send) : await send();
         if (!response.ok) {
           const body = await response.json().catch(() => ({})) as { error?: string };
           setDecisionError(body.error ?? "Could not update this action. Refresh and try again.");
           return;
         }
         await load();
-      } catch {
-        setDecisionError("Could not update this action. Check your connection and try again.");
+      } catch (e) {
+        setDecisionError(
+          e instanceof Error && e.message
+            ? e.message
+            : "Could not update this action. Check your connection and try again.",
+        );
       } finally {
         setBusy(false);
       }
     },
     [actionRequestId, load],
   );
+
+  const submitPasskeyApproval = useCallback(async () => {
+    if (!actionRequestId) return;
+    setBusy(true);
+    setDecisionError(null);
+    try {
+      const passkey = await createApprovalPasskeyAssertion(actionRequestId);
+      const response = await fetch(`/api/v1/action-requests/${actionRequestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "approve", passkey }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        setDecisionError(body.error ?? "Could not verify the passkey approval. Try again.");
+        return;
+      }
+      await load();
+    } catch (e) {
+      setDecisionError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Could not verify the passkey approval. Try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [actionRequestId, load]);
 
   const submitReject = useCallback(async () => {
     const reason = rejectReason.trim() || undefined;
@@ -208,7 +241,7 @@ export default function ActionPage() {
   const askFollowUp = useCallback(async () => {
     if (!actionRequestId) return;
     try {
-      const res = await fetch("/api/work/threads", {
+      const res = await fetch("/api/v1/work/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seedActionRequestId: actionRequestId }),
@@ -264,7 +297,6 @@ export default function ActionPage() {
     latestExecution?.error ?? ar.failureReason ?? ar.rejectionReason,
     systemForActionKind(ar.kind),
   );
-  const recordUpdate = parseRecordUpdatePayload(ar.kind, ar.payload);
 
   return (
     <>
@@ -279,11 +311,11 @@ export default function ActionPage() {
         </AppHeader>
 
         <PageHeading
-          title={ar.summary || ar.kind}
+          title={ar.facts?.headline || ar.kind}
           meta={OUTCOME_LABEL[outcome]}
           description={[
             ar.kind,
-            ar.target,
+            ar.target ? `The agent's target: ${ar.target}` : null,
             ar.riskLevel ? `${ar.riskLevel.charAt(0).toUpperCase()}${ar.riskLevel.slice(1)} risk` : null,
             formatRelative(ar.createdAt),
           ]
@@ -303,20 +335,10 @@ export default function ActionPage() {
 
         {decisionError && <p role="alert" className="mb-4 text-ui-body-sm text-danger">{decisionError}</p>}
 
-        {recordUpdate && (
-          <Section title="Proposed change">
-            <RecordActionDiff
-              kind={ar.kind}
-              payload={ar.payload}
-              policyContext={
-                isPending && policy ? `rule "${policy.name}"` : null
-              }
-            />
-          </Section>
-        )}
-
         <Section title="Receipt">
           <dl className="grid gap-3.5 m-0">
+            {ar.facts?.flags.length ? <Field label="Unusual">{ar.facts.flags.join(" · ")}</Field> : null}
+            {ar.summary ? <Field label="Agent's description">{ar.summary}</Field> : null}
             <Field label="Proposed">
               <span className="tabular-nums">{formatTime(ar.createdAt)}</span>
               {workflow && (
@@ -327,7 +349,7 @@ export default function ActionPage() {
                     <Button
                       variant="ghost"
                       type="button"
-                      className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
+                      className="inline min-h-0 whitespace-normal text-left bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
                         ar.workflowRunId &&
                         router.push(`/runs/${ar.workflowRunId}`)
@@ -413,7 +435,7 @@ export default function ActionPage() {
               )}
             </Field>
 
-            {ar.kind !== "record_update" && hasActionChanges(ar.payload) ? (
+            {hasActionChanges(ar.payload) ? (
               <Field label="Changes">
                 <ActionChanges payload={ar.payload} className="mt-1" />
               </Field>
@@ -445,7 +467,7 @@ export default function ActionPage() {
                 <Button
                   variant="ghost"
                   type="button"
-                  className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
+                  className="inline min-h-0 whitespace-normal text-left bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                   onClick={() => router.push(`/runs/${ar.workflowRunId}`)}
                 >
                   {workflow.name}
@@ -463,7 +485,7 @@ export default function ActionPage() {
                     <Button
                       variant="ghost"
                       type="button"
-                      className="bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
+                      className="inline min-h-0 whitespace-normal text-left bg-transparent border-0 cursor-pointer font-inherit p-0 font-semibold text-text underline underline-offset-2 hover:text-accent"
                       onClick={() =>
                         router.push(`/runs/${upstreamOutput.workflowRunId}`)
                       }
@@ -514,7 +536,7 @@ export default function ActionPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex gap-2 mt-2.5">
+              <div className="flex flex-wrap gap-2 mt-2.5">
                 <Button
                   variant="primary"
                   size="sm"
@@ -522,6 +544,14 @@ export default function ActionPage() {
                   onClick={() => void submitDecision("approve")}
                 >
                   Approve
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void submitPasskeyApproval()}
+                >
+                  Approve with passkey
                 </Button>
                 <Button
                   variant="danger"
@@ -574,7 +604,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2.5 items-baseline">
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-2.5 items-baseline">
       <dt className="text-ui-caption font-semibold text-text3 m-0">
         {label}
       </dt>

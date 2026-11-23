@@ -1,23 +1,29 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import pg from "pg";
 import { buildPoolConfig } from "@neko/db";
 
+const configHome = mkdtempSync(join(tmpdir(), "neko-pack-oauth-test-"));
+mkdirSync(join(configHome, "openneko"), { recursive: true });
+writeFileSync(join(configHome, "openneko", "secrets.json"), JSON.stringify({ "pack.fixture": { OAUTH_ACCOUNT_CLIENT_ID: "client", CLIENT_SECRET: "secret" } }));
+process.env.XDG_CONFIG_HOME = configHome;
+
 const state = vi.hoisted(() => ({ pool: null as pg.Pool | null, refreshes: 0 }));
 vi.mock("@neko/db", async original => ({ ...await original<typeof import("@neko/db")>(), pool: () => state.pool! }));
-vi.mock("@open-neko/plugin-install/secrets", () => ({ readSecretsStore: async () => ({ "pack.fixture": { OAUTH_ACCOUNT_CLIENT_ID: "client", CLIENT_SECRET: "secret" } }) }));
-vi.mock("@neko/packs/oauth-client", async original => ({
-  ...await original<typeof import("@neko/packs/oauth-client")>(),
+vi.mock("../../src/graphjin/pack-oauth-client", async original => ({
+  ...await original<typeof import("../../src/graphjin/pack-oauth-client")>(),
   exchangePackOAuthCode: vi.fn(async ({ code }: { code: string }) => ({ accessToken: `access-${code}`, refreshToken: `refresh-${code}`, scopes: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() })),
   fetchPackOAuthAccount: vi.fn(async ({ accessToken }: { accessToken: string }) => ({ id: accessToken, label: `${accessToken}@example.test` })),
   refreshPackOAuthToken: vi.fn(async ({ refreshToken }: { refreshToken: string }) => { state.refreshes++; return { accessToken: `renewed-${refreshToken}`, refreshToken, scopes: ["read"], expiresAt: new Date(Date.now() + 3_600_000).toISOString() }; }),
 }));
 import { maybeEncryptSecret } from "@neko/secret-crypt";
-import { packConnectionHeader, exchangePackOAuthCode } from "@neko/packs/oauth-client";
+import { packConnectionHeader, exchangePackOAuthCode } from "../../src/graphjin/pack-oauth-client";
 import { beginPackUserConnection, completePackUserConnection, disconnectPackUserConnection, listPackUserConnections, packConnectionBindings, packUserConnectionHeaders } from "../../src/graphjin/pack-user-connections";
 import { mintGraphjinToken } from "../../src/graphjin/token";
-import { askGraphjinAgent } from "../../src/graphjin/agent";
 import { graphjinQuery } from "../../src/graphjin/client";
 import { callGraphjinMcpTool } from "../../src/graphjin/mcp-client";
 
@@ -54,7 +60,7 @@ describe.skipIf(!reachable)("personal pack credentials against PostgreSQL", () =
     vi.clearAllMocks(); state.refreshes = 0;
     await state.pool!.query("delete from pack_user_connection; update app_user set disabled_at=null; update pack_install set status='installed'; update data_source set enabled=true");
   });
-  afterAll(async () => { await state.pool?.end(); await admin.query(`drop schema ${schema} cascade`); await admin.end(); });
+  afterAll(async () => { await state.pool?.end(); await admin.query(`drop schema ${schema} cascade`); await admin.end(); rmSync(configHome, { recursive: true, force: true }); });
 
   it("isolates simultaneous users and never serializes credentials in status", async () => {
     await Promise.all([connect(alice, "alice"), connect(bob, "bob")]);
@@ -112,7 +118,7 @@ describe.skipIf(!reachable)("personal pack credentials against PostgreSQL", () =
     await expect(connect()).rejects.toThrow("not installed");
     expect((await packUserConnectionHeaders(url, tokenHeaders("alice")))[header]).toBeUndefined();
   });
-  it("bridges GraphQL, MCP and agent requests and refuses redirects", async () => {
+  it("bridges GraphQL and MCP requests and refuses redirects", async () => {
     await connect();
     const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: { ok: true } }), { status: 200 }));
     await graphjinQuery({ baseUrl: url, headers: tokenHeaders("alice"), query: "{ me { id } }" });
@@ -120,10 +126,7 @@ describe.skipIf(!reachable)("personal pack credentials against PostgreSQL", () =
     spy.mockResolvedValue(new Response(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [] } }), { status: 200, headers: { "content-type": "application/json" } }));
     await callGraphjinMcpTool({ baseUrl: mcp, headers: tokenHeaders("alice") }, { name: "query", arguments: {} });
     expect(spy.mock.calls[1]?.[1]).toMatchObject({ headers: { [header]: "access-alice" }, redirect: "error" });
-    spy.mockResolvedValue(new Response(JSON.stringify({ status: "completed", answer: "done" }), { status: 200 }));
-    await askGraphjinAgent({ baseUrl: url, token: mintGraphjinToken({ orgId: "org", userId: "alice", role: "member" }), request: { instruction: "Read my account" } });
-    expect(spy.mock.calls[2]?.[1]).toMatchObject({ headers: { [header]: "access-alice" }, redirect: "error" });
     spy.mockRestore();
   });
 });
-if (!reachable) await admin.end();
+if (!reachable) { await admin.end(); rmSync(configHome, { recursive: true, force: true }); }

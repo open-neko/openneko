@@ -9,6 +9,7 @@ import {
   describeOutcome,
   systemForActionKind,
 } from "@/lib/action-outcome";
+import { createApprovalPasskeyAssertion, needsPasskey } from "@/lib/passkey";
 
 export const UNDO_WINDOW_MS = 5000;
 const FOLLOW_INTERVAL_MS = 2000;
@@ -37,7 +38,7 @@ async function followOutcome(id: string, label: string, open: (href: string) => 
     await new Promise((resolve) => window.setTimeout(resolve, FOLLOW_INTERVAL_MS));
     let detail: ActionDetail;
     try {
-      const res = await fetch(`/api/action-requests/${id}`, { cache: "no-store" });
+      const res = await fetch(`/api/v1/action-requests/${id}`, { cache: "no-store" });
       if (!res.ok) continue;
       detail = (await res.json()) as ActionDetail;
     } catch {
@@ -69,7 +70,7 @@ type Decision = "approve" | "reject";
 type Pending = { decision: Decision; label: string; reason?: string; timer: number };
 
 function send(id: string, decision: Decision, reason?: string, keepalive = false) {
-  return fetch(`/api/action-requests/${id}`, {
+  return fetch(`/api/v1/action-requests/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decision, reason }),
@@ -87,6 +88,7 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
   const settledRef = useRef(onSettled);
   const router = useRouter();
   const openRef = useRef((href: string) => router.push(href));
+  const passkeyRef = useRef<(id: string, label: string) => Promise<void>>(async () => {});
 
   useEffect(() => {
     openRef.current = (href: string) => router.push(href);
@@ -134,6 +136,15 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
         pending.current.delete(id);
         try {
           const res = await send(id, decision, reason);
+          if (decision === "approve" && (await needsPasskey(res))) {
+            toast("This approval needs your passkey", {
+              description: label,
+              duration: 15000,
+              action: { label: "Use passkey", onClick: () => void passkeyRef.current(id, label) },
+            });
+            setHidden(id, false);
+            return;
+          }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           if (decision === "approve") void followOutcome(id, label, (href) => openRef.current(href));
         } catch {
@@ -163,6 +174,40 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
 
   const approve = useCallback((id: string, label: string) => decide(id, "approve", label), [decide]);
 
+  const approveWithPasskey = useCallback(
+    async (id: string, label: string) => {
+      try {
+        const assertion = await createApprovalPasskeyAssertion(id);
+        setHidden(id, true);
+        const res = await fetch(`/api/v1/action-requests/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision: "approve", passkey: assertion }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+        toast.success("Approved with passkey", { description: label });
+        void followOutcome(id, label, (href) => openRef.current(href));
+        await settledRef.current();
+      } catch (e) {
+        toast.error(
+          e instanceof Error && e.message
+            ? e.message
+            : "OpenNeko could not verify the passkey approval. Try again.",
+        );
+      } finally {
+        setHidden(id, false);
+      }
+    },
+    [setHidden],
+  );
+
+  useEffect(() => {
+    passkeyRef.current = approveWithPasskey;
+  }, [approveWithPasskey]);
+
   const beginReject = useCallback((id: string) => {
     setRejectingId(id);
     setRejectReason("");
@@ -191,6 +236,7 @@ export function useApprovalDecisions(onSettled: () => void | Promise<void>) {
     rejectReason,
     setRejectReason,
     approve,
+    approveWithPasskey,
     beginReject,
     cancelReject,
     submitReject,

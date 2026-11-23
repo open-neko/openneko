@@ -6,16 +6,22 @@
 
 import type { KnowledgePackContents } from "../knowledge-pack";
 import type { AgentWorkspace } from "../agent-backend";
+import { filesEnabled } from "../files/client";
 
 export const GRAPHJIN_DATE_RULE = `- For GraphJin date/range filters, do not put multiple operators under
   the same column object. Use
   \`where: { and: [{ orderdate: { gte: "2024-06-30" } },
                    { orderdate: { lte: "2025-06-29" } }] }\`
-  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.`;
+  rather than \`where: { orderdate: { gte: "...", lte: "..." } }\`.
+- House rule for relative periods. The anchor is the newest date in the
+  measure's own date column (its max_<date_col>). "Latest N days" ends on
+  and includes the anchor: gte anchor minus N-1 days, lt anchor plus 1 day.
+  "Preceding" is the N days just before: gte anchor minus 2N-1 days, lt
+  anchor minus N-1 days. A year or 12 months is 365 days, a month 30, a
+  week 7. Never count back to the same calendar date. State the dates used.`;
 
-// Anti-fanout rule we keep separately so it can be cited in the
-// metric-agent's HARD CONSTRAINTS *and* in the chat agent's data-access
-// rules without copy-paste drift. Born from the CEO #1 fact-check.
+// Anti-fanout rule we keep separately so it can be cited in more than one
+// prompt without copy-paste drift. Born from the CEO #1 fact-check.
 export const GRAPHJIN_FANOUT_RULE = `- A nested GraphJin response is flattened — one row per child. Summing
   the parent column from that flattened payload double-counts by N
   children per parent. To get a correct parent-side total either (a)
@@ -72,12 +78,15 @@ silently ignore a relevant memory.`;
 \`mcp_neko_memory_search\` with a short natural-language query. Do
 this whenever the user's request mentions a domain, metric, or rule
 that isn't already covered by the preloaded list.`);
-    usageBlocks.push(`The document library holds knowledge distilled from uploaded
-business documents (policies, contracts, SOPs). When the operator asks
-about company documents, agreements, or written policy, call
-\`mcp_neko_library_search\` with a short query before answering from
-general knowledge. Each result cites its source upload — mention the
-source when you rely on one.`);
+    if (filesEnabled()) {
+      usageBlocks.push(`The operator's library holds the documents and spreadsheets they
+uploaded (policies, contracts, price lists, reports). When they ask about
+company documents, agreements, written policy, or figures from a file,
+call \`mcp_neko_files_search\` with a short query before answering from
+general knowledge. Read a whole file with \`mcp_neko_files_read_text\`
+and compute from a sheet with \`mcp_neko_files_query_tables\`. Name the
+file and the page, slide or sheet you relied on.`);
+    }
   }
 
   if (saveMode === "tool") {
@@ -120,12 +129,8 @@ export type DataAccessOptions = {
   queryIdentity?: "actor" | "service";
   /** Restrict this agent's use of otherwise caller-visible execution tools. */
   readOnly?: boolean;
-  /** Skill scripts can run the query tool through the run's data socket. */
+  /** Skill scripts can run the query tool: the run has a sandbox and a data broker. */
   scriptAccess?: boolean;
-  /** GraphJin server-agent tool, when the org opted in to GraphJin's agent. */
-  agentTool?: string;
-  /** Metric cards ask once for a value, a baseline and chart rows. */
-  agentPurpose?: "metric";
   workspace: AgentWorkspace;
   knowledge: KnowledgePackContents;
   // 'syntax': inline only the DSL reference, point at the other knowledge
@@ -136,88 +141,8 @@ export type DataAccessOptions = {
 };
 
 export function buildDataAccessSection(opts: DataAccessOptions): string {
-  if (opts.queryTool && opts.agentTool) {
-    throw new Error("choose either queryTool or agentTool, not both");
-  }
-  if (opts.agentTool) return buildBrokeredAgentDataAccessSection(opts);
   if (opts.queryTool) return buildBrokeredDataAccessSection(opts);
   throw new Error("GraphJin data access requires a native broker tool");
-}
-
-function buildBrokeredAgentDataAccessSection(opts: DataAccessOptions): string {
-  const { agentTool } = opts;
-  if (!agentTool) throw new Error("agent data access requires agentTool");
-  const metric = opts.agentPurpose === "metric";
-
-  const ask = metric
-    ? `Call \`${agentTool}\` once. Include the card title and rationale, anchor
-dates to the latest date in live data, ask for the current value and a
-comparable baseline in the same request, and ask for the smallest grouped result
-that can populate chartData. You own the final OpenNeko JSON object; ask
-GraphJin for the data, not for that format.`
-    : `Call \`${agentTool}\` once per data request. Use more calls for follow-up
-requests, and put what you learned in each new request: GraphJin's agent keeps
-no memory between calls.`;
-
-  return `<data_access>
-The configured GraphJin database is the authoritative source for operational
-questions. When the user attaches a file or explicitly references uploaded
-data, read the file and use it as the source of truth for that turn. Otherwise
-default to the database.
-
-GraphJin's agent writes and validates the queries and runs them under the
-configured source identity. You direct it. ${ask}
-
-${AGENT_REQUEST_GUIDANCE}${agentSchemaDigest(opts.knowledge, opts.workspace)}
-
-The response has status, answer, data and evidence. Base every number on
-response.data and response.evidence; the answer field explains the result but
-does not replace them. If the response is blocked, denied, has errors, or lacks
-enough evidence, say so and do not invent a number. Retry only when its
-structured refusal says retryable and gives a concrete unblock step. If
-GraphJin returns no rows, there is no data.
-</data_access>`;
-}
-
-export const AGENT_REQUEST_GUIDANCE = `Write each instruction as a precise data request. Name the measure and how to
-compute it, the tables, the join path, the filters, the time window and the
-grouping. Ask for aggregates, not raw rows. For example: "Count
-sales.salesorderheader rows per sales.salesterritory.name, joined on
-territoryid. Return each territory with its count, highest first."`;
-
-function tablesBySchema(raw: string): string {
-  let tables: Array<{ id?: string; schema?: string; name?: string }>;
-  try {
-    const parsed = JSON.parse(raw) as { tables?: typeof tables };
-    tables = Array.isArray(parsed.tables) ? parsed.tables : [];
-  } catch {
-    return "";
-  }
-  const bySchema = new Map<string, string[]>();
-  for (const t of tables) {
-    const qualified = t.schema && t.name ? `${t.schema}.${t.name}` : t.id?.split(":").at(-1) ?? t.name;
-    if (!qualified) continue;
-    const dot = qualified.lastIndexOf(".");
-    const schema = dot > 0 ? qualified.slice(0, dot) : "";
-    bySchema.set(schema, [...(bySchema.get(schema) ?? []), qualified.slice(dot + 1)]);
-  }
-  return [...bySchema].map(([schema, names]) => `- ${schema ? `${schema}: ` : ""}${names.join(", ")}`).join("\n").slice(0, TABLE_DIGEST_MAX_CHARS);
-}
-
-/** Tables and join paths the outer agent names in its requests to GraphJin's agent. */
-export function agentSchemaDigest(knowledge: KnowledgePackContents, workspace: AgentWorkspace): string {
-  const tables = tablesBySchema(knowledge.tables);
-  if (!tables) return "";
-  const joins = compactInsightsDigest(knowledge.insights, false);
-  return `
-
-Tables (columns for every table are in ${workspace.knowledgeRoot}/tables.json):
-
-${tables}${joins ? `
-
-Main tables and join paths:
-
-${joins}` : ""}`;
 }
 
 function buildBrokeredDataAccessSection(opts: DataAccessOptions): string {
@@ -324,9 +249,14 @@ same refusal, so fix the query instead of changing the transport.
 Scripts query GraphJin themselves through the same \`execute_graphql\` tool,
 identity, and policy. In Python, \`from neko_data import query\` and call
 \`query(graphql, variables)\`: it returns the data object and raises
-\`NekoDataError\` on any GraphQL error. In the shell, \`neko-query '<graphql>'\`
+\`NekoDataError\` on any GraphQL error. In the shell, \`$RUN_DIR/bin/neko-query '<graphql>'\`
 prints the data object as JSON. When a skill bundles a script, run the script
-and let it fetch its own data. When a task needs many queries, chunked
+and let it fetch its own data. A skill script may instead declare its queries
+in a file beside it, named after the script with \`.queries.json\` added:
+\`{"queries": {"<name>": {"query": "<graphql>", "params": {"<var>": {"type": "string", "default": "<value>"}}}}}\`.
+OpenNeko runs them before the script starts and writes each data object to
+\`$RUN_DIR/.neko-data/queries/<name>.json\`; the script gives a parameter with
+\`--<var> <value>\`. When a task needs many queries, chunked
 \`in\` filters, or rows that belong in files, write a script that uses
 \`neko_data\` and run it once. Call \`${queryTool}\` directly for discovery
 and for small answers.`

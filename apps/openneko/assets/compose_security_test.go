@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -18,26 +19,16 @@ type composeServiceForTest struct {
 	Volumes     []string                     `yaml:"volumes"`
 }
 
-func TestPackagedComposeUsesReadOnlyBackupKeyFiles(t *testing.T) {
+func TestPackagedComposeHasNoBackupService(t *testing.T) {
 	core, raw := readComposeForTest(t, "core.yml")
-	if strings.Contains(raw, "OPENNEKO_BACKUP_CIPHER_PASS") {
-		t.Fatal("packaged Compose must not interpolate the backup key into container environment metadata")
+	for _, retired := range []string{"OPENNEKO_BACKUP", "PGBACKREST", "pgbackrest", "archive_command"} {
+		if strings.Contains(raw, retired) {
+			t.Fatalf("packaged Compose still references retired backup setting %q", retired)
+		}
 	}
-	for _, name := range []string{"neko-db", "records-db", "neko-backup", "neko-restore"} {
-		service := core.Services[name]
-		if got := service.Environment["PGBACKREST_REPO1_CIPHER_PASS_FILE"]; got != "/run/secrets/openneko-backup-key" {
-			t.Fatalf("%s backup key file = %q", name, got)
-		}
-		wantMount := "${OPENNEKO_BACKUP_KEY_FILE:?OPENNEKO_BACKUP_KEY_FILE is required}:/run/secrets/openneko-backup-key:ro"
-		found := false
-		for _, mount := range service.Volumes {
-			if mount == wantMount {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("%s is missing read-only backup key mount", name)
+	for _, name := range []string{"records-db", "neko-backup", "neko-restore", "records-graphjin", "records-watch-graphjin"} {
+		if _, exists := core.Services[name]; exists {
+			t.Fatalf("packaged Compose still defines retired service %s", name)
 		}
 	}
 }
@@ -151,90 +142,163 @@ func TestPackagedComposeExposesOnlyWebToLAN(t *testing.T) {
 			t.Fatalf("demo.yml service %s unexpectedly publishes host ports: %v", name, service.Ports)
 		}
 	}
-
-	openshell, _ := readComposeForTest(t, "openshell.yml")
-	for name, service := range openshell.Services {
-		if name == "openshell-gateway" {
-			want := "127.0.0.1:${OPENSHELL_PORT:-18080}:${OPENSHELL_PORT:-18080}"
-			if len(service.Ports) != 1 || service.Ports[0] != want {
-				t.Fatalf("gateway ports = %v, want only loopback %q", service.Ports, want)
-			}
-			continue
-		}
-		if len(service.Ports) != 0 {
-			t.Fatalf("openshell.yml service %s unexpectedly publishes host ports: %v", name, service.Ports)
-		}
-	}
 }
 
 func TestPackagedComposeKeepsRuntimeTrafficOnDockerNetwork(t *testing.T) {
 	core, _ := readComposeForTest(t, "core.yml")
-	for service, port := range map[string]string{
-		"neko-db":       "5432",
-		"records-db":    "5432",
-		"graphjin":      "8080",
-		"neko-graphjin": "8089",
+	bundled, _ := readComposeForTest(t, "bundled-db.yml")
+	for service, ports := range map[string][]string{
+		"neko-db":        bundled.Services["neko-db"].Expose,
+		"openneko-serve": core.Services["openneko-serve"].Expose,
 	} {
-		got := core.Services[service].Expose
-		if len(got) != 1 || got[0] != port {
-			t.Fatalf("%s expose = %v, want internal port %s", service, got, port)
+		want := map[string][]string{"neko-db": {"5432"}, "openneko-serve": {"8080", "8089"}}[service]
+		if !reflect.DeepEqual(ports, want) {
+			t.Fatalf("%s expose = %v, want internal ports %v", service, ports, want)
 		}
 	}
+	if len(bundled.Services["neko-db"].Ports) != 0 {
+		t.Fatalf("bundled neko-db publishes host ports: %v", bundled.Services["neko-db"].Ports)
+	}
 
-	migrate := core.Services["neko-migrate"]
+	migrate := bundled.Services["neko-migrate"]
 	if migrate.Environment["NEKO_PG_HOST"] != "neko-db" {
-		t.Fatalf("migration host = %q, want Docker service neko-db", migrate.Environment["NEKO_PG_HOST"])
+		t.Fatalf("bundled migration host = %q, want Docker service neko-db", migrate.Environment["NEKO_PG_HOST"])
 	}
-	if _, ok := migrate.Environment["OPENNEKO_OPENSHELL_DB_PASSWORD"]; !ok {
-		t.Fatal("migration service must receive the gateway-role password")
+	if core.Services["web"].DependsOn["openneko-serve"].Condition != "service_started" {
+		t.Fatal("web must start after openneko-serve is started")
 	}
-	if migrate.Environment["OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD"] != "1" {
-		t.Fatal("migration service must fail closed when the gateway-role password is absent")
-	}
-	if core.Services["web"].DependsOn["worker"].Condition != "service_healthy" {
-		t.Fatal("web must start after the worker control plane is healthy")
-	}
+}
 
-	openshell, raw := readComposeForTest(t, "openshell.yml")
-	gateway := openshell.Services["openshell-gateway"]
-	if gateway.DependsOn["neko-migrate"].Condition != "service_completed_successfully" {
-		t.Fatal("OpenShell gateway must wait for private database preparation")
+func TestServeHoldsNoControlZoneSecrets(t *testing.T) {
+	root := repoRootForTest(t)
+	type service struct {
+		Environment map[string]any `yaml:"environment"`
+		EnvFile     any            `yaml:"env_file"`
+		Volumes     []string       `yaml:"volumes"`
+		Secrets     []any          `yaml:"secrets"`
 	}
-	ready := openshell.Services["openshell-ready"]
-	if ready.DependsOn["openshell-gateway"].Condition != "service_started" {
-		t.Fatal("OpenShell readiness probe must start after the gateway container")
+	forbidden := func(name string) bool {
+		upper := strings.ToUpper(name)
+		switch {
+		case upper == "NEKO_PG_PASSWORD", upper == "NEKO_SECRET_KEY", upper == "NEKO_DATABASE_URL", upper == "DATABASE_URL":
+			return true
+		case strings.Contains(upper, "PASSWORD"), strings.HasSuffix(upper, "_API_KEY"), strings.Contains(upper, "SECRET"):
+			return true
+		}
+		for _, provider := range []string{"OPENAI", "ANTHROPIC", "GEMINI", "GOOGLE", "VERTEX", "AWS", "BEDROCK", "AZURE", "MISTRAL", "GROQ", "COHERE", "DEEPSEEK", "XAI", "OPENROUTER", "TOGETHER"} {
+			if strings.HasPrefix(upper, provider+"_") {
+				return true
+			}
+		}
+		return false
 	}
-	for _, service := range []string{"worker", "web"} {
-		env := openshell.Services[service].Environment
-		if env["OPENNEKO_SANDBOX_SHARED_NETWORK"] != "1" {
-			t.Fatalf("%s shared-network broker config is incomplete: %v", service, env)
+	for _, name := range []string{"compose.yml", "apps/openneko/assets/compose/core.yml", "recipes/sandbox/compose.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
 		}
-		if _, exposed := env["OPENNEKO_BROKER_HOST_ALIAS"]; exposed {
-			t.Fatalf("%s must derive a private container IP instead of a host broker alias", service)
+		var doc struct {
+			Services map[string]service `yaml:"services"`
 		}
-		if openshell.Services[service].DependsOn["openshell-ready"].Condition != "service_completed_successfully" {
-			t.Fatalf("%s must wait for a successful OpenShell control-plane probe", service)
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		serve, ok := doc.Services["openneko-serve"]
+		if !ok {
+			t.Fatalf("%s has no openneko-serve service", name)
+		}
+		if serve.EnvFile != nil {
+			t.Fatalf("%s: openneko-serve reads an env_file", name)
+		}
+		if !onlySandboxKey(serve.Secrets) {
+			t.Fatalf("%s: openneko-serve mounts secrets %v; only the sandbox key goes to serve", name, serve.Secrets)
+		}
+		for key, value := range serve.Environment {
+			if forbidden(key) {
+				t.Fatalf("%s: openneko-serve names %s", name, key)
+			}
+			if key == "NEKO_PG_USER" && value != nil {
+				t.Fatalf("%s: openneko-serve logs in as %v", name, value)
+			}
+		}
+		for _, mount := range serve.Volumes {
+			source := strings.SplitN(mount, ":", 2)[0]
+			if strings.Contains(source, "openneko-config") || strings.Contains(source, "OPENNEKO_CONFIG_VOLUME") {
+				t.Fatalf("%s: openneko-serve mounts the config volume (%s), which holds the secret-key and the database password", name, mount)
+			}
+		}
+		if name != "recipes/sandbox/compose.yml" {
+			if got := serve.Environment["OPENNEKO_SERVE_CREDENTIALS"]; got != "/credentials" {
+				t.Fatalf("%s: openneko-serve OPENNEKO_SERVE_CREDENTIALS = %v", name, got)
+			}
+			if _, ok := doc.Services["openneko-serve-init"]; !ok {
+				t.Fatalf("%s has no openneko-serve-init step", name)
+			}
 		}
 	}
-	for _, required := range []string{
-		`version = 2`,
-		`compute_driver = "docker"`,
-		`guest_tls_ca = "%s/pki/ca.crt"`,
-		`signing_key_path = "%s/pki/jwt/signing.pem"`,
-		`sandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:%s"`,
-		`supervisor_image = "%s"`,
-		`"${OPENNEKO_SUPERVISOR_IMAGE:-ghcr.io/open-neko/openshell-supervisor:${OPENNEKO_VERSION:-latest}}"`,
-		`grpc_endpoint = "https://127.0.0.1:%s"`,
-		`OPENNEKO_COMPOSE_NETWORK: "${COMPOSE_PROJECT_NAME}_runtime"`,
-		`OPENSHELL_GATEWAY_IP: "${OPENSHELL_GATEWAY_IP:-172.29.0.2}"`,
-		`ipv4_address: "${OPENSHELL_GATEWAY_IP:-172.29.0.2}"`,
-		`name: "${COMPOSE_PROJECT_NAME}_runtime"`,
-		`subnet: "${OPENNEKO_DOCKER_SUBNET:-172.29.0.0/24}"`,
-		`gateway: "${OPENNEKO_DOCKER_GATEWAY:-172.29.0.1}"`,
-		`ip_range: "${OPENNEKO_DOCKER_IP_RANGE:-172.29.0.128/25}"`,
-	} {
-		if !strings.Contains(raw, required) {
-			t.Fatalf("openshell.yml missing %q", required)
+}
+
+func TestWebAndServeReadTheirKeysFromSecretFiles(t *testing.T) {
+	root := repoRootForTest(t)
+	for _, name := range []string{"compose.yml", "compose.dev.yml", "apps/openneko/assets/compose/core.yml", "recipes/sandbox/compose.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Services map[string]struct {
+				Environment map[string]any `yaml:"environment"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, service := range []string{"web", "openneko-serve"} {
+			for _, key := range []string{"OPENNEKO_SANDBOX_KEY", "NEKO_EMBEDDING_API_KEY"} {
+				if _, ok := doc.Services[service].Environment[key]; ok {
+					t.Errorf("%s: %s gets %s in its environment; give it %s_FILE", name, service, key, key)
+				}
+			}
+		}
+	}
+}
+
+// TestServeKeepsItsFoldersOnVolumes: the image's HOME is /, which serve
+// cannot write, so each folder that serve makes at start must be set and
+// lie on a volume. Web stages agent runs in the folder serve reads.
+func TestServeKeepsItsFoldersOnVolumes(t *testing.T) {
+	root := repoRootForTest(t)
+	type service struct {
+		Environment map[string]any `yaml:"environment"`
+		Volumes     []string       `yaml:"volumes"`
+	}
+	for _, name := range []string{"compose.yml", "apps/openneko/assets/compose/core.yml"} {
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Services map[string]service `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		serve, web := doc.Services["openneko-serve"], doc.Services["web"]
+		for _, env := range []string{"OPENNEKO_AGENT_RUNS_DIR", "OPENNEKO_SUBSCRIPTIONS_DIR", "OPENNEKO_FILES_DIR", "OPENNEKO_FILES_INDEX_DIR"} {
+			dir, _ := serve.Environment[env].(string)
+			onVolume := false
+			for _, v := range serve.Volumes {
+				parts := strings.Split(v, ":")
+				if len(parts) >= 2 && dir != "" && (dir == parts[1] || strings.HasPrefix(dir, strings.TrimSuffix(parts[1], "/")+"/")) {
+					onVolume = true
+				}
+			}
+			if !onVolume {
+				t.Errorf("%s: serve sets %s to %q, which is on none of its volumes %v", name, env, dir, serve.Volumes)
+			}
+		}
+		if serve.Environment["OPENNEKO_AGENT_RUNS_DIR"] != web.Environment["OPENNEKO_AGENT_RUNS_DIR"] {
+			t.Errorf("%s: serve reads agent runs in %v, web stages them in %v", name, serve.Environment["OPENNEKO_AGENT_RUNS_DIR"], web.Environment["OPENNEKO_AGENT_RUNS_DIR"])
 		}
 	}
 }

@@ -91,8 +91,7 @@ describe("handleExternalEventMatch", () => {
         title: "@open-neko/plugin-stripe: invoice.paid",
       }),
     );
-    const [queue, payload, opts] = deps.enqueue.mock.calls[0] as unknown[];
-    expect(queue).toBeTruthy();
+    const [payload, opts] = deps.enqueue.mock.calls[0] as unknown[];
     expect(payload).toMatchObject({
       orgId: "org-1",
       workflowId: "wf-1",
@@ -102,7 +101,7 @@ describe("handleExternalEventMatch", () => {
         event_source: "@open-neko/plugin-stripe",
       }),
     });
-    expect((opts as { singletonKey: string }).singletonKey).toMatch(/^sub-1:/);
+    expect((opts as { dedupeKey: string }).dedupeKey).toMatch(/^sub-1:/);
   });
 
   it("same event twice yields the same idempotency key; dedupeKey overrides", async () => {
@@ -118,10 +117,10 @@ describe("handleExternalEventMatch", () => {
       event: fakeEvent(),
       ...deps2,
     });
-    const key1 = (deps1.enqueue.mock.calls[0]![2] as { singletonKey: string })
-      .singletonKey;
-    const key2 = (deps2.enqueue.mock.calls[0]![2] as { singletonKey: string })
-      .singletonKey;
+    const key1 = (deps1.enqueue.mock.calls[0]![1] as { dedupeKey: string })
+      .dedupeKey;
+    const key2 = (deps2.enqueue.mock.calls[0]![1] as { dedupeKey: string })
+      .dedupeKey;
     expect(key1).toBe(key2);
 
     const deps3 = happyDeps();
@@ -131,8 +130,8 @@ describe("handleExternalEventMatch", () => {
       ...deps3,
     });
     expect(
-      (deps3.enqueue.mock.calls[0]![2] as { singletonKey: string })
-        .singletonKey,
+      (deps3.enqueue.mock.calls[0]![1] as { dedupeKey: string })
+        .dedupeKey,
     ).toBe("sub-1:custom");
   });
 

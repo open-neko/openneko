@@ -2,7 +2,6 @@ import { startupElapsedMs } from "@neko/telemetry/startup";
 import type { HarnessObserver } from "@neko/telemetry";
 import { observeSafely } from "@neko/telemetry";
 import type { AgentEvent } from "../agent-backend";
-import { normalizeGraphjinAgentUsage } from "../usage-normalization";
 
 type ObservationStatus = "ok" | "error";
 type FailureDetail = { errorType?: string; errorCode?: string; errorMessage?: string };
@@ -28,10 +27,6 @@ function byteLength(value: unknown): number {
   } catch {
     return 0;
   }
-}
-
-function isGraphjinAgentTool(name: string): boolean {
-  return name.toLocaleLowerCase().includes("neko_graphjin_agent");
 }
 
 /**
@@ -90,20 +85,6 @@ export function createAgentEventTelemetry(input: {
           coverage: "unavailable",
         },
       });
-      if (isGraphjinAgentTool(event.name)) {
-        await observe({
-          kind: "delegation.start",
-          operationId: `${input.operationId}:delegation:${event.id}`,
-          parentOperationId: modelOperationId,
-          attributes: { "openneko.delegation.target": "graphjin-agent" },
-        });
-        await observe({
-          kind: "model.request",
-          operationId: `${input.operationId}:inner-model:${event.id}`,
-          parentOperationId: `${input.operationId}:delegation:${event.id}`,
-          attributes: { "openneko.model.scope": "inner" },
-        });
-      }
       return;
     }
     if (event.type === "tool_end") {
@@ -122,35 +103,6 @@ export function createAgentEventTelemetry(input: {
           coverage: "unavailable",
         },
       });
-      if (started && isGraphjinAgentTool(started.name)) {
-        const inner = normalizeGraphjinAgentUsage(event.result);
-        await observe({
-          kind: "model.response",
-          operationId: `${input.operationId}:inner-model:${event.id}`,
-          parentOperationId: `${input.operationId}:delegation:${event.id}`,
-          status: event.error ? "error" : "ok",
-          ...(event.error ? { errorType: "graphjin_agent_error" } : {}),
-          attributes: {
-            "openneko.model.scope": "inner",
-            ...(inner?.provider
-              ? { "gen_ai.provider.name": inner.provider }
-              : {}),
-            ...(inner?.model ? { "gen_ai.response.model": inner.model } : {}),
-          },
-          measurements: inner?.usage ?? {
-            coverage: "unavailable",
-            missingReasons: ["GraphJin agent response omitted normalized usage"],
-          },
-        });
-        await observe({
-          kind: "delegation.end",
-          operationId: `${input.operationId}:delegation:${event.id}`,
-          parentOperationId: modelOperationId,
-          status: event.error ? "error" : "ok",
-          ...(event.error ? { errorType: "graphjin_agent_error" } : {}),
-          attributes: { "openneko.delegation.target": "graphjin-agent" },
-        });
-      }
       return;
     }
     if (event.type === "usage" && event.source === "outer") {
@@ -285,27 +237,6 @@ export function createAgentEventTelemetry(input: {
     usageMissingReason: string;
   }): Promise<void> => {
     for (const [toolId, tool] of toolStarts) {
-      if (isGraphjinAgentTool(tool.name)) {
-        await observe({
-          kind: "model.response",
-          operationId: `${input.operationId}:inner-model:${toolId}`,
-          parentOperationId: `${input.operationId}:delegation:${toolId}`,
-          status: result.status,
-          ...(result.errorType ? { errorType: result.errorType } : {}),
-          measurements: {
-            coverage: "unavailable",
-            missingReasons: [result.usageMissingReason],
-          },
-        });
-        await observe({
-          kind: "delegation.end",
-          operationId: `${input.operationId}:delegation:${toolId}`,
-          parentOperationId: modelOperationId,
-          status: result.status,
-          ...(result.errorType ? { errorType: result.errorType } : {}),
-          attributes: { "openneko.delegation.target": "graphjin-agent" },
-        });
-      }
       await observe({
         kind: "tool.end",
         operationId: `${input.operationId}:tool:${toolId}`,

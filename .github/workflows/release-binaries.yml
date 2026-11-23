@@ -19,7 +19,7 @@ jobs:
   build-image:
     # Build on manual workflow_dispatch (preview/branch builds) OR on a real
     # STABLE release. Skip release events for pre-release tags (e.g.
-    # v1.18.0-openshell.N): release-please auto-publishes a Release for every tag
+    # v1.18.0-preview.N): release-please auto-publishes a Release for every tag
     # we push, which would otherwise (a) double-build alongside the manual run
     # and (b) tag :latest from an unreleased preview, clobbering downloads. The
     # manual run builds previews WITHOUT :latest; stable releases (tag has no
@@ -42,54 +42,20 @@ jobs:
             target: web
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - image: neko-worker
-            target: worker
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-worker
-            target: worker
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: neko-embedding
-            target: embedding
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-embedding
-            target: embedding
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: neko-librarian
-            file: apps/librarian/Dockerfile
-            target: librarian
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-librarian
-            file: apps/librarian/Dockerfile
-            target: librarian
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: neko-graphjin
-            target: neko-graphjin
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-graphjin
-            target: neko-graphjin
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: records-graphjin
-            target: records-graphjin
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: records-graphjin
-            target: records-graphjin
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
           - image: neko-cli
             target: neko-cli
             platform: linux/amd64
             runner: ubuntu-22.04
           - image: neko-cli
             target: neko-cli
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: neko-serve
+            target: neko-serve
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: neko-serve
+            target: neko-serve
             platform: linux/arm64
             runner: ubuntu-24.04-arm
           - image: neko-db
@@ -100,47 +66,14 @@ jobs:
             target: neko-db
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - image: records-db
-            target: records-db
+          - image: neko-sandbox
+            context: recipes/sandbox
+            file: recipes/sandbox/Dockerfile
             platform: linux/amd64
             runner: ubuntu-22.04
-          - image: records-db
-            target: records-db
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: neko-backup
-            target: neko-backup
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: neko-backup
-            target: neko-backup
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          # Agent sandbox image: Ax Harness, entry/bridge bundles and skills
-          # plus the document toolchain, pulled by the OpenShell runtime.
-          - image: agent
-            target: agent
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: agent
-            target: agent
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          # plugin sandbox base image (own Dockerfile, single stage).
-          - image: plugin-base
-            file: docker/plugin-base.Dockerfile
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: plugin-base
-            file: docker/plugin-base.Dockerfile
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - image: openshell-supervisor
-            file: docker/openshell-supervisor.Dockerfile
-            platform: linux/amd64
-            runner: ubuntu-22.04
-          - image: openshell-supervisor
-            file: docker/openshell-supervisor.Dockerfile
+          - image: neko-sandbox
+            context: recipes/sandbox
+            file: recipes/sandbox/Dockerfile
             platform: linux/arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -176,7 +109,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context || '.' }}
           file: ${{ matrix.file || './Dockerfile' }}
           build-args: |
             OPENNEKO_VERSION=${{ steps.tag.outputs.value }}
@@ -227,7 +160,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-embedding, neko-librarian, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, plugin-base, openshell-supervisor]
+        image: [neko-web, neko-cli, neko-serve, neko-db, neko-sandbox]
     steps:
       - name: Resolve release tag
         id: tag
@@ -301,20 +234,16 @@ jobs:
       - name: Enforce aggregate unique-layer budget
         run: |
           set -euo pipefail
-          # v2.30.4 measured 1459.5 MiB on linux/amd64 after deduplicating
-          # shared layers (1235.7 MiB on arm64). The enforced Bookworm/glibc
-          # database ABI adds about 148 MiB once (neko-db and records-db share
-          # it; the demo still retains Alpine), leaving a narrow ceiling that
-          # still catches accidental growth.
+          # The ceiling was set while the stack still held the agent image
+          # (about 800 MiB) and the OpenShell images; lower it once a release
+          # without them is measured.
           MAX_MIB=$(jq -er '.uniqueStack' scripts/image-size-budgets.json)
           bash scripts/check-image-stack-size.sh \
             "${{ steps.tag.outputs.value }}" \
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
-            neko-web neko-worker neko-embedding neko-librarian neko-graphjin records-graphjin neko-cli \
-            neko-db records-db neko-backup agent plugin-base openshell-supervisor \
-            postgres:16-alpine busybox:latest \
-            "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"
+            neko-web neko-cli neko-serve \
+            neko-db neko-sandbox postgres:16-alpine
 
   goreleaser:
     name: goreleaser
@@ -341,24 +270,13 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Resolve immutable librarian release image
-        id: librarian
-        run: |
-          set -euo pipefail
-          ref="ghcr.io/open-neko/neko-librarian:${{ github.event.inputs.tag || github.event.release.tag_name }}"
-          digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -er '.digest')
-          case "$digest" in sha256:????????????????????????????????????????????????????????????????) ;; *) exit 1 ;; esac
-          echo "image=$ref@$digest" >> "$GITHUB_OUTPUT"
-
       - id: app-token
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           owner: open-neko
-          repositories: |
-            openneko
-            homebrew-tap
+          repositories: openneko
 
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -367,5 +285,60 @@ jobs:
           workdir: apps/openneko
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          NEKO_LIBRARIAN_IMAGE: ${{ steps.librarian.outputs.image }}
+
+  native-archives:
+    name: native archives
+    runs-on: ubuntu-22.04
+    needs: goreleaser
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.14.1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the native archives
+        run: bash scripts/build-native-release.sh "${{ github.event.inputs.tag || github.event.release.tag_name }}" dist-native
+
+      - name: Upload the native archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.inputs.tag || github.event.release.tag_name }}" dist-native/* --clobber
+
+      - id: tap-token
+        if: ${{ !contains(github.event.inputs.tag || github.event.release.tag_name, '-') }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: open-neko
+          repositories: homebrew-tap
+
+      - name: Publish the Homebrew cask
+        if: ${{ !contains(github.event.inputs.tag || github.event.release.tag_name, '-') }}
+        env:
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+          TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/open-neko/homebrew-tap.git" tap
+          bash scripts/write-brew-cask.sh "$TAG" dist-native/checksums-native.txt > tap/Casks/openneko.rb
+          cd tap
+          git config user.name "openneko-release"
+          git config user.email "openneko-release@users.noreply.github.com"
+          git add Casks/openneko.rb
+          git diff --cached --quiet || git commit -m "openneko ${TAG}"
+          git push origin HEAD

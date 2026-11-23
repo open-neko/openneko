@@ -45,6 +45,11 @@ export type HarnessRunSummary = {
     chunkCount?: number;
     artifactBytes?: number;
   };
+  /** Card repair calls and answers whose cards could not be shown. */
+  cards?: {
+    repairs: number;
+    notShown: number;
+  };
   usage: NormalizedUsage;
   telemetryComplete: boolean;
 };

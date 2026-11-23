@@ -11,6 +11,9 @@ import { RENDER_CARDS_DESCRIPTION } from "./render-catalog";
 import {
   buildSourceFormSurface,
   SOURCE_FORM_PREFILL_SHAPE,
+  sourceFormPrefillFromAnswers,
+  buildPackSetupSurface,
+  PACK_ID_SCHEMA,
   type SourceFormPrefill,
 } from "./source-form";
 import type { AgentEvent } from "../agent-backend";
@@ -24,6 +27,7 @@ import {
   validateRenderCardsInput,
 } from "./a2ui-contract";
 import { OPENNEKO_GRAPHJIN_MCP_SERVER_NAME } from "../graphjin/mcp-names";
+import { DATABASE_SOURCE_TYPES, SOURCE_TABLE_NAME } from "../graphjin/source-types";
 import {
   applyGraphjinMcpToolPolicy,
   assertGraphjinMcpToolCallAllowed,
@@ -74,110 +78,12 @@ export function buildRenderCardsServer(
   });
 }
 
-/**
- * ADM3 — chat-first plugin management. The agent can list installed +
- * marketplace plugins and PROPOSE installs/uninstalls; the commit step is
- * always an action_request through the control plane (policy-gated;
- * plugin_management_default seeds approval_required), never a direct
- * mutation. Credentials never transit this path — installs that need env
- * keys fail with a pointer to the secrets flow.
- */
-export function buildPluginManagerServer(opts: {
-  orgId: string;
-  runId?: string;
-  emit: (event: AgentEvent) => Promise<void> | void;
-  controlPlane?: AgentControlPlane;
-}) {
-  const controlPlane = requireControlPlane(opts.controlPlane);
-
-  const listPlugins = defineMcpTool(
-    "list_plugins",
-    [
-      "List installed plugins (with version, source, declared network",
-      "egress) and the official marketplace catalog. Use this before",
-      "proposing an install or uninstall, and to answer 'what plugins do",
-      "we have?'.",
-    ].join(" "),
-    {},
-    async () => {
-      const catalog = await controlPlane.listPlugins({ orgId: opts.orgId });
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(catalog) },
-        ],
-      };
-    },
-  );
-
-  const requestChange = (
-    kind: "plugin_install" | "plugin_uninstall",
-    target: string,
-    intent: string,
-    payload: Record<string, unknown>,
-  ) =>
-    proposeAdminAction({
-      controlPlane,
-      orgId: opts.orgId,
-      runId: opts.runId,
-      emit: opts.emit,
-      kind,
-      target,
-      intent,
-      payload,
-    });
-
-  const installTool = defineMcpTool(
-    "request_plugin_install",
-    [
-      "Propose installing a plugin from the marketplace. This NEVER",
-      "installs directly — it files an approval-gated action request; the",
-      "operator approves it on the approvals surface. Tell the operator",
-      "what you proposed and end your turn. If the plugin requires env",
-      "keys, the install will report them — the operator sets those via",
-      "`openneko secrets set` or the integrations page, never through",
-      "chat.",
-    ].join(" "),
-    {
-      spec: z.string().trim().min(1).describe("npm package name, e.g. @open-neko/plugin-slack"),
-      intent: z.string().trim().min(1).max(500),
-    },
-    async (args) =>
-      requestChange("plugin_install", args.spec, args.intent, {
-        spec: args.spec,
-      }),
-  );
-
-  const uninstallTool = defineMcpTool(
-    "request_plugin_uninstall",
-    [
-      "Propose removing an installed plugin. Approval-gated like installs;",
-      "the operator confirms on the approvals surface.",
-    ].join(" "),
-    {
-      name: z.string().trim().min(1),
-      intent: z.string().trim().min(1).max(500),
-    },
-    async (args) =>
-      requestChange("plugin_uninstall", args.name, args.intent, {
-        name: args.name,
-      }),
-  );
-
-  return createMcpServer({
-    name: "neko_plugin_manager",
-    version: "1.0.0",
-    tools: [listPlugins, installTool, uninstallTool],
-  });
-}
-
 async function proposeAdminAction(opts: {
   controlPlane: AgentControlPlane;
   orgId: string;
   runId?: string;
   emit: (event: AgentEvent) => Promise<void> | void;
   kind:
-    | "plugin_install"
-    | "plugin_uninstall"
     | "user_admin"
     | "group_admin"
     | "channel_admin"
@@ -206,7 +112,7 @@ async function proposeAdminAction(opts: {
             reason:
               "reason" in decision && decision.reason
                 ? String(decision.reason)
-                : "policy denies plugin management from chat",
+                : "policy denies this change from chat",
           }),
         },
       ],
@@ -283,7 +189,7 @@ export function buildUserManagerServer(opts: {
     [
       "List the org's users and synchronized SSO groups with stable IDs,",
       "membership, role, disabled state, and last login. Use before",
-      "proposing any user or generated-app access change.",
+      "proposing any user, group, or access change.",
     ].join(" "),
     {},
     async () => ({
@@ -415,7 +321,7 @@ export function buildUserManagerServer(opts: {
     "request_item_grant",
     [
       "Propose granting or revoking one item for a group. itemType is one of",
-      "skill, workflow, library_collection, library_concept, metric, dashboard,",
+      "skill, workflow, metric, dashboard,",
       "watcher, team_memory, data_source, saved_query, api_operation, action,",
       "integration, channel, pack. itemId '*' means every current and future",
       "item of the type. NEVER applies directly — an ADMIN must approve.",
@@ -424,7 +330,7 @@ export function buildUserManagerServer(opts: {
       action: z.enum(["grant_item", "revoke_item"]),
       groupId: z.string().trim().min(1),
       itemType: z.enum([
-        "skill", "workflow", "library_collection", "library_concept", "metric", "dashboard", "watcher",
+        "skill", "workflow", "metric", "dashboard", "watcher",
         "team_memory", "data_source", "saved_query", "api_operation", "action", "integration", "channel", "pack",
       ]),
       itemId: z.string().trim().min(1).max(500),
@@ -686,6 +592,12 @@ export function buildDataSourceManagerServer(opts: {
  * time. This only ever targets the customer source, never the OpenNeko
  * internal GraphJin (the adapter asserts that boundary).
  */
+const TABLE_NAME_SCHEMA = z
+  .string()
+  .trim()
+  .regex(SOURCE_TABLE_NAME, "a table name")
+  .max(128);
+
 export function buildSourceConfigManagerServer(opts: {
   orgId: string;
   runId?: string;
@@ -758,30 +670,108 @@ export function buildSourceConfigManagerServer(opts: {
     },
   );
 
-  const askConfigAgent = defineMcpTool(
-    "ask_graphjin_config_agent",
+  const checkSource = defineMcpTool(
+    "check_source",
     [
-      "Ask the selected GraphJin configuration agent to inspect, explain, or",
-      "plan against its redacted configuration. Use this for questions about",
-      "settings, roles, sources, access, security, runtime, and reload impact.",
-      "For multiple data sources, pass the selected dataSourceId.",
+      "Test one PostgreSQL, MySQL or MariaDB source before you file it, or when",
+      "the admin says a source fails. The check runs in order: the host",
+      "resolves, the port answers, TLS, the login, the rights to read the",
+      "schema, and read-only rights. Each failed step names the answer at fault",
+      "and, where SQL fixes it, the SQL for the database administrator. When",
+      "the login works, `tables` lists the tables it can read. The password",
+      "comes from the stored secret named by secretRef and never reaches you.",
     ].join(" "),
     {
-      instruction: z.string().trim().min(1).max(8_000),
-      dataSourceId: z.string().uuid().optional(),
-      maxSteps: z.number().int().min(1).max(12).optional(),
+      type: z.enum(DATABASE_SOURCE_TYPES),
+      host: z.string().trim().min(1).max(255),
+      port: z.number().int().min(1).max(65535).optional(),
+      dbname: z.string().trim().min(1).max(128),
+      user: z.string().trim().min(1).max(128),
+      secretRef: z
+        .string()
+        .trim()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9._-]*$/, "a secret name, not a value"),
     },
+    async (args) => {
+      const response = await controlPlane.checkSource({
+        orgId: opts.orgId,
+        runId: opts.runId ?? null,
+        answers: args,
+      });
+      const check = response.check;
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              check
+                ? {
+                    ok: check.ok,
+                    serverVersion: check.serverVersion,
+                    findings: check.findings,
+                    tables: check.tables.slice(0, 200),
+                    moreTables: check.moreTables + Math.max(0, check.tables.length - 200),
+                    next: check.ok
+                      ? "Tell the admin the check passed. In the form card, the admin chooses the tables under Check connection; cleared tables become blockedTables."
+                      : "Tell the admin which step failed and why, in one or two sentences. When a finding has `sql`, show it as a code block for their database administrator.",
+                  }
+                : response,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  const presentPackSetup = defineMcpTool(
+    "present_pack_setup",
+    [
+      "Show the admin a pack's setup card in chat, for a system that has a pack",
+      "with a ready config (magento, shopify, google-workspace, slack, resend,",
+      "parallel-search, or an uploaded pack the admin names). The card installs",
+      "the pack, asks for the address and the login, shows the review, and",
+      "applies it when the admin approves. Credentials go from the card to the",
+      "pack store and never reach you. A message arrives when the admin applies it.",
+    ].join(" "),
+    { packId: PACK_ID_SCHEMA },
+    async (args) => {
+      await opts.emit({
+        type: "surface",
+        messages: buildPackSetupSurface(args.packId, `pack-setup-${randomUUID()}`),
+      });
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            ok: true,
+            next: "Card shown. Tell the admin to enter the address and the login in the card, then review and approve it. Wait for their message. Do not file a register_source proposal for this system.",
+          }),
+        }],
+      };
+    },
+  );
+
+  const describeConfig = defineMcpTool(
+    "describe_source_config",
+    [
+      "Return the selected GraphJin data engine's current config: sources,",
+      "roles, databases, tables, blocklist, system, mcp and serv settings,",
+      "with every secret redacted, and `summary`: plain sentences per source",
+      "and role. Explain the config to the admin from `summary`. Use `config`",
+      "to plan a change. For multiple data sources, pass the selected dataSourceId.",
+    ].join(" "),
+    { dataSourceId: z.string().uuid().optional() },
     async (args) => ({
       content: [
         {
           type: "text" as const,
           text: JSON.stringify(
-            await controlPlane.askSourceConfigAgent({
+            await controlPlane.describeSourceConfig({
               orgId: opts.orgId,
               runId: opts.runId ?? null,
-              instruction: args.instruction,
               dataSourceId: args.dataSourceId,
-              maxSteps: args.maxSteps,
             }),
           ),
         },
@@ -846,7 +836,8 @@ export function buildSourceConfigManagerServer(opts: {
       "- enable_api_writes { source, spec, operation, allowedRoles, write?, exposeAs?, apiDelete? }: one proposal that turns on api.write, sets access.write (authenticated by default, or admin), and exposes one OpenAPI POST/PUT/PATCH/DELETE operation as a GraphQL mutation for the listed roles. Prefer this for governed writes.",
       "- set_source_capabilities { source, apiWrite?, apiDelete? } and expose_api_operation { source, spec, operation, exposeMutation, allowedRoles, exposeAs? }: adjust one write setting on an API source that already has writes enabled.",
       "Database sources stay read-only; a proposal that opens a write path on one is rejected.",
-      "- register_source database { name, kind, type?, host?, port?, dbname?, user?, secretRef? }.",
+      "- set_source_tables { source, blockedTables?, adminTables?, openTables? }: per-table access on a database source. blockedTables: no one may read them. adminTables: only admins may read them. openTables: back to the source's read mode.",
+      "- register_source database { name, kind, type?, host?, port?, dbname?, user?, secretRef?, blockedTables?, adminTables? }. type is postgres, mysql or mariadb.",
       "- register_source api { name, kind, specAssetId } using an OpenAPI document already imported by URL or upload.",
       "- register_source file local { name, kind, backend, localFiles } using OpenNeko-managed isolated storage.",
       "- register_source file s3|gcs { name, kind, backend, bucket, prefix?, region?, endpoint?, publicBaseUrl?, presignTtl? } using deployment runtime credentials.",
@@ -857,6 +848,7 @@ export function buildSourceConfigManagerServer(opts: {
       action: z.enum([
         "add_role",
         "set_source_access",
+        "set_source_tables",
         "set_source_capabilities",
         "expose_api_operation",
         "enable_api_writes",
@@ -872,6 +864,10 @@ export function buildSourceConfigManagerServer(opts: {
         .optional(),
       write: z.enum(["authenticated", "account", "owner", "admin", "blocked"]).optional(),
       delete: z.enum(["authenticated", "account", "owner", "admin", "blocked"]).optional(),
+      // set_source_tables, and register_source database
+      blockedTables: z.array(TABLE_NAME_SCHEMA).max(500).optional(),
+      adminTables: z.array(TABLE_NAME_SCHEMA).max(500).optional(),
+      openTables: z.array(TABLE_NAME_SCHEMA).max(500).optional(),
       // set_source_capabilities
       apiWrite: z.boolean().optional(),
       apiDelete: z.boolean().optional(),
@@ -897,7 +893,13 @@ export function buildSourceConfigManagerServer(opts: {
           z.enum(["database", "api", "file"]),
         )
         .optional(),
-      type: z.string().trim().min(1).max(40).optional(),
+      type: z
+        .preprocess(
+          (value) =>
+            Array.isArray(value) && value.length === 1 ? value[0] : value,
+          z.enum(DATABASE_SOURCE_TYPES),
+        )
+        .optional(),
       host: z.string().trim().max(255).optional(),
       port: z.number().int().min(1).max(65535).optional(),
       dbname: z.string().trim().max(128).optional(),
@@ -953,11 +955,13 @@ export function buildSourceConfigManagerServer(opts: {
           ? `role:${args.name ?? ""}`
           : action === "set_source_access"
             ? `access:${args.source ?? ""}`
-            : action === "set_source_capabilities"
-              ? `capabilities:${args.source ?? ""}`
-              : action === "expose_api_operation" || action === "enable_api_writes"
-                ? `operation:${args.source ?? ""}/${args.spec ?? ""}#${args.operation ?? ""}`
-                : `source:${args.name ?? ""}`;
+            : action === "set_source_tables"
+              ? `tables:${args.source ?? ""}`
+              : action === "set_source_capabilities"
+                ? `capabilities:${args.source ?? ""}`
+                : action === "expose_api_operation" || action === "enable_api_writes"
+                  ? `operation:${args.source ?? ""}/${args.spec ?? ""}#${args.operation ?? ""}`
+                  : `source:${args.name ?? ""}`;
       const changePayload = {
         action,
         ...rest,
@@ -970,14 +974,36 @@ export function buildSourceConfigManagerServer(opts: {
         payload: changePayload,
       });
       if (preview.denied || preview.error || !preview.preview?.valid) {
+        const problems = preview.problems ?? [];
+        let formShown = false;
+        if (problems.length > 0 && action === "register_source") {
+          try {
+            await opts.emit({
+              type: "surface",
+              messages: buildSourceFormSurface(
+                sourceFormPrefillFromAnswers(rest),
+                `source-form-${randomUUID()}`,
+                problems,
+              ),
+            });
+            formShown = true;
+          } catch {
+            formShown = false;
+          }
+        }
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify({
                 ok: false,
-                stage: "graphjin_config_preview",
+                stage: problems.length > 0 ? "answer_check" : "graphjin_config_preview",
                 ...preview,
+                ...(formShown
+                  ? { next: "The form is shown again with each problem beside its answer. Tell the admin what to fix, in one or two sentences, and wait for the new answers." }
+                  : problems.length > 0
+                    ? { next: "Tell the admin which answer to fix and why, using the problem messages, then ask for the new answer." }
+                    : {}),
               }),
             },
           ],
@@ -1005,12 +1031,14 @@ export function buildSourceConfigManagerServer(opts: {
 
   return createMcpServer({
     name: "neko_source_config_manager",
-    version: "1.1.0",
+    version: "1.3.0",
     tools: [
       describe,
-      askConfigAgent,
+      describeConfig,
       listSecretNames,
       presentSourceForm,
+      checkSource,
+      presentPackSetup,
       importOpenApi,
       listOpenApi,
       requestChange,
@@ -1155,336 +1183,6 @@ export function buildGraphjinMcpServer(opts: {
 /** @deprecated Use buildGraphjinMcpServer; retained for runtime API compatibility. */
 export const buildGraphjinReadServer = buildGraphjinMcpServer;
 
-/**
- * Read-only delegation surface for GraphJin's built-in server agent. The
- * sandbox supplies only a business instruction; the host owns source
- * selection, readiness checks, and credentials.
- */
-export function buildGraphjinAgentServer(opts: {
-  orgId: string;
-  runId?: string;
-  dataSourceId?: string;
-  controlPlane?: AgentControlPlane;
-}) {
-  const controlPlane = requireControlPlane(opts.controlPlane);
-  const ask = defineMcpTool(
-    "ask",
-    [
-      "Delegate one read-only operational data question to GraphJin's",
-      "catalog-first server agent. Include the complete business question,",
-      "time window, aggregation, comparison baseline, and desired dimension",
-      "in one instruction. The trusted host verifies read-only mode and keeps",
-      "the source credential outside this sandbox.",
-    ].join(" "),
-    {
-      instruction: z.string().trim().min(1).max(8_000),
-      maxSteps: z.number().int().min(1).max(12).optional(),
-    },
-    async (args) => {
-      const result = await controlPlane.askGraphjinDataAgent({
-        orgId: opts.orgId,
-        runId: opts.runId ?? null,
-        ...(opts.dataSourceId ? { dataSourceId: opts.dataSourceId } : {}),
-        instruction: args.instruction,
-        ...(args.maxSteps ? { maxSteps: args.maxSteps } : {}),
-      });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    },
-  );
-
-  return createMcpServer({
-    name: "neko_graphjin_agent",
-    version: "1.0.0",
-    tools: [ask],
-  });
-}
-
-/**
- * Native records read surface. Unlike neko_graphjin (customer sources), every
- * document here is generated from the records registry and executes with the
- * requesting run's current human identity. The sandbox never receives a raw
- * endpoint, signing secret, or ability to submit arbitrary GraphQL.
- */
-export function buildRecordsReadServer(opts: {
-  orgId: string;
-  runId: string;
-  controlPlane?: AgentControlPlane;
-  /** Restrict a records-UI turn to the trusted app/object surface it opened. */
-  scope?: { appId: string; objectApiName: string };
-}) {
-  const controlPlane = requireControlPlane(opts.controlPlane);
-  const assertInScope = (appId: string, objectApiName?: string): void => {
-    if (!opts.scope) return;
-    if (
-      appId !== opts.scope.appId ||
-      (objectApiName !== undefined && objectApiName !== opts.scope.objectApiName)
-    ) {
-      throw new Error(
-        `records turn is scoped to ${opts.scope.appId}.${opts.scope.objectApiName}`,
-      );
-    }
-  };
-  const browseCatalog = defineMcpTool(
-    "browse_catalog",
-    [
-      "Browse active generated records apps, readable objects, fields,",
-      "layouts, and the current actor's CRUD grants. Use this before querying",
-      "or proposing a record action; app and field names must come from here.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63).optional(),
-    },
-    async (args) => {
-      const appId = args.app ?? opts.scope?.appId;
-      if (appId) assertInScope(appId);
-      const result = await controlPlane.listRecordCatalog({
-        orgId: opts.orgId,
-        runId: opts.runId,
-        ...(appId ? { appId } : {}),
-      });
-      const scopedResult = opts.scope
-        ? {
-            ...result,
-            apps: result.apps
-              .filter((app) => app.appId === opts.scope!.appId)
-              .map((app) => ({
-                ...app,
-                objects: app.objects.filter(
-                  (object) => object.apiName === opts.scope!.objectApiName,
-                ),
-              })),
-          }
-        : result;
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(scopedResult) },
-        ],
-      };
-    },
-  );
-
-  const browseBlueprints = defineMcpTool(
-    "browse_blueprints",
-    [
-      "Call without `blueprint` to list shipped records-app blueprint ids.",
-      "Call again with one exact id to load its complete approval-ready",
-      "`app_create` payload. Never reconstruct a payload from the id, name,",
-      "description, or a prose summary. If the operator asks for the shipped",
-      "payload unchanged, pass the returned `payload` object unchanged to the",
-      "`app_create` action. Otherwise blueprints are starting priors and may",
-      "be adapted to the operator's workflow.",
-    ].join(" "),
-    {
-      blueprint: z
-        .string()
-        .trim()
-        .min(1)
-        .max(63)
-        .optional()
-        .describe(
-          "Exact id returned by the listing call. Omit only when listing available blueprints.",
-        ),
-    },
-    async (args) => ({
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify(
-            await controlPlane.listRecordBlueprints({
-              orgId: opts.orgId,
-              ...(args.blueprint ? { blueprintId: args.blueprint } : {}),
-            }),
-          ),
-        },
-      ],
-    }),
-  );
-
-  const filterSchema = z.object({
-    field: z.string().trim().min(1).max(63),
-    operator: z.enum(["eq", "neq", "in", "contains", "starts_with", "is_null"]),
-    value: z.unknown().optional(),
-  });
-  const findRecords = defineMcpTool(
-    "find_records",
-    [
-      "Search or list records through a bounded, registry-generated GraphJin",
-      "query under the current actor's permissions. Use the returned exact id",
-      "before proposing record_update, record_delete, or record_restore. If",
-      "multiple rows could match, disambiguate with the user; never guess.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      first: z.number().int().min(1).max(50).optional(),
-      after: z.string().trim().min(1).max(4_096).optional(),
-      search: z.string().trim().min(1).max(200).optional(),
-      filters: z.array(filterSchema).max(20).optional(),
-      sort: z
-        .object({
-          field: z.string().trim().min(1).max(63),
-          direction: z.enum(["asc", "desc"]),
-        })
-        .optional(),
-      myRecords: z.boolean().optional(),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.findRecords({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              ...(args.first !== undefined ? { first: args.first } : {}),
-              ...(args.after ? { after: args.after } : {}),
-              ...(args.search ? { search: args.search } : {}),
-              ...(args.filters ? { filters: args.filters } : {}),
-              ...(args.sort ? { sort: args.sort } : {}),
-              ...(args.myRecords !== undefined
-                ? { myRecords: args.myRecords }
-                : {}),
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  const getRecord = defineMcpTool(
-    "get_record",
-    [
-      "Read one record by an exact id already obtained from find_records.",
-      "Returns null when that id is absent or invisible to the current actor.",
-      "Use allFields only when fields outside the detail layout are needed.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      id: z.string().trim().min(1).max(512),
-      allFields: z.boolean().optional(),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.getRecord({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              recordId: args.id,
-              ...(args.allFields !== undefined
-                ? { allFields: args.allFields }
-                : {}),
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  const findRecycledRecords = defineMcpTool(
-    "find_recycled_records",
-    [
-      "Search or list soft-deleted record summaries through the current",
-      "actor's permissions. Use this—not find_records—to resolve the exact",
-      "id before proposing record_restore. The recycle bin exposes identity",
-      "and deletion metadata only, never the deleted business payload.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      first: z.number().int().min(1).max(50).optional(),
-      after: z.string().trim().min(1).max(4_096).optional(),
-      search: z.string().trim().min(1).max(200).optional(),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.findRecycledRecords({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              ...(args.first !== undefined ? { first: args.first } : {}),
-              ...(args.after ? { after: args.after } : {}),
-              ...(args.search ? { search: args.search } : {}),
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  const getRecycledRecord = defineMcpTool(
-    "get_recycled_record",
-    [
-      "Read one soft-deleted record summary by an exact id already obtained",
-      "from find_recycled_records. Returns null when it is absent or invisible",
-      "to the current actor; use the returned id for record_restore.",
-    ].join(" "),
-    {
-      app: z.string().trim().min(1).max(63),
-      object: z.string().trim().min(1).max(63),
-      id: z.string().trim().min(1).max(512),
-    },
-    async (args) => {
-      assertInScope(args.app, args.object);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await controlPlane.getRecycledRecord({
-              orgId: opts.orgId,
-              runId: opts.runId,
-              appId: args.app,
-              objectApiName: args.object,
-              recordId: args.id,
-              }),
-            ),
-          },
-        ],
-      };
-    },
-  );
-
-  return createMcpServer({
-    name: "neko_records",
-    version: "1.0.0",
-    tools: [
-      browseCatalog,
-      ...(opts.scope ? [] : [browseBlueprints]),
-      findRecords,
-      getRecord,
-      findRecycledRecords,
-      getRecycledRecord,
-    ],
-  });
-}
-
 // Memory surface: `search`, `save` and `update`. Reads use pgvector
 // context-search (matches the auto-context retrieval path), writes go
 // through the same rememberWorkMemory used by the `save:` chat command,
@@ -1623,82 +1321,116 @@ export function buildWorkMemoryServer(
   });
 }
 
-// Search-only library surface. Layer visibility (team + the run owner's
-// personal concepts) is resolved server-side from the run binding —
-// never from agent input — so a compromised prompt can't read another
-// member's personal library.
-export type LibraryServerOptions = {
-  /** Explicit in-process or broker-backed control plane. */
+export type FilesServerOptions = {
   controlPlane?: AgentControlPlane;
 };
 
-export function buildLibraryServer(
-  ctx: WorkMemoryContext,
-  options: LibraryServerOptions = {},
-) {
+function toolText(value: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
+}
+
+function toolError(err: unknown) {
+  return {
+    isError: true,
+    content: [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }],
+  };
+}
+
+export function buildFilesServer(ctx: WorkMemoryContext, options: FilesServerOptions = {}) {
   const controlPlane = requireControlPlane(options.controlPlane);
+  const runId = ctx.runId ?? null;
   const search = defineMcpTool(
     "search",
     [
-      "Semantic search over the document library — knowledge distilled",
-      "from uploaded business documents (policies, contracts, SOPs).",
-      "Returns top-N concepts ranked by similarity, each citing its",
-      "source upload. Prefer this over guessing when the operator asks",
-      "about company documents, agreements, or written policy.",
+      "Keyword search over the files the user uploaded: PDF, Word, PowerPoint,",
+      "Excel, CSV, Markdown and text. Returns the best files with matching",
+      "passages and where they are (page, slide, sheet or section). For a",
+      "spreadsheet or CSV file it also lists its SQL tables and columns.",
     ].join(" "),
     {
-      query: z.string().min(2).max(800),
+      query: z.string().min(1).max(800),
       limit: z.number().int().min(1).max(20).optional(),
     },
     async (args) => {
-      const results = await controlPlane.searchLibraryForRun({
-        orgId: ctx.orgId,
-        query: args.query,
-        limit: args.limit ?? 5,
-        runId: ctx.runId ?? null,
-      });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              ok: true,
-              results: results.map((r) => ({
-                path: r.concept.path,
-                type: r.concept.type,
-                title: r.concept.title,
-                description: r.concept.description,
-                status: r.concept.status,
-                layer: r.layer,
-                score: r.score,
-                sources: r.concept.sources.map((s) => s.resource),
-                body: r.concept.body,
-              })),
-            }),
-          },
-        ],
-      };
+      try {
+        return toolText(
+          await controlPlane.searchFilesForRun({
+            orgId: ctx.orgId,
+            runId,
+            query: args.query,
+            ...(args.limit !== undefined ? { limit: args.limit } : {}),
+          }),
+        );
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+  const readText = defineMcpTool(
+    "read_text",
+    [
+      "Read the text of one of the user's files, with page, slide and sheet",
+      "markers. Use the path from search. A long file comes back in parts:",
+      "when truncated is true, call again with offset set to offset plus the",
+      "length of the text already read.",
+    ].join(" "),
+    {
+      path: z.string().min(1).max(1024),
+      offset: z.number().int().min(0).optional(),
+      maxChars: z.number().int().min(1000).max(100000).optional(),
+    },
+    async (args) => {
+      try {
+        return toolText(
+          await controlPlane.readFileForRun({
+            orgId: ctx.orgId,
+            runId,
+            path: args.path,
+            ...(args.offset !== undefined ? { offset: args.offset } : {}),
+            ...(args.maxChars !== undefined ? { maxChars: args.maxChars } : {}),
+          }),
+        );
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+  const queryTables = defineMcpTool(
+    "query_tables",
+    [
+      "Run one read-only DuckDB SELECT or WITH query over the sheet tables of",
+      "the user's spreadsheet and CSV files. Use the table names that search",
+      "or read_text list. Each sheet has a raw table (name ends in __raw) with",
+      "every cell as text by column letter. A sheet with a header row also has",
+      "a typed table with named columns. Use it for sums, counts, filters and",
+      "joins across sheets.",
+    ].join(" "),
+    {
+      sql: z.string().min(1).max(20000),
+    },
+    async (args) => {
+      try {
+        return toolText(
+          await controlPlane.queryFileTablesForRun({ orgId: ctx.orgId, runId, sql: args.sql }),
+        );
+      } catch (err) {
+        return toolError(err);
+      }
     },
   );
 
   return createMcpServer({
-    name: "neko_library",
+    name: "neko_files",
     version: "1.0.0",
-    tools: [search],
+    tools: [search, readText, queryTables],
   });
 }
 
-/**
- * Plugin-installed action kinds, surfaced to the agent as MCP tools.
- * The worker collects these from PluginRegistry at turn start and
- * passes them in — the registry has the manifest entries; this module
- * only needs the {kind, description, default_mode} triples to build
- * tools.
- */
+/** Pack action kinds, surfaced to the agent as MCP tools. */
 interface GovernedActionDescriptor {
   kind: string;
   description: string;
-  /** Fixed policy scope. External preserves the plugin compatibility default. */
+  /** Fixed policy scope. External is the default for compatibility. */
   scope?: "external" | "internal";
   /**
    * Seeded approval mode from the manifest; runtime policy may
@@ -1716,16 +1448,12 @@ interface GovernedActionDescriptor {
       };
   /** Example payload from the manifest, surfaced to the agent so it shapes the call correctly. */
   example?: Record<string, unknown>;
-  /** Installed plugin that handles the kind; the integration item gates it. */
-  pluginName?: string;
 }
-
-export interface PluginActionDescriptor extends GovernedActionDescriptor {}
 
 export interface PackActionDescriptor extends GovernedActionDescriptor {}
 
 function modeForScope(
-  default_mode: PluginActionDescriptor["default_mode"],
+  default_mode: PackActionDescriptor["default_mode"],
   scope: "external" | "internal",
 ): "auto" | "ask" | "deny" | undefined {
   if (default_mode === undefined) return undefined;
@@ -1734,7 +1462,7 @@ function modeForScope(
 }
 
 function isDeniedEverywhere(
-  default_mode: PluginActionDescriptor["default_mode"],
+  default_mode: PackActionDescriptor["default_mode"],
 ): boolean {
   if (default_mode === "deny") return true;
   if (default_mode && typeof default_mode === "object") {
@@ -1747,7 +1475,7 @@ function isDeniedEverywhere(
 }
 
 function needsIntentForKind(
-  default_mode: PluginActionDescriptor["default_mode"],
+  default_mode: PackActionDescriptor["default_mode"],
 ): boolean {
   // Intent is required at schema-time whenever the kind COULD land in
   // ask-mode under any scope — so the agent has to author one
@@ -1757,16 +1485,6 @@ function needsIntentForKind(
     return Object.values(default_mode).some((m) => m === "ask");
   }
   return false;
-}
-
-export interface BuildPluginActionServerOptions {
-  orgId: string;
-  threadId: string;
-  runId: string;
-  descriptors: readonly PluginActionDescriptor[];
-  emit: (event: AgentEvent) => Promise<void> | void;
-  /** Explicit in-process or broker-backed control plane. */
-  controlPlane?: AgentControlPlane;
 }
 
 export interface BuildPackActionServerOptions {
@@ -1779,7 +1497,7 @@ export interface BuildPackActionServerOptions {
 }
 
 /**
- * One MCP tool per registered plugin action kind. Each tool's handler
+ * One MCP tool per registered governed action kind. Each tool's handler
  * routes through the action_policy engine:
  *
  *   - allow (auto_approve)  → create an approved action_request, enqueue it
@@ -1796,9 +1514,8 @@ export interface BuildPackActionServerOptions {
  *   - deny / no_policy      → return {ok:false, denied} to the agent.
  *
  * Tools whose declared default_mode is "deny" are excluded from the
- * MCP surface entirely — plugin authors using `deny` mean "this
- * kind exists in the plugin's vocabulary but the agent never gets to
- * call it without explicit operator opt-in."
+ * MCP surface entirely — `deny` means "this kind exists but the agent
+ * never gets to call it without explicit operator opt-in."
  *
  * `intent` (the agent's single-sentence natural-language framing of
  * what it's about to do) is required only on kinds whose default_mode
@@ -1810,9 +1527,8 @@ export interface BuildPackActionServerOptions {
  * Returns null when no kinds are registered (or all are deny) so the
  * caller can omit the server from the MCP map.
  */
-function buildGovernedActionServer(
-  opts: BuildPluginActionServerOptions | BuildPackActionServerOptions,
-  serverName: "neko_plugin_actions" | "neko_pack_actions",
+export function buildPackActionServer(
+  opts: BuildPackActionServerOptions,
 ): ReturnType<typeof createMcpServer> | null {
   const active = opts.descriptors.filter((d) => !isDeniedEverywhere(d.default_mode));
   if (active.length === 0) return null;
@@ -1841,19 +1557,6 @@ function buildGovernedActionServer(
         .describe(
           "Action-specific payload. See the tool description for the expected shape. When a trusted discovery tool returns a payload for this action, preserve that complete object exactly unless the operator requested specific changes.",
         ),
-      ...(d.kind === "app_create"
-        ? {
-            blueprint: z
-              .string()
-              .trim()
-              .min(1)
-              .max(63)
-              .optional()
-              .describe(
-                "Exact shipped blueprint id already loaded with records browse_blueprints. For an unchanged blueprint proposal, set this and omit payload; the trusted host will reuse the authoritative complete payload without model-side copying.",
-              ),
-          }
-        : {}),
     };
     // `intent` lives in both schemas so handler-side narrowing is
     // trivial (one optional property). Ask-mode kinds require it
@@ -1899,14 +1602,9 @@ function buildGovernedActionServer(
               ? " — set `intent` whenever the call might land in ask-mode."
               : "");
 
-    const trustedBlueprintHint =
-      d.kind === "app_create"
-        ? "\n\nFor an unchanged shipped Records blueprint, first list and load it with records browse_blueprints, then set `blueprint` to that exact id and omit `payload`. The trusted host resolves the complete payload again before creating the approval request. Use `payload` only when the operator asked you to adapt the blueprint."
-        : "";
-
     return defineMcpTool(
       d.kind,
-      `${d.description}\n\n${modeHint}${trustedBlueprintHint}`,
+      `${d.description}\n\n${modeHint}`,
       schema,
       async (args) => {
         const decision = await controlPlane.evaluateActionPolicy({
@@ -1956,27 +1654,8 @@ function buildGovernedActionServer(
           typeof args.intent === "string" && args.intent.length > 0
             ? args.intent
             : `Auto-fired ${d.kind} (no explicit intent supplied).`;
-        let payload =
+        const payload =
           (args.payload as Record<string, unknown> | undefined) ?? {};
-        const blueprintId =
-          d.kind === "app_create" &&
-          "blueprint" in args &&
-          typeof args.blueprint === "string"
-            ? args.blueprint.trim()
-            : "";
-        if (blueprintId) {
-          const catalog = await controlPlane.listRecordBlueprints({
-            orgId: opts.orgId,
-            blueprintId,
-          });
-          const blueprint = catalog.blueprints.find(
-            (candidate) => candidate.id === blueprintId,
-          );
-          if (!blueprint?.payload) {
-            throw new Error(`records blueprint ${blueprintId} has no payload`);
-          }
-          payload = blueprint.payload;
-        }
         const target =
           typeof args.target === "string" && args.target.length > 0
             ? args.target
@@ -1985,12 +1664,11 @@ function buildGovernedActionServer(
 
         if (decision.decision === "allow") {
           // Auto-approve path: persist as approved and enqueue the
-          // action_execute pg-boss job. We deliberately do NOT call
-          // executeApprovedActionRequest inline here — the plugin VM
+          // action_execute job. We deliberately do NOT call
+          // executeApprovedActionRequest inline here — the action
           // adapters are registered in the worker process, not the
           // web process that hosts /work runs. Enqueuing decouples
           // the two: any process can submit the job, only the worker
-          // (which holds the plugin registry + sandbox runtime)
           // runs it.
           const request = await controlPlane.createActionRequest({
             orgId: opts.orgId,
@@ -2125,23 +1803,12 @@ function buildGovernedActionServer(
   });
 
   return createMcpServer({
-    name: serverName,
+    name: "neko_pack_actions",
     version: "1.0.0",
     tools,
   });
 }
 
-export function buildPluginActionServer(
-  opts: BuildPluginActionServerOptions,
-): ReturnType<typeof createMcpServer> | null {
-  return buildGovernedActionServer(opts, "neko_plugin_actions");
-}
-
-export function buildPackActionServer(
-  opts: BuildPackActionServerOptions,
-): ReturnType<typeof createMcpServer> | null {
-  return buildGovernedActionServer(opts, "neko_pack_actions");
-}
 
 /** Semantic skill search for the Ax harness's discover(); it is never a model tool. */
 export function buildSkillSearchServer(

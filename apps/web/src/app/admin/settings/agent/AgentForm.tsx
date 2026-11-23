@@ -6,8 +6,10 @@ import PageHeading from "@/components/PageHeading";
 import { toast } from "sonner";
 import Select from "@/components/Select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input } from "@/components/ui/field";
-import GraphjinAgentSection, { type GraphjinAgentPayload } from "./GraphjinAgentSection";
+import EgressHostsField, { egressHostLines } from "./EgressHostsField";
+import { terminalHint } from "./terminal-hint";
 
 type ProviderOption = { value: string; label: string; description: string };
 type ProviderField = {
@@ -39,17 +41,36 @@ type AgentSettingsPayload = {
     source: "org" | "default";
     backend: string;
     globalCap: number;
+    terminal: boolean;
+    responderEffort: ResponderEffort;
+    egressHosts?: string[];
   };
+  egressSuggestions?: string[];
   options: readonly ProviderOption[];
-  defaults: { globalCap: number };
+  terminalAvailable: boolean;
+  terminalBlocked?: string;
+  defaults: { globalCap: number; terminal: boolean; responderEffort: ResponderEffort };
 };
+type ResponderEffort = "low" | "medium" | "high";
+
+const responderEffortOptions: readonly { value: ResponderEffort; label: string; description: string }[] = [
+  { value: "low", label: "Low", description: "Fastest answer. The model writes up what the agent found with little extra thought." },
+  { value: "medium", label: "Medium", description: "The model thinks before it writes the answer, so the answer starts later." },
+  { value: "high", label: "High", description: "The model thinks longest before it writes the answer." },
+];
 
 export default function AgentForm({
   initial,
 }: {
-  initial: { agent: AgentSettingsPayload; providers: SettingsPayload; graphjinAgent: GraphjinAgentPayload };
+  initial: { agent: AgentSettingsPayload; providers: SettingsPayload };
 }) {
   const [concurrentJobs, setConcurrentJobs] = useState(String(initial.agent.agent.globalCap));
+  const [terminal, setTerminal] = useState(initial.agent.agent.terminal);
+  const [responderEffort, setResponderEffort] = useState<ResponderEffort>(
+    initial.agent.agent.responderEffort ?? initial.agent.defaults.responderEffort ?? "low",
+  );
+  const terminalAvailable = initial.agent.terminalAvailable;
+  const [egressHosts, setEgressHosts] = useState((initial.agent.agent.egressHosts ?? []).join("\n"));
   const [primary, setPrimary] = useState({
     provider: initial.providers.primary.provider,
     model: initial.providers.primary.model,
@@ -93,7 +114,7 @@ export default function AgentForm({
         }
       }
 
-      const providerRes = await fetch("/api/settings/provider", {
+      const providerRes = await fetch("/api/v1/settings/provider", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -109,13 +130,18 @@ export default function AgentForm({
       if (!providerRes.ok) throw new Error(providerBody.error ?? "Primary provider save failed");
 
       const cap = Number(concurrentJobs) || initial.agent.defaults.globalCap;
-      const agentRes = await fetch("/api/settings/agent", {
+      const agentRes = await fetch("/api/v1/settings/agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ globalCap: cap }),
+        body: JSON.stringify(
+          terminalAvailable
+            ? { globalCap: cap, terminal, responderEffort, egressHosts: egressHostLines(egressHosts) }
+            : { globalCap: cap, responderEffort },
+        ),
       });
       const agentBody = await agentRes.json();
       if (!agentRes.ok) throw new Error(agentBody.error ?? "Agent settings save failed");
+      if (Array.isArray(agentBody.egressHosts)) setEgressHosts(agentBody.egressHosts.join("\n"));
 
       toast.success("Agent settings saved.");
     } catch (e) {
@@ -157,7 +183,7 @@ export default function AgentForm({
           <Field
             label="Concurrent jobs"
             htmlFor="agent-concurrent-jobs"
-            hint="How many metric jobs the worker runs in parallel. Worker restart applies changes."
+            hint="How many agent turns run at the same time. Slack and Telegram messages run at most 3 turns at once. The change applies when you save."
           >
             <Input
               id="agent-concurrent-jobs"
@@ -168,6 +194,39 @@ export default function AgentForm({
               onChange={(e) => setConcurrentJobs(e.target.value)}
             />
           </Field>
+
+          <Field
+            label="Answer effort"
+            htmlFor="agent-responder-effort"
+            hint="How much the model thinks before it writes the answer from what the agent found. The agent's own steps keep the model's effort. Applies from the next run."
+          >
+            <Select
+              id="agent-responder-effort"
+              value={responderEffort}
+              onChange={(next) => setResponderEffort(next as ResponderEffort)}
+              options={responderEffortOptions}
+              ariaLabel="Answer effort"
+            />
+          </Field>
+
+          <Field
+            label="Terminal"
+            hint={terminalHint(terminalAvailable, initial.agent.terminalBlocked)}
+          >
+            <Checkbox
+              label="Let the agent use the terminal"
+              checked={terminalAvailable && terminal}
+              disabled={!terminalAvailable}
+              onCheckedChange={(checked) => setTerminal(checked === true)}
+            />
+          </Field>
+
+          <EgressHostsField
+            value={egressHosts}
+            onChange={setEgressHosts}
+            suggestions={initial.agent.egressSuggestions ?? []}
+            available={terminalAvailable}
+          />
 
           {fields.map((field) => {
             const masked = primary.secretStatus[field.key];
@@ -234,7 +293,6 @@ export default function AgentForm({
           </Button>
         </div>
       </section>
-      <GraphjinAgentSection initial={initial.graphjinAgent} />
     </div>
   );
 }

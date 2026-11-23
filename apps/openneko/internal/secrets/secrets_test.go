@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/open-neko/neko/apps/openneko/internal/testmode"
 )
 
 func TestSetUnset(t *testing.T) {
@@ -88,18 +90,12 @@ func TestWritePerms(t *testing.T) {
 	if err := Write(s, dir); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(dir, StoreFilename))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("expected 0600, got %o", info.Mode().Perm())
-	}
+	testmode.Private(t, filepath.Join(dir, StoreFilename), 0o600)
 }
 
 func TestListKeysSorted(t *testing.T) {
 	s := Store{"p": {"Z": "1", "A": "2", "M": "3"}}
-	keys := ListKeysForPlugin(s, "p")
+	keys := ListKeysForSection(s, "p")
 	want := []string{"A", "M", "Z"}
 	for i, k := range want {
 		if keys[i] != k {

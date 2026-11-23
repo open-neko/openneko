@@ -34,6 +34,7 @@ vi.mock("../../src/embedding", async () => {
       return v;
     }),
     vectorLiteral: (vec: number[]) => `[${vec.join(",")}]`,
+    embeddingModel: vi.fn(() => "test-model"),
   };
 });
 
@@ -43,6 +44,7 @@ import {
   searchWorkMemoryByContext,
 } from "../../src/work/memory";
 
+import { embedText, embeddingModel } from "../../src/embedding";
 import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
 async function rememberWorkMemory(input: Parameters<typeof saveMemory>[0]) {
   const memory = await saveMemory(input);
@@ -67,6 +69,23 @@ describeIfDb("work memory context search (pgvector)", () => {
   beforeEach(async () => {
     orgId = uniqueOrgId("wm-ctx");
     await createTestOrg(orgId, "WM Ctx");
+  });
+
+  it("finds memories by keyword when embedding is off or fails", async () => {
+    try {
+      await saveMemory({ orgId, text: "Quarterly revenue excludes returns", kind: "business_rule", scope: "global" });
+      await saveMemory({ orgId, text: "Warehouse audits run on Fridays", kind: "business_rule", scope: "global" });
+      vi.mocked(embeddingModel).mockReturnValueOnce(null);
+      const off = await searchWorkMemoryByContext({ orgId, query: "how is revenue counted?" });
+      expect(off.map((r) => r.memory.text)).toEqual(["Quarterly revenue excludes returns"]);
+      vi.mocked(embedText).mockRejectedValueOnce(new Error("HTTP 503"));
+      const failing = await searchWorkMemoryByContext({ orgId, query: "warehouse audits" });
+      expect(failing.map((r) => r.memory.text)).toEqual(["Warehouse audits run on Fridays"]);
+      const unindexed = await searchWorkMemoryByContext({ orgId, query: "warehouse audits" });
+      expect(unindexed.map((r) => r.memory.text)).toEqual(["Warehouse audits run on Fridays"]);
+    } finally {
+      await deleteTestOrg(orgId);
+    }
   });
 
   it("returns [] when no memories exist for the org", async () => {

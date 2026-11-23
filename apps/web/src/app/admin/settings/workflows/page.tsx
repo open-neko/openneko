@@ -1,39 +1,54 @@
+"use client";
+
 import Link from "next/link";
-import { connection } from "next/server";
-import { pool } from "@neko/db";
-import { listWorkflows } from "@neko/llm/workflows";
+import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import PageHeading from "@/components/PageHeading";
 import SectionNav from "@/components/SectionNav";
 import { Button } from "@/components/ui/button";
-import { AdminDenied } from "@/app/admin/AdminShell";
+import AdminLoad from "@/app/admin/AdminLoad";
 import { WorkflowApiAccessPanel } from "@/app/(work)/workflows/WorkflowApiAccessPanel";
-import { getCurrentActor } from "@/lib/actor";
-import { getOrgId } from "@/lib/db";
-import { getPublicUrlSetting } from "@/lib/public-url-settings";
 import PublicUrlForm from "./PublicUrlForm";
 import WorkflowOrgLimitsForm from "./WorkflowOrgLimitsForm";
+import OwnerlessWorkflows from "./OwnerlessWorkflows";
+import HeldWorkflows from "./HeldWorkflows";
 
-export default async function WorkflowSettingsPage({
-  searchParams,
+type WorkflowItem = { id: string; name: string; needsOwner?: boolean; accessHeld?: boolean; versionHash?: string; apiAccess?: boolean; webhook?: boolean };
+type UserItem = { id: string; email: string; name: string | null; disabled: boolean };
+type PublicUrl = Parameters<typeof PublicUrlForm>[0]["initial"];
+type Limits = { rollingTokenBudget: number | null; rollingCostMicrosBudget: number | null };
+
+export default function WorkflowSettingsPage() {
+  return (
+    <AdminLoad
+      title="Workflow API"
+      paths={["/api/v1/workflows", "/api/v1/admin/workflow-api-limits", "/api/v1/admin/public-url", "/api/v1/admin/users"]}
+    >
+      {([workflows, limits, publicUrl, users]) => (
+        <WorkflowSettings
+          workflows={(workflows as { workflows: WorkflowItem[] }).workflows}
+          limits={(limits as { limits: Limits }).limits}
+          publicUrl={publicUrl as PublicUrl}
+          users={(users as { users: UserItem[] }).users.filter((user) => !user.disabled)}
+        />
+      )}
+    </AdminLoad>
+  );
+}
+
+function WorkflowSettings({
+  workflows,
+  limits,
+  publicUrl,
+  users,
 }: {
-  searchParams: Promise<{ workflow?: string }>;
+  workflows: WorkflowItem[];
+  limits: Limits;
+  publicUrl: PublicUrl;
+  users: UserItem[];
 }) {
-  await connection();
-  const actor = await getCurrentActor();
-  if (actor.role !== "admin") return <AdminDenied />;
-  const orgId = await getOrgId();
-  const [workflows, orgLimits, publicUrl] = await Promise.all([
-    listWorkflows(orgId),
-    pool().query<{ rolling_token_budget: number; rolling_cost_micros_budget: string }>(
-      "select rolling_token_budget, rolling_cost_micros_budget from workflow_api_org_limits where org_id = $1",
-      [orgId],
-    ),
-    getPublicUrlSetting(orgId),
-  ]);
-  const selected = (await searchParams).workflow;
+  const selected = useSearchParams().get("workflow");
   const workflow = workflows.find((item) => item.id === selected) ?? workflows[0];
-  const limits = orgLimits.rows[0];
 
   return (
     <div className="root">
@@ -44,10 +59,15 @@ export default async function WorkflowSettingsPage({
         title="Workflow API"
         description="Set the public URL, the organization budget, and each workflow's API execution limits. Runtime also sets the agent's time allowance for API runs."
       />
+      <OwnerlessWorkflows
+        workflows={workflows.filter((item) => item.needsOwner).map(({ id, name, apiAccess, webhook }) => ({ id, name, apiAccess, webhook }))}
+        users={users.map(({ id, email, name }) => ({ id, email, name }))}
+      />
+      <HeldWorkflows workflows={workflows.filter((item) => item.accessHeld).map(({ id, name, versionHash }) => ({ id, name, versionHash: versionHash ?? "" }))} />
       <PublicUrlForm initial={publicUrl} />
       <WorkflowOrgLimitsForm initial={{
-        rollingTokenBudget: limits?.rolling_token_budget ?? Number(process.env.OPENNEKO_WORKFLOW_API_ORG_ROLLING_TOKEN_BUDGET ?? 1_000_000),
-        rollingCostMicrosBudget: Number(limits?.rolling_cost_micros_budget ?? process.env.OPENNEKO_WORKFLOW_API_ORG_ROLLING_COST_MICROS_BUDGET ?? 50_000_000),
+        rollingTokenBudget: limits.rollingTokenBudget ?? 1_000_000,
+        rollingCostMicrosBudget: limits.rollingCostMicrosBudget ?? 50_000_000,
       }} />
       <section className="settings-card mt-6 grid gap-4">
         <div>

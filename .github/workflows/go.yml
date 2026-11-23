@@ -5,21 +5,39 @@ on:
     branches: [main]
     paths:
       - "apps/openneko/**"
+      - "apps/ax-harness/**"
+      - "recipes/sandbox/**"
       - "db/migrations/**"
+      - "packages/**"
+      - "apps/web/**"
       - "Dockerfile"
       - "compose.yml"
-      - "compose.openshell.yml"
       - ".github/workflows/deploy.yml"
       - ".github/workflows/go.yml"
+      - "scripts/build-native-release.sh"
+      - "scripts/native-zip.py"
+      - "scripts/write-brew-cask.sh"
+      - "scripts/require-tests-ran.sh"
   pull_request:
     paths:
       - "apps/openneko/**"
+      - "apps/ax-harness/**"
+      - "recipes/sandbox/**"
       - "db/migrations/**"
+      - "packages/**"
+      - "apps/web/**"
       - "Dockerfile"
       - "compose.yml"
-      - "compose.openshell.yml"
       - ".github/workflows/deploy.yml"
       - ".github/workflows/go.yml"
+      - "scripts/build-native-release.sh"
+      - "scripts/native-zip.py"
+      - "scripts/write-brew-cask.sh"
+      - "scripts/require-tests-ran.sh"
+  workflow_dispatch:
+
+env:
+  OPENNEKO_TEST_OTHER_ACCOUNT: sudo
 
 jobs:
   test:
@@ -28,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14]
+        os: [ubuntu-22.04, ubuntu-24.04-arm, macos-15]
     defaults:
       run:
         working-directory: apps/openneko
@@ -57,8 +75,147 @@ jobs:
       - name: go test
         run: go test ./... -count=1
 
+      - name: Security tests run and do not skip
+        run: |
+          set -euo pipefail
+          tests=(TestKeyDoorSocketRefusesAnotherAccount TestStatusRestartAndStopFollowTheWholeTree TestKillingTheSupervisorEndsTheWholeTree)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/llm ./internal/cli | tee "$RUNNER_TEMP/security.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/security.log" "${tests[@]}"
+
+      - name: Confinement proofs run and do not skip
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: "0"
+          OPENNEKO_TEST_REQUIRE_CONFINE: "1"
+        run: |
+          set -euo pipefail
+          uname -r
+          cat /sys/kernel/security/lsm || true
+          tests=(TestEveryThreadIsConfined TestConfinedServeOneAccount TestServeRefusesToStartUnconfinedInEveryMode
+            TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined
+            TestDoctorNamesTheConfinementAndTheModules TestNoLandlockNamesTheCause TestRunnerFilterRefusesTheListedCalls
+            TestRunnerThreadFloodStaysInTheRunner)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/confine ./internal/cli | tee "$RUNNER_TEMP/confine.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
+
+      - name: Hostile runner tests of serve run and do not skip
+        if: runner.os == 'Linux'
+        working-directory: apps/ax-harness
+        run: |
+          set -euo pipefail
+          uname -m
+          tests=(TestBrokerCapsTheRequestsOfATurn TestBrokerKeepsALongTurnThatPacesItsRequests TestServeEndsATurnWhoseRunnerLeftAChildOnTheLink)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./serve | tee "$RUNNER_TEMP/hostile.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/hostile.log" "${tests[@]}"
+
+      - name: macOS confinement proofs run and do not skip
+        if: runner.os == 'macOS'
+        env:
+          CGO_ENABLED: "0"
+          OPENNEKO_TEST_REQUIRE_CONFINE: "1"
+          OPENNEKO_TEST_VERBOSE: "1"
+        run: |
+          set -euo pipefail
+          sw_vers
+          tests=(TestConfinedRunner TestRunnerRefusesATurnWhenItCannotConfine TestTurnsAreOffWhenRunnersCannotBeConfined TestConfinedRunnerTurn TestConfinedServeNetworkPart TestServeNetworkPartFailsClosed)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli ./internal/webfront | tee "$RUNNER_TEMP/confine.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
+
       - name: go build
         run: go build ./...
+
+      - name: Run the native server install tests as root
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 go test -c -o /tmp/cli.test ./internal/cli
+          git fetch --depth=1 origin dbe93d5c9b934a406fa8be7a4846d4a001f63dde
+          git worktree add /tmp/two-accounts dbe93d5c9b934a406fa8be7a4846d4a001f63dde
+          (cd /tmp/two-accounts/apps/openneko && CGO_ENABLED=0 go build -o /tmp/openneko-two-accounts ./cmd/openneko)
+          docker run --rm -e OPENNEKO_TEST_SERVER_INSTALL=1 -e OPENNEKO_TEST_TWO_ACCOUNT_EXE=/old \
+            -v /tmp/openneko-two-accounts:/old:ro -v /tmp/cli.test:/cli.test:ro \
+            debian:bookworm-slim /cli.test -test.v -test.run 'TestServerInstall|TestServerRestore|TestServerUpgrade' | tee /tmp/server-install.log
+          for t in TestServerInstallOneAccount TestServerInstallStopsARunningInstall TestServerRestoreOwners TestServerUpgradeFromTwoAccounts; do
+            grep -q -- "--- PASS: $t" /tmp/server-install.log
+          done
+          if grep -- '--- SKIP' /tmp/server-install.log; then
+            echo "a root test skipped; this step must run every one" >&2
+            exit 1
+          fi
+
+  test-database:
+    name: test (ubuntu-22.04, postgres)
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: neko
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: openneko_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neko -d openneko_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OPENNEKO_TEST_DATABASE_URL: postgres://neko:secret@127.0.0.1:5432/openneko_test?sslmode=disable
+      OPENNEKO_TEST_DUCKDB: ${{ github.workspace }}/.bin/duckdb
+      OPENNEKO_TEST_REQUIRE_DB: "1"
+    defaults:
+      run:
+        working-directory: apps/openneko
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+
+      - name: Install the DuckDB CLI (the version and checksum in the Dockerfile)
+        run: |
+          version=$(sed -n 's/^ARG DUCKDB_VERSION=//p' "$GITHUB_WORKSPACE/Dockerfile")
+          sum=$(grep -o 'amd64) sum=[0-9a-f]*' "$GITHUB_WORKSPACE/Dockerfile" | head -1 | cut -d= -f2)
+          test -n "$version" && test -n "$sum"
+          curl -fsSL --retry 5 -o /tmp/duckdb.gz \
+            "https://github.com/duckdb/duckdb/releases/download/${version}/duckdb_cli-linux-amd64.gz"
+          echo "$sum  /tmp/duckdb.gz" | sha256sum -c -
+          mkdir -p "$GITHUB_WORKSPACE/.bin"
+          gunzip -c /tmp/duckdb.gz > "$OPENNEKO_TEST_DUCKDB"
+          chmod 0755 "$OPENNEKO_TEST_DUCKDB"
+          "$OPENNEKO_TEST_DUCKDB" --version
+
+      - name: Install the PostgreSQL 16 client (the source in the Dockerfile)
+        run: |
+          set -euo pipefail
+          image=$(sed -n 's/^FROM \(pgvector\/pgvector:[^ ]*@sha256:[0-9a-f]*\) AS neko-db$/\1/p' "$GITHUB_WORKSPACE/Dockerfile")
+          test -n "$image"
+          docker run --rm --entrypoint cat "$image" /usr/local/share/keyrings/postgres.gpg.asc > /tmp/postgres.gpg.asc
+          sudo install -D -m 0644 /tmp/postgres.gpg.asc /usr/local/share/keyrings/postgres.gpg.asc
+          echo "deb [ signed-by=/usr/local/share/keyrings/postgres.gpg.asc ] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main 16" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+          for tool in pg_dump pg_restore; do
+            /usr/lib/postgresql/16/bin/$tool --version | grep -q '(PostgreSQL) 16\.'
+          done
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (with the database)
+        run: |
+          pg_dump --version | grep -q '(PostgreSQL) 16\.'
+          go test -count=1 -timeout 20m ./...
+
+      - name: A confined serve does its work and the proof does not skip
+        run: |
+          set -euo pipefail
+          go test -count=1 -v -run '^TestConfinedServeDoesItsWork$' ./internal/webfront | tee "$RUNNER_TEMP/confined-serve.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confined-serve.log" TestConfinedServeDoesItsWork
 
   integration-migrator:
     name: integration - migrator (real postgres)
@@ -76,8 +233,98 @@ jobs:
       - name: go test (database integration)
         run: go test -tags=integration -count=1 -timeout 10m ./internal/db/...
 
-      - name: go test (OpenShell credential integration)
-        run: go test -tags=integration -count=1 -timeout 10m -run '^TestMigrateOpenShellRoleCredentialContract$' ./internal/cli
+  test-windows:
+    name: test (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: |
+            apps/openneko/go.sum
+            apps/ax-harness/go.sum
+            recipes/sandbox/go.sum
+
+      - name: openneko
+        working-directory: apps/openneko
+        run: go test -count=1 -timeout 20m ./...
+
+      - name: Security tests run and do not skip
+        if: ${{ !cancelled() }}
+        working-directory: apps/openneko
+        run: |
+          set -euo pipefail
+          tests=(TestAnotherAccountCannotReachTheSocketsOrTheSecrets TestSocketsInAnOpenFolderShutOutAnotherAccount TestStatusRestartAndStopFollowTheWholeTree TestKillingTheSupervisorEndsTheWholeTree)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli | tee "$RUNNER_TEMP/security.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/security.log" "${tests[@]}"
+
+      - name: Windows confinement proofs run and do not skip
+        if: ${{ !cancelled() }}
+        working-directory: apps/openneko
+        env:
+          OPENNEKO_TEST_REQUIRE_CONFINE: "1"
+        run: |
+          set -euo pipefail
+          cmd //c ver
+          tests=(TestConfinedRunnerWindows TestWindowsRunnerRefusesATurnOutsideAnAppContainer TestWindowsRunnersCannotReachEachOther
+            TestWindowsRunnerGetsNoFolderThroughALink TestWindowsStarterKeepsTheTurnInsideAgentRuns TestWindowsTurnsAreOffWithNoAppContainer
+            TestStaleRunnerContainersGo)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./internal/cli | tee "$RUNNER_TEMP/confine.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/confine.log" "${tests[@]}"
+          cd ../ax-harness
+          tests=(TestWindowsRunnerRunsAWholeTurnThroughItsSockets TestWindowsRunnerStopsWhenTheCallerHangsUp
+            TestWindowsServeRefusesAConfinedTurnWithNoStarter TestWindowsRunnerSocketsTakeOnlyTheRunner)
+          go test -count=1 -v -run "^($(IFS='|'; echo "${tests[*]}"))\$" ./serve | tee "$RUNNER_TEMP/runner.log"
+          ../../scripts/require-tests-ran.sh "$RUNNER_TEMP/runner.log" "${tests[@]}"
+
+      - name: ax-harness
+        if: ${{ !cancelled() }}
+        working-directory: apps/ax-harness
+        run: go test -count=1 -timeout 20m ./...
+
+      - name: sandbox
+        if: ${{ !cancelled() }}
+        working-directory: recipes/sandbox
+        run: go test -count=1 ./...
+
+  windows-build:
+    name: windows build
+    runs-on: ubuntu-22.04
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: |
+            apps/openneko/go.sum
+            apps/ax-harness/go.sum
+            recipes/sandbox/go.sum
+
+      - name: openneko
+        working-directory: apps/openneko
+        run: |
+          go vet ./...
+          go build -o /dev/null ./cmd/openneko
+
+      - name: ax-harness
+        working-directory: apps/ax-harness
+        run: |
+          go vet ./...
+          go build -o /dev/null ./cmd/ax-harness
+
+      - name: sandbox
+        working-directory: recipes/sandbox
+        run: |
+          go vet ./...
+          go build -o /dev/null .
 
   goreleaser-check:
     name: goreleaser check
@@ -92,3 +339,78 @@ jobs:
           version: "~> v2"
           args: check
           workdir: apps/openneko
+
+  native-archives:
+    name: native archives
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: apps/openneko/go.sum
+      - name: Build the archives
+        run: |
+          mkdir -p "$RUNNER_TEMP/web"
+          echo '<!doctype html><title>OpenNeko</title>' > "$RUNNER_TEMP/web/index.html"
+          OPENNEKO_WEB_DIST="$RUNNER_TEMP/web" bash scripts/build-native-release.sh v9.9.9 mirror/v9.9.9 \
+            linux/amd64 darwin/arm64 windows/amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-archives
+          path: mirror
+          retention-days: 3
+
+  native-archive-check:
+    name: native archive (${{ matrix.os }})
+    needs: native-archives
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-archives
+          path: mirror
+      - name: Extract and check (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          os=$(uname -s | tr A-Z a-z)
+          mkdir release
+          tar -C release -xzf "mirror/v9.9.9/openneko-native_9.9.9_${os}_$( [ "$os" = darwin ] && echo arm64 || echo amd64 ).tar.gz"
+          test "$(release/bin/openneko version --short)" = 9.9.9
+          test -f release/share/openneko/web/index.html
+          release/bin/openneko release-check --skills --bundled-packs
+      - name: Extract and check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -Path mirror/v9.9.9/openneko-native_9.9.9_windows_amd64.zip -DestinationPath release
+          $v = & release\bin\openneko.exe version --short
+          if ($LASTEXITCODE -ne 0 -or "$v".Trim() -ne '9.9.9') { throw "version: $v" }
+          if (-not (Test-Path release\share\openneko\web\index.html)) { throw 'no web app' }
+          & release\bin\openneko.exe release-check --skills --bundled-packs
+          if ($LASTEXITCODE -ne 0) { throw 'release-check failed' }
+      - name: Install the Homebrew cask from the archive
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 openneko-native_9.9.9_darwin_amd64.tar.gz \
+            0000000000000000000000000000000000000000000000000000000000000000 openneko-native_9.9.9_linux_arm64.tar.gz >> mirror/v9.9.9/checksums-native.txt
+          brew tap-new --no-git local/openneko
+          mkdir -p "$(brew --repository)/Library/Taps/local/homebrew-openneko/Casks"
+          bash scripts/write-brew-cask.sh v9.9.9 mirror/v9.9.9/checksums-native.txt "file://$PWD/mirror" \
+            > "$(brew --repository)/Library/Taps/local/homebrew-openneko/Casks/openneko.rb"
+          brew install --cask local/openneko/openneko
+          exe=$(command -v openneko)
+          test -L "$exe"
+          test "$(openneko version --short)" = 9.9.9
+          test -f "$(brew --caskroom)/openneko/9.9.9/share/openneko/web/index.html"
+          openneko release-check --skills --bundled-packs

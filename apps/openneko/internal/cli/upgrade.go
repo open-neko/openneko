@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -25,6 +25,8 @@ func newUpgradeCmd() *cobra.Command {
 	var noPrune bool
 	var stackOnly bool
 	var cliOnly bool
+	var skipBackup bool
+	var from, installedExe string
 
 	cmd := &cobra.Command{
 		Use:   "upgrade",
@@ -33,28 +35,78 @@ func newUpgradeCmd() *cobra.Command {
 new CLI, then pull and recreate the current stack from the same release. This
 keeps the CLI's embedded Compose definitions aligned with the service images.
 
+Before touching the stack it takes an ` + "`openneko backup`" + ` of the running
+stack and stops if that fails; --skip-backup upgrades without one.
+
 The CLI honors its installation owner: Homebrew installations are upgraded
 through Homebrew; standalone installations use checksum-verified release
 artifacts and atomic replacement. Use --stack-only or --cli-only for recovery
-and specialized deployment workflows.`,
+and specialized deployment workflows.
+
+A native install downloads the release archive for this host, checks it
+against checksums-native.txt and upgrades from it. --version picks the
+release; OPENNEKO_RELEASE_URL points at a mirror. --from <folder> upgrades
+from a release folder instead. The upgrade takes a backup, stops OpenNeko,
+replaces the executable, the web app, the packs and the skills, and starts
+OpenNeko again if it ran; the start applies the migrations.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
+			if settings, ok := nativeInstall(); ok {
+				if stackOnly || cliOnly || noPrune || mode != "auto" {
+					return errors.New("--mode, --stack-only, --cli-only and --no-prune are for a Docker install")
+				}
+				if from != "" && imageVersion != "" {
+					return errors.New("give --from or --version, not both")
+				}
+				if installedExe != "" {
+					abs, err := filepath.Abs(installedExe)
+					if err != nil {
+						return err
+					}
+					if info, err := os.Stat(abs); err != nil || !info.Mode().IsRegular() {
+						return fmt.Errorf("--exe %s is not an installed executable (nothing was changed)", installedExe)
+					}
+					installedExe = abs
+				}
+				if from == "" {
+					target, err := resolveNativeTarget(ctx, imageVersion)
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Downloading OpenNeko %s...\n", target)
+					release, err := downloadNativeRelease(ctx, target, os.TempDir())
+					if err != nil {
+						return fmt.Errorf("%w (nothing was changed)", err)
+					}
+					defer os.RemoveAll(filepath.Dir(release))
+					from = release
+				}
+				return runNativeUpgrade(ctx, cmd, settings, from, installedExe, skipBackup)
+			}
+			if from != "" || installedExe != "" {
+				return errors.New("--from and --exe are for a native install")
+			}
 			return runUpgrade(ctx, cmd, upgradeOptions{
 				mode:         mode,
 				imageVersion: imageVersion,
 				noPrune:      noPrune,
 				stackOnly:    stackOnly,
 				cliOnly:      cliOnly,
+				skipBackup:   skipBackup,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Stack mode to upgrade: auto|prod|dev|demo")
 	cmd.Flags().StringVar(&imageVersion, "version", "", "Exact OpenNeko release to install (default: latest stable; accepts 1.2.3 or v1.2.3)")
-	cmd.Flags().BoolVar(&noPrune, "no-prune", false, "Skip immediate post-upgrade image pruning (unused old agent images are still reaped after 24 hours)")
+	cmd.Flags().BoolVar(&noPrune, "no-prune", false, "Skip immediate post-upgrade image pruning")
 	cmd.Flags().BoolVar(&stackOnly, "stack-only", false, "Upgrade only stack images; keep the current local CLI")
 	cmd.Flags().BoolVar(&cliOnly, "cli-only", false, "Upgrade only the local CLI; do not change the stack")
+	cmd.Flags().BoolVar(&skipBackup, "skip-backup", false, "Upgrade the stack without taking a backup first")
+	cmd.Flags().StringVar(&from, "from", "", "Native: upgrade from this release folder (bin/openneko and share/openneko) instead of a download")
+	cmd.Flags().StringVar(&installedExe, "exe", "", "Native: the installed executable to replace (install-native.sh --upgrade runs the new executable)")
+	_ = cmd.Flags().MarkHidden("exe")
 	return cmd
 }
 
@@ -64,6 +116,7 @@ type upgradeOptions struct {
 	noPrune      bool
 	stackOnly    bool
 	cliOnly      bool
+	skipBackup   bool
 }
 
 func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) error {
@@ -106,11 +159,20 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	if err != nil {
 		return err
 	}
-	if err := configureBackupEnvironment(project); err != nil {
-		return fmt.Errorf("configure backup repository: %w", err)
-	}
-	if err := configureOpenShellNetwork(m); err != nil {
+	files, err := stackFiles(ctx, sup, m, project)
+	if err != nil {
 		return err
+	}
+	if err := warnSandboxRoutesOut(errOut, files); err != nil {
+		return err
+	}
+	if opts.skipBackup {
+		fmt.Fprintln(errOut, "warning: --skip-backup given; upgrading the stack without a backup.")
+	} else {
+		fmt.Fprintln(out, "Taking a pre-upgrade backup...")
+		if _, err := createBackup(ctx, sup, project, files, "", out); err != nil {
+			return fmt.Errorf("pre-upgrade backup failed, so the stack was not changed (pass --skip-backup to upgrade without one): %w", err)
+		}
 	}
 
 	previous, hadPrevious := os.LookupEnv("OPENNEKO_VERSION")
@@ -124,35 +186,17 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 			_ = os.Unsetenv("OPENNEKO_VERSION")
 		}
 	}()
-	if err := configurePinnedLibrarianImage(target); err != nil {
-		return err
-	}
-	if err := configureLibrarianCPULimit(runtime.NumCPU()); err != nil {
-		return err
-	}
 
-	files, err := sup.Materialize(m)
-	if err != nil {
-		return err
-	}
 	fmt.Fprintf(out, "Upgrading OpenNeko %s stack to image tag %s\n", m, target)
-	reapBeforePull(ctx)
 	fmt.Fprintln(out, "Pulling stack images...")
-	if code, err := sup.Run(ctx, project, files, []string{"pull"}, os.Stdout, os.Stderr); err != nil {
+	if code, err := sup.Run(ctx, project, files, upgradePullArgs(), os.Stdout, os.Stderr); err != nil {
 		return err
 	} else if code != 0 {
 		return WithExit(code, nil)
 	}
 
-	for _, image := range extraUpgradeImageRefs(target) {
-		fmt.Fprintf(out, "Pulling %s...\n", image)
-		if err := sup.PullImage(ctx, image, os.Stdout, os.Stderr); err != nil {
-			return err
-		}
-	}
-
 	fmt.Fprintln(out, "Restarting stack with upgraded images...")
-	if err := restartUpgradedStack(ctx, sup, project, files); err != nil {
+	if err := restartUpgradedStack(ctx, sup, project, files, m); err != nil {
 		return err
 	}
 
@@ -183,25 +227,21 @@ func runUpgrade(ctx context.Context, cmd *cobra.Command, opts upgradeOptions) er
 	return nil
 }
 
-func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string) error {
-	if err := configureOpenShellStateDir(); err != nil {
-		return err
-	}
-	configureOpenShellDBURL()
-	// Enter a real maintenance boundary before replacing either database image.
-	// Without this, old worker/GraphJin containers can reconnect in the window
-	// between Postgres becoming healthy and the new storage-reconcile one-shot
-	// acquiring its locks. Stopping the whole project is intentionally simple:
-	// no database consumer can be omitted as the service graph evolves.
-	if code, err := sup.Run(ctx, project, files, []string{"stop"}, os.Stdout, os.Stderr); err != nil {
+func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project string, files []string, mode compose.Mode) error {
+	// Enter a real maintenance boundary before replacing the database image.
+	// Without this, old web/GraphJin containers can reconnect in the window
+	// between Postgres becoming healthy and the storage-reconcile step
+	// acquiring its locks. Remove every container of the project, including
+	// services that the new compose file no longer names: a release can drop
+	// a service, and a plain stop leaves that service running on the database.
+	if code, err := sup.Run(ctx, project, files, upgradeMaintenanceArgs(), os.Stdout, os.Stderr); err != nil {
 		return err
 	} else if code != 0 {
 		return WithExit(code, fmt.Errorf("failed to enter upgrade maintenance mode"))
 	}
-	// Force the one-shot init containers onto the current network too. Compose
-	// otherwise reuses already-exited containers during the one-time migration
-	// from the legacy dynamic <project>_default network, leaving them unable to
-	// resolve services that have moved to <project>_runtime.
+	if err := runStartSteps(ctx, sup, project, files, mode, []string{"--pull", "never"}); err != nil {
+		return err
+	}
 	code, err := sup.Run(ctx, project, files, upgradeStackUpArgs(), os.Stdout, os.Stderr)
 	if err != nil {
 		return err
@@ -210,6 +250,16 @@ func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project 
 		return WithExit(code, errors.New("upgraded stack failed its readiness checks"))
 	}
 	return nil
+}
+
+// A plain pull skips services in an inactive profile, and the start steps
+// then run with --pull never.
+func upgradePullArgs() []string {
+	return []string{"--profile", "steps", "pull"}
+}
+
+func upgradeMaintenanceArgs() []string {
+	return []string{"down", "--remove-orphans"}
 }
 
 func upgradeStackUpArgs() []string {
@@ -355,30 +405,8 @@ func normalizeUpgradeImageVersion(raw string) string {
 	return v
 }
 
-func extraUpgradeImageRefs(version string) []string {
-	return uniqueStrings([]string{
-		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), version),
-		pluginBaseImageRef(os.Getenv("OPENNEKO_PLUGIN_BASE_IMAGE"), version),
-		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), version),
-	})
-}
-
-func pluginBaseImageRef(override, version string) string {
-	if override != "" {
-		return override
-	}
-	return "ghcr.io/open-neko/plugin-base:" + version
-}
-
-func supervisorImageRef(override, version string) string {
-	if override != "" {
-		return override
-	}
-	return "ghcr.io/open-neko/openshell-supervisor:" + version
-}
-
 func pruneOldOpenNekoImages(ctx context.Context, targetTag string, stdout, stderr *os.File) error {
-	cmd := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	cmd := exec.CommandContext(ctx, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}} {{.ID}}")
 	out, err := cmd.Output()
 	if err != nil {
 		return err
@@ -406,15 +434,23 @@ func oldOpenNekoImageRefs(imageListOutput, targetTag string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, line := range strings.Split(imageListOutput, "\n") {
-		ref := strings.TrimSpace(line)
-		if ref == "" || seen[ref] {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
 			continue
 		}
+		ref := fields[0]
 		repo, tag, ok := strings.Cut(ref, ":")
-		if !ok || tag == "" || tag == "<none>" {
+		if !ok || tag == "" || !repos[repo] || tag == targetTag {
 			continue
 		}
-		if !repos[repo] || tag == targetTag {
+		// An image pulled by digest (5.0.0 pinned the librarian so) has no tag.
+		if tag == "<none>" {
+			if len(fields) < 2 {
+				continue
+			}
+			ref = fields[1]
+		}
+		if seen[ref] {
 			continue
 		}
 		seen[ref] = true
@@ -425,17 +461,19 @@ func oldOpenNekoImageRefs(imageListOutput, targetTag string) []string {
 
 func openNekoImageRepos() map[string]bool {
 	return map[string]bool{
-		"ghcr.io/open-neko/neko-cli":    true,
-		"ghcr.io/open-neko/neko-db":     true,
-		"ghcr.io/open-neko/records-db":  true,
-		"ghcr.io/open-neko/neko-backup": true,
-		// Legacy image retained so the first upgrade after its removal prunes it.
-		"ghcr.io/open-neko/records-storage-ops":  true,
+		"ghcr.io/open-neko/neko-cli":       true,
+		"ghcr.io/open-neko/neko-serve":     true,
+		"ghcr.io/open-neko/neko-db":        true,
+		"ghcr.io/open-neko/neko-web":       true,
+		"ghcr.io/open-neko/neko-worker":    true,
+		"ghcr.io/open-neko/neko-embedding": true,
+		sandboxImageRepo:                   true,
+		// Legacy images kept so the first upgrade after their removal prunes them.
 		"ghcr.io/open-neko/neko-graphjin":        true,
+		"ghcr.io/open-neko/records-db":           true,
 		"ghcr.io/open-neko/records-graphjin":     true,
-		"ghcr.io/open-neko/neko-web":             true,
-		"ghcr.io/open-neko/neko-worker":          true,
-		"ghcr.io/open-neko/neko-embedding":       true,
+		"ghcr.io/open-neko/records-storage-ops":  true,
+		"ghcr.io/open-neko/neko-backup":          true,
 		"ghcr.io/open-neko/neko-librarian":       true,
 		"ghcr.io/open-neko/agent":                true,
 		"ghcr.io/open-neko/plugin-base":          true,

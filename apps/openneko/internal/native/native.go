@@ -1,0 +1,334 @@
+// Package native runs OpenNeko on the host as plain processes: openneko
+// serve and openneko web under one supervisor, with no container.
+package native
+
+import (
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
+	"github.com/open-neko/neko/apps/openneko/internal/secretenv"
+)
+
+type Layout struct {
+	Root   string
+	Agent  string
+	Shared string
+}
+
+func (l Layout) agent() string {
+	if l.Agent != "" {
+		return l.Agent
+	}
+	return l.Root
+}
+
+func (l Layout) shared() string {
+	if l.Shared != "" {
+		return l.Shared
+	}
+	return l.Root
+}
+
+func (l Layout) Files() string         { return filepath.Join(l.agent(), "files") }
+func (l Layout) Index() string         { return filepath.Join(l.agent(), "file-index") }
+func (l Layout) Subscriptions() string { return filepath.Join(l.agent(), "subscriptions") }
+func (l Layout) Tmp() string           { return filepath.Join(l.agent(), "tmp") }
+func (l Layout) Credentials() string   { return filepath.Join(l.shared(), "credentials") }
+func (l Layout) GraphJin() string      { return filepath.Join(l.shared(), "graphjin", "agentic.yml") }
+func (l Layout) Seed() string          { return filepath.Join(l.shared(), "graphjin", "seed.yml") }
+func (l Layout) Run() string           { return filepath.Join(l.shared(), "run") }
+func (l Layout) Door() string          { return filepath.Join(l.shared(), "door") }
+func (l Layout) Check() string         { return filepath.Join(l.shared(), "check") }
+func (l Layout) AgentRuns() string     { return filepath.Join(l.shared(), "agent-runs") }
+func (l Layout) WebAdmin() string      { return filepath.Join(l.Root, "web-admin.sock") }
+func (l Layout) Logs() string          { return filepath.Join(l.Root, "logs") }
+func (l Layout) State() string         { return filepath.Join(l.Run(), "state.json") }
+func (l Layout) Lock() string          { return filepath.Join(l.Run(), "supervisor.lock") }
+func (l Layout) Log(name string) string {
+	if name == "serve" {
+		return filepath.Join(l.agent(), "logs", "serve.log")
+	}
+	return filepath.Join(l.Logs(), name+".log")
+}
+
+// DataFolders maps each data folder that a backup holds to its path.
+func (l Layout) DataFolders() map[string]string {
+	return map[string]string{
+		"files": l.Files(), "file-index": l.Index(), "subscriptions": l.Subscriptions(),
+		"credentials": l.Credentials(), "graphjin": filepath.Dir(l.GraphJin()),
+	}
+}
+
+// MaxSocketPath is the longest Unix socket path that net.Listen accepts here.
+func MaxSocketPath() int {
+	switch runtime.GOOS {
+	case "linux", "windows":
+		return 107
+	default:
+		return 103
+	}
+}
+
+// CheckSocketPath fails with one line when path is too long for a Unix socket.
+func CheckSocketPath(path string) error {
+	if n := len(path); n > MaxSocketPath() {
+		return fmt.Errorf("the socket path %s has %d bytes and %s allows %d; set XDG_DATA_HOME to a shorter folder or use a shorter instance name", path, n, runtime.GOOS, MaxSocketPath())
+	}
+	return nil
+}
+
+func (l Layout) sockets() []string {
+	paths := []string{l.WebAdmin()}
+	for k, v := range sharedEnv(l) {
+		if strings.HasSuffix(k, "_SOCKET") {
+			paths = append(paths, v)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func (l Layout) Prepare() error {
+	for _, path := range l.sockets() {
+		if err := CheckSocketPath(path); err != nil {
+			return err
+		}
+	}
+	for _, dir := range []string{l.Root, l.Files(), l.Index(), l.Credentials(), filepath.Dir(l.GraphJin()), l.Run(), l.Door(), l.Check(), l.Logs(), l.AgentRuns(), l.Subscriptions(), l.Tmp()} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+		if err := ownonly.Set(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const (
+	ServeAddr         = "127.0.0.1:8090"
+	GraphJinAddr      = "127.0.0.1:8080"
+	SubscriptionsAddr = "127.0.0.1:8089"
+)
+
+type Options struct {
+	Exe       string
+	WebDir    string
+	WebAddr   string
+	PublicURL string
+	Env       []string
+}
+
+type Proc struct {
+	Name  string
+	Args  []string
+	Env   []string
+	Stdin []byte
+}
+
+func (o Options) env(extra map[string]string) []string {
+	out := make([]string, 0, len(o.Env)+len(extra))
+	for _, kv := range o.Env {
+		if k, _, ok := strings.Cut(kv, "="); ok {
+			if _, set := extra[k]; set {
+				continue
+			}
+		}
+		out = append(out, kv)
+	}
+	for k, v := range extra {
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
+func sharedEnv(l Layout) map[string]string {
+	return map[string]string{
+		"OPENNEKO_GRAPHJIN_CONFIG":     l.GraphJin(),
+		"OPENNEKO_SERVE_SOCKET":        filepath.Join(l.Run(), "serve.sock"),
+		"OPENNEKO_CONFIG_CHECK_SOCKET": filepath.Join(l.Check(), "check.sock"),
+		"OPENNEKO_KEY_DOOR_SOCKET":     filepath.Join(l.Door(), "keydoor.sock"),
+		"OPENNEKO_AGENT_RUNS_DIR":      l.AgentRuns(),
+		"OPENNEKO_FILES_DIR":           l.Files(),
+		"OPENNEKO_FILES_INDEX_DIR":     l.Index(),
+		"OPENNEKO_IN_CONTAINER":        "false",
+	}
+}
+
+// Steps run in order before the processes start; the first failure stops
+// the start.
+func Steps(l Layout, o Options, migrate bool) []Proc {
+	env := o.env(sharedEnv(l))
+	steps := []Proc{{Name: "database check", Args: []string{o.Exe, "database", "check"}, Env: env}}
+	if migrate {
+		steps = append(steps, Proc{Name: "migrate", Args: []string{o.Exe, "migrate"}, Env: env})
+	}
+	return append(steps, Proc{Name: "serve-init", Args: []string{o.Exe, "serve-init", "--dir", l.Credentials(), "--graphjin-config", l.GraphJin(), "--graphjin-seed", l.Seed()}, Env: env})
+}
+
+func ServeEnv(l Layout) map[string]string {
+	serve := sharedEnv(l)
+	serve["OPENNEKO_SERVE_CREDENTIALS"] = l.Credentials()
+	serve["OPENNEKO_SERVE_ADDR"] = ServeAddr
+	serve["OPENNEKO_GRAPHJIN_ADDR"] = GraphJinAddr
+	serve["OPENNEKO_SUBSCRIPTIONS_ADDR"] = SubscriptionsAddr
+	serve["OPENNEKO_SUBSCRIPTIONS_DIR"] = l.Subscriptions()
+	serve["TMPDIR"] = l.Tmp()
+	if runtime.GOOS == "windows" {
+		serve["TMP"], serve["TEMP"] = l.Tmp(), l.Tmp()
+	}
+	return serve
+}
+
+func WebEnv(l Layout, o Options) map[string]string {
+	web := sharedEnv(l)
+	web["OPENNEKO_ENV"] = "production"
+	web["OPENNEKO_WEB_ADDR"] = o.WebAddr
+	web["OPENNEKO_WEB_DIR"] = o.WebDir
+	web["OPENNEKO_PUBLIC_URL"] = o.PublicURL
+	web["OPENNEKO_SERVE_URL"] = "http://" + ServeAddr
+	web["OPENNEKO_GRAPHJIN_URL"] = "http://" + SubscriptionsAddr
+	web["OPENNEKO_WEB_ADMIN_SOCKET"] = l.WebAdmin()
+	if !hasEnv(o.Env, "OPENNEKO_METRICS_REFRESH") {
+		web["OPENNEKO_METRICS_REFRESH"] = "off"
+	}
+	return web
+}
+
+func Procs(l Layout, o Options) []Proc {
+	return []Proc{
+		{Name: "serve", Args: []string{o.Exe, "serve"}, Env: Options{Env: ServeEnviron(o.Env)}.env(withStdin(ServeEnv(l))), Stdin: ServeSecrets(o.Env)},
+		{Name: "web", Args: []string{o.Exe, "web"}, Env: Options{Env: WebEnviron(o.Env)}.env(withStdin(WebEnv(l, o))), Stdin: WebSecrets(o.Env)},
+	}
+}
+
+func withStdin(env map[string]string) map[string]string {
+	env[secretenv.StdinEnv] = "1"
+	return env
+}
+
+// serveOwnSecrets go to serve on stdin, so they are in no environment that
+// a part of serve or its children can read.
+var serveOwnSecrets = []string{"OPENNEKO_SANDBOX_KEY", "OPENNEKO_FILES_BUCKET_KEY_ID", "OPENNEKO_FILES_BUCKET_SECRET",
+	"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}
+
+// ServeSecrets is the JSON line that serve reads on stdin: its own secrets
+// from env, or from the files that their _FILE variables name, and the
+// secret GraphJin and OTLP header variables for the customer GraphJin.
+func ServeSecrets(env []string) []byte {
+	values := handedValues(env, serveOwnSecrets)
+	_, secrets := secretenv.Split(env)
+	for name, v := range secrets {
+		if upper := strings.ToUpper(name); (strings.HasPrefix(upper, "GJ_") || strings.HasPrefix(upper, "OTEL_")) && v != "" {
+			values[name] = v
+		}
+	}
+	for name, v := range secretURLs(env) {
+		values[name] = v
+	}
+	return secretenv.Line(values)
+}
+
+// ServeEnviron drops every secret-named variable from env: model and
+// provider keys, tokens, passwords, database URLs, the secret key, the
+// sandbox key, the bucket login and the OTLP headers.
+func ServeEnviron(env []string) []string {
+	return keepEnv(env, func(string) bool { return false })
+}
+
+// webReads lists the secret-named variables that web reads. Web gets no
+// other secret-named variable of the shell that ran `openneko start`.
+// Those in webSecrets go on stdin; the rest name a file or a setting.
+var webReads = map[string]bool{
+	"NEKO_PG_PASSWORD": true, "OPENNEKO_DATABASE_URL_FILE": true, "OPENNEKO_SESSION_SECRET": true,
+	"NEKO_EMBEDDING_API_KEY": true, "NEKO_EMBEDDING_API_KEY_FILE": true,
+	"OPENNEKO_SANDBOX_KEY": true, "OPENNEKO_SANDBOX_KEY_FILE": true,
+	"OPENNEKO_JOBS_WAKE_TOKEN": true, "OPENNEKO_GITHUB_TOKEN": true, "GITHUB_TOKEN": true,
+	"OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN": true, "OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL": true, "OPENNEKO_AGENT_MODEL_KEY_ENV": true,
+	"OPENNEKO_WORKFLOW_API_ORG_ROLLING_TOKEN_BUDGET": true, "OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE": true,
+}
+
+var webSecrets = []string{"NEKO_PG_PASSWORD", "OPENNEKO_SESSION_SECRET", "NEKO_EMBEDDING_API_KEY", "OPENNEKO_SANDBOX_KEY",
+	"OPENNEKO_JOBS_WAKE_TOKEN", "OPENNEKO_GITHUB_TOKEN", "GITHUB_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_TOKEN", "OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL"}
+
+// WebEnviron keeps the variables of env that are not secret-named, and the
+// secret-named ones that web reads and that hold no secret value.
+func WebEnviron(env []string) []string {
+	return keepEnv(env, func(upper string) bool { return webReads[upper] && !slices.Contains(webSecrets, upper) })
+}
+
+// WebSecrets is the JSON line that web reads on stdin: its secrets, and
+// each URL with a login or a credential in its query.
+func WebSecrets(env []string) []byte {
+	values := handedValues(env, webSecrets)
+	for name, v := range secretURLs(env) {
+		values[name] = v
+	}
+	return secretenv.Line(values)
+}
+
+// secretURLs are the variables of env that only their URL value makes
+// secret.
+func secretURLs(env []string) map[string]string {
+	out := map[string]string{}
+	for _, kv := range env {
+		name, value, _ := strings.Cut(kv, "=")
+		if !secretenv.SecretName(name) && secretenv.SecretURL(value) {
+			out[name] = value
+		}
+	}
+	return out
+}
+
+func handedValues(env []string, names []string) map[string]string {
+	values := map[string]string{}
+	for _, name := range names {
+		if v := secretenv.Lookup(env, name); v != "" {
+			values[name] = v
+		}
+	}
+	return values
+}
+
+func keepEnv(env []string, keep func(upper string) bool) []string {
+	var out []string
+	for _, kv := range env {
+		name, value, _ := strings.Cut(kv, "=")
+		upper := strings.ToUpper(name)
+		if !secretenv.Secret(upper, value) || keep(upper) {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+func hasEnv(env []string, key string) bool {
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == key && strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// ProbeHost turns a listen address into one a local client can dial.
+func ProbeHost(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", fmt.Errorf("web address %q: %w", addr, err)
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port), nil
+}

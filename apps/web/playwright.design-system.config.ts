@@ -1,6 +1,10 @@
+import path from "node:path";
 import { defineConfig } from "@playwright/test";
 
 const port = 3322;
+const apiPort = 3324;
+const root = path.resolve(__dirname, "../..");
+const binary = path.join(__dirname, "node_modules/.cache/openneko-design/openneko");
 
 export default defineConfig({
   testDir: "./test/visual",
@@ -9,33 +13,39 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 60_000,
-  expect: {
-    timeout: 10_000,
-    toHaveScreenshot: {
-      animations: "disabled",
-      caret: "hide",
-      maxDiffPixelRatio: 0.002,
-    },
-  },
-  snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     browserName: "chromium",
-    viewport: { width: 1_440, height: 900 },
     deviceScaleFactor: 1,
     colorScheme: "light",
     locale: "en-US",
     timezoneId: "UTC",
     screenshot: "only-on-failure",
-    trace: "retain-on-failure",
   },
-  webServer: {
-    command:
-      `OPENNEKO_MAGENTO_VISUAL_TEST=true ` +
-      `NEXT_PUBLIC_RECORDS_VISUAL_TEST=true OPENNEKO_RECORDS_VISUAL_TEST=true ` +
-      `pnpm dev --hostname 127.0.0.1 --port ${port}`,
-    url: `http://127.0.0.1:${port}/admin/settings/packs`,
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: `go build -o '${binary}' ./cmd/openneko && exec '${binary}' web --addr 127.0.0.1:${apiPort} --dir '${path.join(__dirname, "src/spa")}' --jobs=false`,
+      cwd: path.join(root, "apps/openneko"),
+      env: {
+        OPENNEKO_BUILTIN_SKILLS_ROOT: path.join(root, "packages/llm/assets/builtin-skills"),
+        OPENNEKO_SANDBOX_SKILLS_ROOT: path.join(root, "recipes/sandbox/skills"),
+        OPENNEKO_PACKS_DIR: path.join(root, "packs"),
+      },
+      url: `http://127.0.0.1:${apiPort}/api/v1/version`,
+      reuseExistingServer: false,
+      timeout: 300_000,
+    },
+    {
+      command: `pnpm dev --host 127.0.0.1 --port ${port}`,
+      env: {
+        OPENNEKO_SPA_API: `http://127.0.0.1:${apiPort}`,
+        OPENNEKO_MAGENTO_VISUAL_TEST: "true",
+        NEXT_PUBLIC_VISUAL_TEST: "true",
+        OPENNEKO_VISUAL_TEST: "true",
+      },
+      url: `http://127.0.0.1:${port}/admin/settings/packs`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+  ],
 });

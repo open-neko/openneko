@@ -42,8 +42,12 @@ sh -n "$repo_root/evals/environment/adventureworks/freeze.sh"
 sh -n "$repo_root/evals/environment/adventureworks/seed.sh"
 assert_source_hash /workspace/db/seeds/dev/adventureworks-install.sql \
   db/seeds/dev/adventureworks-install.sql
-assert_source_hash /workspace/apps/worker/scripts/load-adventureworks.ts \
-  apps/worker/scripts/load-adventureworks.ts
+assert_source_hash /workspace/apps/openneko/internal/cli/seed_adventureworks_load.go \
+  apps/openneko/internal/cli/seed_adventureworks_load.go
+grep -Eqx '[0-9a-f]{64}' "$repo_root/evals/environment/adventureworks/BASELINE_FINGERPRINT" || {
+  echo "BASELINE_FINGERPRINT must hold one SHA-256 value" >&2
+  exit 1
+}
 assert_source_hash /eval/seed.sh \
   evals/environment/adventureworks/seed.sh
 
@@ -91,6 +95,13 @@ for expected in adventureworks-db adventureworks-init adventureworks-freeze eval
   }
 done
 
+for target in $(awk '/^    build:/ { in_build = 1; next } in_build && /^      target:/ { print $2 } /^    [a-z]/ { in_build = 0 }' "$compose_file"); do
+  grep -Eq "^FROM [^ ]+ AS $target\$" "$repo_root/Dockerfile" || {
+    echo "eval Compose builds target $target, which the Dockerfile does not define" >&2
+    exit 1
+  }
+done
+
 for forbidden in adventureworks-simulator adventureworks-scenario-injector; do
   if printf '%s\n' "$services" | grep -Fx "$forbidden" >/dev/null; then
     echo "forbidden mutator service present: $forbidden" >&2
@@ -101,7 +112,7 @@ done
 for forbidden_seed_mutator in advance-dates.sql aw-sim-tick.sql scenario-injector.sh; do
   if grep -F "$forbidden_seed_mutator" \
       "$repo_root/evals/environment/adventureworks/seed.sh" \
-      "$repo_root/apps/worker/scripts/load-adventureworks.ts" \
+      "$repo_root/apps/openneko/internal/cli/seed_adventureworks_load.go" \
       "$repo_root/db/seeds/dev/adventureworks-install.sql" >/dev/null; then
     echo "forbidden backfill reference present in eval seed path: $forbidden_seed_mutator" >&2
     exit 1

@@ -3,20 +3,25 @@
 A solution pack bundles sources, API specifications, saved queries, metrics,
 workflows, watchers, actions, policies, and skills for an application or business
 use case. OpenNeko installs these artifacts through the shared pack lifecycle.
-Packs that need connectors ship their own declarations and specifications; they
-do not install runtime plugins.
+Packs that need connectors ship their own declarations and specifications.
+OpenNeko has no separate plugin system; channels and sign-in are built in.
 
-For operator instructions, see [installing and upgrading custom packs](docs/CUSTOM_PACKS.md).
+For operator commands, see [INSTALL.md](INSTALL.md#solution-packs-and-skills) and `openneko pack --help`.
 For contributing code, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Start from an example
 
-- [Service health](apps/worker/test/fixtures/service-health/pack.yaml) is a small
+- [Service health](apps/openneko/internal/packs/testdata/service-health/pack.yaml) is a small
   custom pack with an API connector, query, metric, workflow, watcher, and skill.
 - [Magento](packs/magento/pack.yaml) is the first-party commerce pack. Its
   [README](packs/magento/README.md) explains application-specific prerequisites.
 - [Google Workspace](packs/google-workspace/pack.yaml) shows customer-owned
   per-user OAuth, REST reads, and generic governed API actions.
+- [Resend](packs/resend/pack.yaml), [Slack](packs/slack/pack.yaml),
+  [Shopify](packs/shopify/pack.yaml), and
+  [Parallel web search](packs/parallel-search/pack.yaml) replace the former
+  action plugins with API-key sources. Resend shows all three
+  [action safety fields](#action-safety-fields).
 
 Use the small example for read-only custom packs. Use Google Workspace as the
 reference for generic REST writes. Magento uses additional commerce-specific
@@ -77,6 +82,7 @@ Copy a working `pack.yaml` and edit these sections:
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
 | `oauth` | Connection scope, provider label, setup/help copy, OAuth endpoints, input and secret references, account identity fields, and consent scopes |
+| `channels` | Optional built-in channel names: `slack`, `telegram`, `hud`. Accepted for older packs; it does not turn a channel on ([Channels](#channels)) |
 | `management` | Optional label and local path to an existing application management page |
 | `permissions.network` | Every host used by OAuth and the pack's API sources |
 | `artifacts` | Source/relationship files, spec paths, query and YAML directories, and skill directories |
@@ -86,7 +92,7 @@ Custom inputs should have defaults or be supplied by the installer. Do not assum
 Magento's application-specific discovery runs for a new pack. Declaring a health
 check name also does not implement a new runtime check.
 
-The [manifest schema](packages/packs/src/manifest.ts) is the authoritative field
+The [manifest schema](apps/openneko/internal/packs/manifest.go) is the authoritative field
 reference. Unknown manifest fields are rejected.
 
 ## Artifacts and stable identities
@@ -103,16 +109,57 @@ collisions with other packs or operator-created artifacts.
 | Relationships | Declare GraphJin relationships in the manifest's relationship file; use the example's empty declaration when none are needed. |
 | OpenAPI specs | Describe the provider's actual paths, HTTP methods, parameters, bodies, and responses. Use local references. |
 | Saved queries | Give queries stable filenames. Metric execution refers to the query name without its extension. |
-| Metrics | Define presentation, cadence, source, saved query, result extraction, and freshness. See the [example metric](apps/worker/test/fixtures/service-health/metrics/health.yaml). |
-| Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; OpenShell scopes those hosts to that workflow sandbox. See the [example workflow](apps/worker/test/fixtures/service-health/workflows/health.yaml). |
+| Metrics | Define presentation, cadence, source, saved query, result extraction, and freshness. See the [example metric](apps/openneko/internal/packs/testdata/service-health/metrics/health.yaml). |
+| Workflows | Define a goal, output contract, and optional schedule with a timezone input. A workflow may declare `networkHosts` for read-only external requests; the agent's web tool in that workflow reaches only those hosts. See the [example workflow](apps/openneko/internal/packs/testdata/service-health/workflows/health.yaml). |
 | Watchers | Reference a workflow artifact key and define a query, value path, threshold, cadence, debounce, cooldown, and severity. |
 | Skills | Write Markdown instructions with `name` and `description` frontmatter. Explain data sources, expected outputs, and permitted actions. |
-| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. |
+| Actions and policies | Use `graphjin_api_operation` for reviewed REST writes. Group named operations by action kind and add a matching policy. Write policies install disabled. A policy can name an `enum` install input in `modeInput`; when the admin picks `ask` or `auto` for it, the rule takes that mode, and any other value keeps the file's `mode`. See [Action safety fields](#action-safety-fields). |
 
-See the [artifact schemas](packages/packs/src/artifact-schema.ts) for exact fields
-and the [bundle loader](packages/packs/src/bundle.ts) for identity and reference
+### Action safety fields
+
+A `graphjin_api_operation` action can declare three checks:
+
+- `targets`: payload fields that hold the action's targets, as dot paths such
+  as `body.to`. With `as: email_domain` the policy engine reads each
+  address's domain, so a policy's `allowed_targets` can limit recipients.
+- `adapter.lockedBody`: body fields the agent cannot choose. Each one is set
+  from a pack input and replaces any value in the payload, for example
+  `from: { input: from_address }`.
+- `idempotencyHeader` on an operation: a header that the API spec declares,
+  such as `Idempotency-Key`. The runtime sends the action request id in it,
+  so a retried request cannot act twice.
+
+```yaml
+targets:
+  fields: [body.to, body.cc, body.bcc]
+  as: email_domain
+adapter:
+  kind: graphjin_api_operation
+  lockedBody:
+    from: { input: from_address }
+  operations:
+    send:
+      operationId: sendEmail
+      mutationRoot: resend_send_email
+      idempotencyHeader: Idempotency-Key
+```
+
+See the [artifact schemas](apps/openneko/internal/packs/artifacts.go) for exact fields
+and the [bundle loader](apps/openneko/internal/packs/bundle.go) for identity and reference
 validation. Avoid renaming a query file or skill casually: filenames and skill
 names participate in artifact identity.
+
+### Message bodies
+
+OpenNeko checks the `body` of every pack action when the action is proposed
+and again before it runs. Nothing in it may make the receiver's mail client,
+the chat service or a browser fetch a URL, and a link must show its real host.
+A Slack body gets `unfurl_links` and `unfurl_media` set to false, and an image
+block or an image URL field is refused. The Resend `html` field is reduced to
+safe HTML (text, headings, lists, tables and links), and Resend `attachments`
+are refused. A Gmail `raw` message is refused when its HTML part loads a URL
+or hides a link's host, or when it holds an attachment. Any other body that
+holds HTML which loads a URL is refused.
 
 ## Connectors and credentials
 
@@ -161,8 +208,8 @@ operations are never exposed as mutations. See the
 [Google Workspace actions](packs/google-workspace/actions) for complete examples.
 
 Database source references require an existing read-only source binding and an
-organization GraphJin data source. See the [installation guide](docs/CUSTOM_PACKS.md)
-for `--source-id`, `--bind`, and secret-reference options.
+organization GraphJin data source. Run `openneko pack review --help` for the
+`--source-id`, `--bind` and `--secret-ref` options.
 
 ## Installation and configuration experience
 
@@ -179,6 +226,13 @@ artifacts. The installed pack then exposes its declared configuration. Reviewing
 and applying that configuration activates the pack through the shared lifecycle.
 In particular, an administrator cannot configure a personal OAuth client for an
 uninstalled pack. Custom packs retain the upload, review, and install flow.
+
+An admin can also start a pack from chat. When the admin names a system that
+has a pack, the assistant shows the pack's setup card. It is the same
+component and the same review and install as the settings page, so a pack
+needs no extra file for it. A pack whose `graphjin/sources.yaml` holds a
+ready config must be named in the `graphjin-config` skill and the
+`present_pack_setup` tool; a test checks this for the built-in packs.
 
 ### Install into any GraphJin
 
@@ -216,6 +270,46 @@ accept letters, digits, `/`, `_`, and `-`, and cannot be external URLs. Ordinary
 pack configuration needs no management route. Packs supply supported fields and
 copy; OpenNeko supplies shared controls, layout, accessibility, and account states.
 Packs cannot ship arbitrary UI components, HTML, or CSS.
+
+## Channels
+
+Slack, Telegram, and the HUD surface are built into OpenNeko. A channel is on
+while its required settings are stored. An admin enters them under
+**Admin → Settings → Channels**, and OpenNeko keeps them in the secrets store
+under `channel.<id>`. Slack needs `SLACK_BOT_TOKEN`; Telegram needs
+`TELEGRAM_BOT_TOKEN`. The HUD needs no tokens: **Turn on** generates its
+signing secret. **Turn off** removes the channel's stored settings.
+
+`openneko web` receives channel messages. It polls Telegram every 3 seconds.
+Slack needs `SLACK_APP_TOKEN` for its Socket Mode connection. The HUD bridge
+posts to `<OPENNEKO_PUBLIC_URL>/api/v1/channels/hud/inbound` and signs each
+post with its generated secret.
+
+Telegram uses its webhook in place of the poll when three things are true:
+
+- The admin stored `TELEGRAM_WEBHOOK_SECRET`, the `secret_token` of the
+  admin's `setWebhook` call.
+- `OPENNEKO_PUBLIC_URL` is `https` on a host that Telegram can reach. A
+  `localhost` URL, a name with no dot, a `.local`, `.internal`, `.lan` or
+  `.home.arpa` name, and a loopback, private or link-local address do not
+  count.
+- Telegram's `getWebhookInfo` reports
+  `<OPENNEKO_PUBLIC_URL>/api/v1/channels/telegram/inbound` for the bot.
+  `openneko web` asks every 30 seconds and when a channel setting changes.
+
+In all other cases `openneko web` polls Telegram, and it logs the reason when
+the secret is stored. Telegram refuses a poll while a webhook is set: the log
+then says so and names the fix, which is to delete the webhook or to complete
+the three steps above.
+
+Channel tokens are not pack secrets. A manifest may still list channels:
+
+```yaml
+channels: [slack]
+```
+
+OpenNeko accepts the field so older packs still validate, but it does not turn
+a channel on or off.
 
 ## Personal and deployment OAuth
 
@@ -314,23 +408,22 @@ personal accounts.
 
 ## Validate and exercise the pack
 
-From the repository root, with workspace dependencies installed, validate the
-small example through the same bundle loader used by installation. Create its
-empty artifact directories first; Git does not preserve empty directories:
+Validate the small example with the same bundle loader that installation uses.
+Put the pack folder in a ZIP archive, then upload it. The upload checks the
+archive and stores the pack for review. It does not install the pack:
 
 ```sh
-mkdir -p apps/worker/test/fixtures/service-health/{actions,policies}
-pnpm --filter @neko/worker exec tsx -e 'import { loadSolutionPack } from "@neko/packs"; loadSolutionPack(process.argv[1]).then(b => console.log(b.manifest.metadata.id, b.artifacts.length)).catch(e => { console.error(e.message); process.exitCode = 1; })' ./test/fixtures/service-health
+cd apps/openneko/internal/packs/testdata && zip -r /tmp/service-health.zip service-health
+openneko pack upload /tmp/service-health.zip
 ```
 
-Replace the final path with your pack directory. Relative paths in this command
-resolve from `apps/worker`; use an absolute path for a pack in another repository.
+Use your own pack folder in place of `service-health`.
 
 Bundle validation checks structure and references. It does not prove provider
 compatibility or successful end-user execution. Before submitting a change:
 
-1. Add focused regression coverage for changed behavior, using the existing pack
-   and worker test suites.
+1. Add focused regression coverage for changed behavior, using the pack test
+   suites in `apps/openneko/internal/packs` and `apps/openneko/internal/webfront`.
 2. Install in an isolated stack: use one-click installation for built-ins or upload
    a custom archive. Review configuration, the plan, and readiness results.
 3. Run affected saved queries, metrics, workflows, and watchers against the actual
@@ -343,9 +436,62 @@ compatibility or successful end-user execution. Before submitting a change:
    installed-but-unconfigured and uninstalled states on Integrations.
 6. Exercise upgrade behavior, including locally modified installed artifacts.
 
-Relevant suites include `pnpm --filter @neko/packs test` and the worker's
-`pack-declarative`, `pack-connector.integration`, `pack-lifecycle.integration`, and
-`pack-uploads` tests. Integration tests need their documented test dependencies;
+The relevant suites are the Go tests in `apps/openneko/internal/packs` and the
+`Pack` tests in `apps/openneko/internal/webfront`. The Node fixtures in their
+`testdata` folders are fixed records of the former Node pack code. `openneko web`
+lists, inspects, plans and stores uploaded packs with the Go loader in `apps/openneko/internal/packs`. The plan reads each installed
+artifact from its target: the database row, the skill folder, the GraphJin config
+file, or the live GraphJin. `openneko web` also reviews a pack: it resolves the
+inputs and secrets, checks the source bindings against the GraphJin config and the
+live GraphJin, runs the declarative checks and the native target check, and signs
+the review hash that install checks. Run `go test ./internal/packs` in `apps/openneko`:
+it checks that the Go loader gives the same manifest, bundle, plan and target state
+hashes as the Node fixtures, as well as the Magento V2 attribute classification, cap
+evaluation and activity presentation. `go test -run TestPackReviewNodeFixture ./internal/webfront`
+checks the review against the Node fixture. `openneko web` also runs the pack doctor.
+For a custom pack, it runs each metric, watcher and saved query once against the
+pack's data source. For Magento, it checks the analytics account (SELECT-only grants,
+the table prefix, the store codes, the database version), the store version, the
+GraphJin catalog, the smoke queries and the change-domain probes. `go test -run
+TestPackDoctorNodeFixture ./internal/webfront` checks it against the Node fixture.
+Set `OPENNEKO_TEST_MAGENTO_MYSQL` to a root DSN of a MySQL 8 or MariaDB 10.6+ server
+to run the live preflight test. `openneko web` also uninstalls a pack. It revokes the
+pack's GraphJin sources and keeps them, removes its saved queries, files and skill
+folders, deletes its secrets, switches off its metrics, watchers, workflows, policies
+and actions, and retires each receipt. A drift conflict stops the uninstall and marks
+the changed artifacts as modified. A failure puts the files and secrets back.
+`openneko web` also installs, configures and upgrades a declarative pack. It checks the
+review hash, writes the secrets, the GraphJin sources, specs and saved queries, the skill
+folders, and the workflows, metrics, watchers, policies and actions, then runs the query
+preflight and records a receipt for each artifact. An upgrade retires the artifacts that
+the new version drops. A failure puts the skills, GraphJin config, files and secrets
+back. `go test -run TestDeclarativeGraphjinUpdateMatchesNode ./internal/webfront` checks
+the GraphJin update against a Node fixture. The install of a built-in pack before its
+configuration also runs in Go. For the configured Magento pack, `openneko web` runs the
+Magento preflight first and saves the discovered database type, table prefix, currency
+and timezone. It then writes the read-only analytics source and the operator source to
+the GraphJin config file, runs the smoke queries, sets the store controls and the
+attribute classifications, and gives each Magento metric and watcher the store IDs.
+Operator artifacts stay blocked until the change-domain probe for their domain passes.
+The Magento pack needs the GraphJin whose config folder OpenNeko manages; a GraphJin
+reached only through its API is refused. `go test -run TestMagentoGraphjinUpdateMatchesNode
+./internal/webfront` checks the update and the classifications against a Node fixture.
+`openneko web` also runs the OAuth routes
+(client setup, connect and callback, status and disconnect) and the Magento
+store-management settings and activity route. On a deployment-scope connection,
+`openneko web` applies the new token to the installed pack's GraphJin sources and
+sets the readiness of the actions that use them. Each minute it refreshes a
+deployment-scope token that ends within five minutes, then applies it again. On a
+user-scope connection, `openneko web` attaches the signed-in operator's OAuth
+header to each GraphJin request (`apps/openneko/internal/webfront/turnpackheaders.go`)
+and refreshes a personal token that ends within five minutes under a per-row lock.
+`openneko web` also runs pack actions. For a Magento change, it reads the current
+values, classifies and caps the change, and stores the preview. After approval, it
+writes each row through GraphJin and reads Magento again to confirm the result. A row
+whose write may have reached Magento is marked for reconciliation and never retried.
+An undo checks for drift first. A financial handoff only records the draft for a person
+to finish in Magento admin. `go test -run TestMagentoRuntimeParityFixture ./internal/webfront`
+checks the reconciliation rules against the Node fixture. Integration tests need their documented test dependencies;
 a skipped test is not a live pass.
 
 ## Save changes, submit a PR, and release
@@ -357,33 +503,13 @@ the resulting behavior, compatibility changes, and validation evidence.
 
 For a custom pack, publish a ZIP containing `<pack-id>/pack.yaml` and the declared
 artifacts. Users upload the new version, review it, and upgrade. Changed content
-cannot replace an already uploaded version. See [archive limits and release
-commands](docs/CUSTOM_PACKS.md).
+cannot replace an already uploaded version. Run `openneko pack upload --help`
+for the upload command.
 
 Magento is maintained under `packs/magento/` in this repository. Submit Magento
 pack changes here; reserved first-party IDs cannot be replaced by custom uploads.
 Merged first-party changes must be included in a shipped OpenNeko build before
 users can upgrade to them.
-
-### Release through a context repository
-
-An administrator can connect a git repository in **Admin → Settings → Context
-repository**. OpenNeko then reads packs from that repository's branch:
-
-1. Put each pack at `packs/<pack-id>/`, with `pack.yaml` at the top of that folder.
-   The folder name must equal `metadata.id`.
-2. Omit each artifact path that has no files. Git does not keep empty folders, so
-   a declared empty folder, such as `actions: actions` with no actions, fails
-   validation.
-3. Increment `metadata.version` for every changed release. If a pack's content
-   changes under a version that OpenNeko already holds, OpenNeko reports it and
-   does not add it.
-4. In OpenNeko, select **Check for updates** and then **Add** for the new pack or
-   version. OpenNeko validates the folder with the same rules as a ZIP upload and
-   stores it as a custom pack version. Install or upgrade it on the Packs page
-   with the usual review.
-
-Reserved first-party IDs, such as `magento`, cannot be added this way.
 
 Work chat can save individual workflow and skill changes, but does not write
 those changes back into a versioned pack bundle. Installed customizations are

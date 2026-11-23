@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
@@ -25,7 +26,12 @@ func TestDirFallback(t *testing.T) {
 	t.Setenv(instance.EnvName, "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "/home/test")
-	if got := Dir(""); got != "/home/test/.config/openneko" {
+	want := "/home/test/.config/openneko"
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", `C:\Users\test\AppData\Roaming`)
+		want = `C:\Users\test\AppData\Roaming\OpenNeko`
+	}
+	if got := Dir(""); got != want {
 		t.Fatalf("expected HOME-derived path, got %q", got)
 	}
 }
@@ -52,7 +58,7 @@ func TestRootDirIsNeverInstanceScoped(t *testing.T) {
 
 func TestFile(t *testing.T) {
 	got := File("/etc/openneko", "secrets.json")
-	if got != "/etc/openneko/secrets.json" {
+	if got != filepath.Join("/etc/openneko", "secrets.json") {
 		t.Fatalf("unexpected path: %q", got)
 	}
 }

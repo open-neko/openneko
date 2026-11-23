@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,28 +8,30 @@ import {
   captureSandboxSkillEdits,
   diffSkillTrees,
   hashSkillTree,
-  readPersonalSkillFiles,
   SANDBOX_SKILL_HASH_COMMAND,
   skillCaptureDecision,
   type SkillToolCall,
-} from "../src/config-vcs/skill-capture";
-import { userConfigRef } from "../src/config-vcs/forks";
-import { commitConfigChange } from "../src/config-vcs/index";
+} from "../src/work/skill-capture";
+import { memberSkillsRoot } from "../src/work/member-skills";
 
 let root: string;
 let orgRoot: string;
 let box: string;
 let boxHashes = new Map<string, string>();
 
-const git = (...args: string[]) => execFileSync("git", args, { cwd: orgRoot, encoding: "utf8" });
-
 async function put(base: string, path: string, content: string) {
   await mkdir(join(base, path, ".."), { recursive: true });
   await writeFile(join(base, path), content);
 }
 
-function capture(actor: { userId: string | null; role: string | null }, baseline: Map<string, string>) {
+function capture(
+  actor: { userId: string | null; role: string | null },
+  baseline: Map<string, string>,
+  ownSkills: Set<string> = new Set(),
+) {
   return captureSandboxSkillEdits({
+    ownSkills,
+    memberHandle: "ann",
     listSandboxHashes: async () => `noise\n${JSON.stringify(Object.fromEntries(boxHashes))}`,
     downloadSkill: async (skill, destination) => cp(join(box, skill), destination, { recursive: true }),
     orgRoot,
@@ -47,7 +50,7 @@ beforeEach(async () => {
   await put(join(orgRoot, "skills"), "shortfall/SKILL.md", "# Shortfall\n");
   await put(join(orgRoot, "skills"), "shortfall/scripts/calculate.py", "print(1)\n");
   await put(join(orgRoot, "skills"), "other/SKILL.md", "# Other\n");
-  await commitConfigChange({ workspaceRoot: orgRoot, paths: ["skills"], message: "Seed skills" });
+  await chmod(join(orgRoot, "skills/shortfall/scripts/calculate.py"), 0o755);
   await cp(join(orgRoot, "skills"), box, { recursive: true });
   await rm(join(box, "other"), { recursive: true });
 });
@@ -74,7 +77,7 @@ describe("diffSkillTrees", () => {
 });
 
 describe("captureSandboxSkillEdits", () => {
-  it("saves an admin's sandbox edits to the company skills as one version", async () => {
+  it("saves an admin's sandbox edits to the company skills in place", async () => {
     const baseline = await hashSkillTree(join(orgRoot, "skills"));
     await put(box, "shortfall/scripts/calculate.py", "print(2)\n");
     await put(box, "shortfall/references/new.md", "notes\n");
@@ -82,15 +85,14 @@ describe("captureSandboxSkillEdits", () => {
 
     const saved = await capture({ userId: "u-admin", role: "admin" }, baseline);
 
-    expect(saved).toMatchObject({ scope: "team", skills: ["shortfall"], skipped: [] });
-    expect(saved?.sha).toMatch(/^[0-9a-f]{40}$/);
-    expect(await readFile(join(orgRoot, "skills/shortfall/scripts/calculate.py"), "utf8")).toBe("print(2)\n");
+    expect(saved).toMatchObject({ team: ["shortfall"], own: [], copies: {}, skipped: [] });
+    const script = join(orgRoot, "skills/shortfall/scripts/calculate.py");
+    expect(await readFile(script, "utf8")).toBe("print(2)\n");
+    expect((await stat(script)).mode & 0o777).toBe(0o755);
+    expect(await readdir(join(orgRoot, "skills/shortfall/scripts"))).toEqual(["calculate.py"]);
+    expect(await readFile(join(orgRoot, "skills/shortfall/references/new.md"), "utf8")).toBe("notes\n");
     expect(await readFile(join(orgRoot, "skills/other/SKILL.md"), "utf8")).toBe("# Other\n");
-    expect(git("log", "-1", "--pretty=%s").trim()).toBe("Updated skill in run run-1234: shortfall");
-    expect(git("show", "--name-only", "--pretty=", "HEAD").trim().split("\n").sort()).toEqual([
-      "skills/shortfall/references/new.md",
-      "skills/shortfall/scripts/calculate.py",
-    ]);
+    expect(existsSync(join(orgRoot, ".git"))).toBe(false);
   });
 
   it("keeps a host change made by another writer during the turn", async () => {
@@ -105,19 +107,41 @@ describe("captureSandboxSkillEdits", () => {
     expect(await readFile(join(orgRoot, "skills/shortfall/SKILL.md"), "utf8")).toBe("# Edited elsewhere\n");
   });
 
-  it("saves a member's edits to their personal version only", async () => {
+  it("saves a member's edit to a team skill as a private copy and leaves the team skill", async () => {
     const baseline = await hashSkillTree(join(orgRoot, "skills"));
-    await put(box, "shortfall/SKILL.md", "# Mine\n");
+    await put(box, "shortfall/SKILL.md", "---\nname: shortfall\n---\nMine\n");
+    await rm(join(box, "shortfall/scripts/calculate.py"));
     boxHashes = await hashSkillTree(box);
 
     const saved = await capture({ userId: "u-member", role: "member" }, baseline);
 
-    expect(saved).toMatchObject({ scope: "user", skills: ["shortfall"] });
+    expect(saved).toMatchObject({ team: [], own: [], copies: { shortfall: "shortfall-ann" } });
     expect(await readFile(join(orgRoot, "skills/shortfall/SKILL.md"), "utf8")).toBe("# Shortfall\n");
-    expect(git("show", `${userConfigRef("u-member")}:skills/shortfall/SKILL.md`)).toBe("# Mine\n");
-    expect(await readPersonalSkillFiles(orgRoot, "u-member")).toEqual([
-      { path: "shortfall/SKILL.md", content: Buffer.from("# Mine\n") },
-    ]);
+    const own = memberSkillsRoot(orgRoot, "u-member");
+    expect(await readFile(join(own, "shortfall-ann/SKILL.md"), "utf8")).toBe("---\nname: shortfall-ann\n---\nMine\n");
+    expect(existsSync(join(own, "shortfall-ann/scripts/calculate.py"))).toBe(false);
+
+    await put(box, "shortfall/SKILL.md", "---\nname: shortfall\n---\nAgain\n");
+    boxHashes = await hashSkillTree(box);
+    expect((await capture({ userId: "u-member", role: "member" }, baseline))?.copies).toEqual({ shortfall: "shortfall-ann-2" });
+  });
+
+  it("saves a member's own skill in place and a new skill as their own", async () => {
+    const own = memberSkillsRoot(orgRoot, "u-member");
+    await put(own, "notes/SKILL.md", "# Notes\n");
+    await put(box, "notes/SKILL.md", "# Notes\n");
+    const baseline = await hashSkillTree(join(orgRoot, "skills"));
+    baseline.set("notes/SKILL.md", (await hashSkillTree(own)).get("notes/SKILL.md")!);
+    await put(box, "notes/SKILL.md", "# Notes, edited\n");
+    await put(box, "fresh/SKILL.md", "# Fresh\n");
+    boxHashes = await hashSkillTree(box);
+
+    const saved = await capture({ userId: "u-member", role: "member" }, baseline, new Set(["notes"]));
+
+    expect(saved).toMatchObject({ team: [], own: ["fresh", "notes"], copies: {} });
+    expect(await readFile(join(own, "notes/SKILL.md"), "utf8")).toBe("# Notes, edited\n");
+    expect(await readFile(join(own, "fresh/SKILL.md"), "utf8")).toBe("# Fresh\n");
+    expect(existsSync(join(orgRoot, "skills/fresh"))).toBe(false);
   });
 
   it("does nothing when the sandbox skills match what the run received", async () => {

@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/open-neko/openneko/apps/ax-harness/internal/agent"
@@ -304,6 +306,60 @@ func TestTransientProviderFallbackChargesEachRouteWithoutReplayingTools(t *testi
 	}
 }
 
+func TestStreamedRunMovesToTheFallbackWhenThePrimaryIsDown(t *testing.T) {
+	var primaryCalls, secondaryCalls, secondaryStreams atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		primaryCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"temporary outage"}}`))
+	}))
+	defer primary.Close()
+	replies := []string{`{"javascriptCode":"final('Answer',{})"}`, `{"javascriptCode":"final('Answer',{})"}`, `Answer: FROM-SPARE`}
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		index := int(secondaryCalls.Add(1)) - 1
+		if index >= len(replies) {
+			index = len(replies) - 1
+		}
+		stream := strings.Contains(string(body), `"stream":true`)
+		if stream {
+			secondaryStreams.Add(1)
+			w.Header().Set("Content-Type", "text/event-stream")
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		_, _ = io.WriteString(w, openAIChatReply(replies[index], stream))
+	}))
+	defer secondary.Close()
+	t.Setenv("HARNESS_PRIMARY_KEY", "synthetic")
+	t.Setenv("HARNESS_SECONDARY_KEY", "synthetic")
+	raw, _ := json.Marshal(routeConfig{Context: "primary", Executor: "primary", Responder: "primary",
+		Fallbacks: []modelFallback{{From: "primary", To: "secondary"}}, Routes: []modelRoute{
+			{Key: "primary", Model: "fixture", URL: primary.URL, APIKeyEnv: "HARNESS_PRIMARY_KEY"},
+			{Key: "secondary", Model: "fixture", URL: secondary.URL, APIKeyEnv: "HARNESS_SECONDARY_KEY"},
+		}})
+	t.Setenv("HARNESS_MODEL_ROUTES", string(raw))
+	var out bytes.Buffer
+	code, err := run(context.Background(), strings.NewReader(`{"version":1,"run_id":"run-1","input_id":"input-1","prompt":"Answer","stream_responses":true}`), &out)
+	var last agent.Event
+	for dec := json.NewDecoder(&out); dec.More(); {
+		var e agent.Event
+		if decodeErr := dec.Decode(&e); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		if e.Type == "run.finished" {
+			last = e
+		}
+	}
+	if code != 0 || err != nil || last.Result == nil || last.Result.Answer != "FROM-SPARE" {
+		t.Fatalf("streamed fallback failed: code=%d err=%v primary=%d secondary=%d output=%s", code, err, primaryCalls.Load(), secondaryCalls.Load(), out.String())
+	}
+	if secondaryStreams.Load() == 0 {
+		t.Fatalf("the answer stage did not stream on the fallback: secondary=%d", secondaryCalls.Load())
+	}
+}
+
 func TestProviderDenialCannotFallback(t *testing.T) {
 	primaryCalls, secondaryCalls := 0, 0
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -522,5 +578,28 @@ func TestMissingUsageRetainsCostReservation(t *testing.T) {
 	if terminal == nil || terminal.Code != "cost_budget_exceeded" || terminal.Cost == nil || terminal.Cost.ChargedMicros != 3072 ||
 		terminal.Usage == nil || terminal.Usage.Coverage != "unavailable" {
 		t.Fatalf("reservation or coverage lost: %+v", terminal)
+	}
+}
+
+const hostFallbackProfile = `{"context":"primary","executor":"primary","responder":"primary","fallbacks":[{"from":"primary","to":"fallback"}],"routes":[{"key":"primary","provider":"openai-compatible","model":"qwen3","url":"https://models.example.test/v1","api_key_env":"PRIMARY_MODEL_API_KEY"},{"key":"fallback","provider":"openai","model":"gpt-5","api_key_env":"FALLBACK_MODEL_API_KEY"}]}`
+
+func TestHostFallbackProfileLoads(t *testing.T) {
+	env := map[string]string{
+		"HARNESS_MODEL_ROUTES":   hostFallbackProfile,
+		"PRIMARY_MODEL_API_KEY":  "primary-key",
+		"FALLBACK_MODEL_API_KEY": "fallback-key",
+	}
+	getenv := func(name string) string { return env[name] }
+	client, err := loadModelClient(getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routed := client.(*agent.RoutedClient)
+	if routed.Fallbacks["primary"] != "fallback" || routed.ModelNames["fallback"] != "gpt-5" || routed.Stages.Executor != "primary" {
+		t.Fatalf("routed = %+v", routed)
+	}
+	held := strings.Join(KeyEnvNames(getenv), ",")
+	if !strings.Contains(held, "PRIMARY_MODEL_API_KEY") || !strings.Contains(held, "FALLBACK_MODEL_API_KEY") {
+		t.Fatalf("held key names = %s", held)
 	}
 }

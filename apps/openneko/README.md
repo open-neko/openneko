@@ -1,12 +1,21 @@
 # openneko
 
-The OpenNeko operator CLI — a single Go binary that supervises the Docker
-stack and manages sandboxed plugins. Same binary works on an operator's
-laptop, on a self-hosted server, and inside the worker container.
+The OpenNeko CLI and server — a single Go binary that runs `openneko web`
+(the static web app server, `/api/v1/*` routes, River background jobs,
+channels, solution packs, and Ax agent turns), `openneko serve` (the Ax
+harness socket, customer and subscriptions GraphJin supervisors, and file
+search/SQL), and the operator CLI (native Linux supervisor, Docker Compose
+stack supervisor, migrations, backups, and solution pack commands).
 
 ## Install
 
-One line, any platform:
+On Linux without Docker (native install):
+
+```bash
+curl --proto '=https' -fsSL https://raw.githubusercontent.com/open-neko/openneko/v6.0.0/scripts/install-native.sh | sh
+```
+
+With Docker (macOS or Linux):
 
 ```bash
 curl -fsSL https://openneko.app/install.sh | sh
@@ -14,7 +23,7 @@ curl -fsSL https://openneko.app/install.sh | sh
 
 The installer detects your OS/arch and installs via Homebrew on macOS or a
 checksum-verified release tarball on Linux (amd64 / arm64). Then run the guided
-`openneko setup`.
+`openneko setup` (Docker) or `openneko start --native` (Linux native).
 
 Manual:
 
@@ -31,25 +40,27 @@ You also need Docker (Docker Desktop on macOS, Docker Engine on Linux).
 
 ```bash
 openneko [--instance name] setup [--mode prod|dev|demo] [--port N] \
-  [--openshell-port N] [--bind-address IPv4] [--docker-subnet IPv4/24]
+  [--bind-address IPv4] [--database-url postgres://...]
 openneko instances                       # list configured installations
 openneko start [--mode prod|dev|demo] [--detach]
-openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo] [--stack-only|--cli-only]
+openneko upgrade [--version vX.Y.Z] [--mode auto|prod|dev|demo] [--stack-only|--cli-only] [--skip-backup]
 openneko stop [--volumes]
 openneko status
 openneko logs [service…] [-f]
 openneko migrate
 openneko seed adventureworks
 openneko [--instance name] graphjin import <customer-config.yml|->
-openneko backup {status,now,verify}
+openneko graphjin check [--config file]
+openneko backup [--to <file>]
 openneko backup key {export,adopt}
+openneko restore <file> --confirm RESTORE [--key-file <key>] [--drop-foreign-objects]
 openneko reset [--all]
 ```
 
 Modes:
 
 - `prod` — core services only (default)
-- `dev` — developer defaults; from a source checkout use repo-root `pnpm dev:setup` + `pnpm dev` for demo data and hot-reloaded web/worker
+- `dev` — developer defaults; from a source checkout use repo-root `pnpm dev:setup` + `pnpm dev` for demo data and host `openneko web` and `openneko serve`
 - `demo` — core + AdventureWorks trial bundle
 
 The unnamed backward-compatible installation materializes its embedded Compose
@@ -66,17 +77,17 @@ running production installation and applies the update through GraphJin's
 preview/apply path while preserving managed authentication and keystore settings.
 
 Named instances allow multiple production stacks on one Docker host. Setup
-persists the web/OpenShell ports and assigns an isolated Docker subnet; Compose
-resources use `openneko-<instance>-<mode>`. Always pass `--instance <name>` to
-lifecycle and plugin commands for that customer.
+persists the web port; Compose resources use `openneko-<instance>-<mode>`. Always pass `--instance <name>` to
+lifecycle, pack and secrets commands for that customer.
 
 `openneko upgrade` resolves the latest stable release (or the exact
 `--version`), updates the local CLI first, and re-executes that new binary
-before it pulls service and agent/plugin-base images at the same tag. Keeping
+before it pulls the service images at the same tag. Keeping
 the CLI and stack together matters because the CLI embeds the Compose topology
 used to recreate the stack. Homebrew-owned CLIs are updated through Homebrew;
 standalone CLIs use the release archive and `checksums.txt` before atomic
-replacement. The command then recreates the recorded stack mode, runs
+replacement. Before touching the stack it writes an `openneko backup` and stops
+if that fails (`--skip-backup` opts out). The command then recreates the recorded stack mode, runs
 migrations, prunes old OpenNeko image tags, and persists the selected tag for
 later starts.
 
@@ -89,87 +100,82 @@ before this behavior need one final manual CLI update; subsequent
 a recorded mode are inferred from existing Docker Compose projects; pass
 `--mode` only when multiple OpenNeko stacks exist.
 
-### Backup encryption keys
+Prod mode runs no Postgres. `start` and `upgrade` read OpenNeko's database URL
+from `OPENNEKO_DATABASE_URL_FILE` or `database_url` in the host config.json,
+and give it to the containers as the Compose secret `database-url`. A prod
+install from an older release, with the `neko-db-data` volume and no URL,
+keeps its bundled `neko-db` through the `bundled-db.yml` overlay. Dev and demo
+modes always load that overlay. `openneko database move` moves such an install
+to a database URL: it takes a backup of `neko-db`, restores it into the URL's
+database, and stores the URL only after the stack starts on it.
 
-Each backup repository has its own identity and encryption key. The repository
-mapping and key fingerprint are kept in host state outside the bind-mounted
-repository; the key itself is stored separately there and mounted read-only
-into the database and backup containers. This also avoids rootful Docker
-changing ownership of metadata the rootless host CLI must read.
+### Backups
 
-Default repositories are isolated by Compose project and a persistent
-installation ID under `~/.local/share/openneko/repositories/`. Named instances
-therefore cannot attach their PostgreSQL clusters to another customer's
-pgBackRest stanzas. `stop --volumes` and `reset` also rotate the installation
-ID after deleting database volumes, so a new PostgreSQL cluster is never
-pointed at the previous cluster's stanzas.
+`openneko backup` writes one encrypted file containing a `pg_dump` of OpenNeko's database
+(the bundled neko-db, or the database that the URL names, dumped from a web
+container) and archives of the volumes `openneko-config`, `openneko-graphjin-cli` (the
+customer GraphJin config), `openneko-files` (each user's files) and, in the
+demo, `graphjin-config`. With `OPENNEKO_FILES_BUCKET` set, the user files are
+in a bucket and not in the backup. The stack must be running. Files
+go to `${XDG_DATA_HOME:-$HOME/.local/share}/openneko/backups/<installation>/<project>/`
+unless `--to` or `OPENNEKO_BACKUP_DIR` names another place, such as a NAS.
+There is no backup service and no point-in-time restore: a backup is a file.
 
-- Rootless Linux and macOS default to
-  `${XDG_STATE_HOME:-$HOME/.local/state}/openneko/backup-keys/`.
-- A system service can set `OPENNEKO_BACKUP_STATE_DIR=/var/lib/openneko`.
-- Set `OPENNEKO_BACKUP_REPOSITORY` to put encrypted backups on a NAS or another
-  failure domain. Do not put the key directory inside that repository.
+`openneko restore <file> --confirm RESTORE` decrypts and verifies the whole
+file before changing anything, then names the target database, stops the
+stack, replaces the config volumes, restores the database from the dump and
+starts the stack again,
+whose migrations bring an older backup forward. With a database URL, restore
+first lists the objects that the login owns and OpenNeko did not make. It stops
+when there are any, unless `--drop-foreign-objects` is set and you type the
+database name. `openneko doctor` reports the
+latest backup and warns when there is none or it is more than a week old.
 
-Export a recovery copy before moving or rebuilding the host:
+Each installation has its own backup key, created on first use under
+`${XDG_STATE_HOME:-$HOME/.local/state}/openneko/backup-keys/` (or set
+`OPENNEKO_BACKUP_KEY_FILE`). Keep a copy away from the backups:
 
 ```bash
 openneko backup key export --to /secure/off-host/openneko-backup.key
 ```
 
-Adopt that key after attaching an existing repository to a reinstall:
+On a new host, adopt it, or pass it to a single restore:
 
 ```bash
-OPENNEKO_BACKUP_REPOSITORY=/mnt/openneko-backups \
-  openneko backup key adopt --from /secure/off-host/openneko-backup.key
+openneko backup key adopt --from /secure/off-host/openneko-backup.key
+openneko restore backup.openneko-backup --confirm RESTORE --key-file /secure/off-host/openneko-backup.key
 ```
 
-Adoption asks pgBackRest to validate legacy repositories before writing their
-new identity marker. A missing or mismatched key fails closed and never causes
-the CLI to generate a replacement key against existing encrypted backups.
+Files are AES-256-GCM in authenticated 64 KiB chunks with a per-file key
+derived from the backup key, so a wrong key, truncation or any edit is
+rejected.
 
-### Plugin + skill management
+### Skills and secrets
 
 ```bash
-openneko init
-openneko install <name>[@<marketplace>] [--version <v>] [--unverified]
 openneko install <git-url>[#<sub-path>]
-openneko remove <name>
-openneko list
-openneko marketplace {list,add,remove}
 openneko secrets {list,set,unset}
 openneko doctor
 ```
 
-Two install lanes:
+`openneko install <https-url>[#<sub-path>]` clones the URL (shallow),
+validates the agentskills.io-spec `SKILL.md` at the root or the given
+sub-path, and copies the folder under `~/.openneko/skills/<skill-name>/`.
+URLs must be https against github / gitlab / codeberg. Gated by the
+deployment install policy (`allowGitUrlInstalls`, set at
+`/admin/settings/security`).
 
-1. **Marketplace (default)** — `openneko install <name>` resolves against
-   trusted marketplaces, runs `npm install`, writes the manifest entry.
-   `--unverified` bypasses every marketplace and installs directly from
-   npm. Both gated by the deployment install policy at `/settings/security`.
+Integrations ship as solution packs (`openneko pack …`, see
+[PACKS.md](../../PACKS.md)). The plugin commands (`init`, `list`, `remove`,
+`marketplace`) were removed with the plugin system.
 
-2. **Git URL** — `openneko install <https-url>[#<sub-path>]` clones the
-   URL (shallow), validates the agentskills.io-spec `SKILL.md` at the
-   root or the given sub-path, and copies the folder under
-   `~/.openneko/skills/<skill-name>/`. No plugin half, no npm install —
-   for pure-procedural community skills. URLs must be https against
-   github / gitlab / codeberg. Gated by `allowGitUrlInstalls`.
+The binary manages two things on the operator's host:
 
-Packages whose `package.json` declares `openneko.skill: "./skill"` also
-drop the bundled SKILL.md half under `~/.openneko/skills/<name>/` during
-install — that's how connectors like Google Workspace and Shopify ship
-their procedural-knowledge skills alongside their typed action handlers.
-
-The binary manages three things on the operator's host:
-
-- `openneko.plugins.json` (tracked) — installed plugins manifest; each
-  entry carries `installSource` + `installedAt` + `policySnapshot` for
-  audit.
-- `~/.config/openneko/secrets.json` (mode 0600) — per-user env vars for
-  static API keys, plus `_operators[opId][plugin]` slots for per-operator
-  OAuth credentials produced by `connect`-capable plugins.
-- `~/.openneko/skills/` — community + bundled-half skill folders the
-  worker loads at agent-turn time. `pnpm skills:check` validates declared
-  deps.
+- `~/.config/openneko/secrets.json` (mode 0600) — deployment secrets by
+  section (for example `channel.slack`, `signin.scalekit`), plus
+  `_operators[opId][connector]` slots for per-operator OAuth credentials.
+- `~/.openneko/skills/` — community skill folders that
+  `openneko install <git-url>` writes. `pnpm skills:check` validates declared deps.
 
 See the repo-root [README](../../README.md) for the full operator-side
 docs including `/integrations` (per-operator OAuth) and `/settings/security`

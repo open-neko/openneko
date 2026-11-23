@@ -1,8 +1,8 @@
 "use client";
 
 import { Check, Copy, Pencil, RefreshCw, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import { useState } from "react";
+import ReactMarkdown from "@/lib/safe-markdown";
+import { useEffect, useState } from "react";
 import {
   WORKSPACE_MARKDOWN_COMPONENTS as MARKDOWN_COMPONENTS,
   linkifyWorkspacePaths,
@@ -15,11 +15,12 @@ import { LocalDateTime } from "@/components/ui/local-date-time";
 import { REMARK_PLUGINS } from "./work-markdown";
 import type { MessageRecord, PendingMemory } from "./work-types";
 
+const WATCH_PROMPT = { label: "Watch for a change", text: "Set up a workflow that " };
 const EMPTY_PROMPTS: Array<{ label: string; text: string }> = [
   { label: "Top customers", text: "Who are our top 10 customers by revenue this year?" },
   { label: "Revenue trend", text: "How has revenue changed over the last 4 quarters?" },
   { label: "Inventory risk", text: "Which products are below their reorder threshold?" },
-  { label: "Watch for a change", text: "Set up a workflow that " },
+  WATCH_PROMPT,
 ];
 
 const ATTACHMENT_LINE = /^- (\S+)\s+\((.+), (\d+) KB\)$/;
@@ -41,7 +42,7 @@ function UserCopy({ content }: { content: string }) {
       <ul className="work-user-attachments" aria-label="Attached files">
         {files.map(([, path, name, kb]) => (
           <li key={path}>
-            <a href={`/api/work/files/${path}`} download={name}>{name}</a>
+            <a href={`/api/v1/work/files/${path}`} download={name}>{name}</a>
             <span>{kb} KB</span>
           </li>
         ))}
@@ -51,6 +52,22 @@ function UserCopy({ content }: { content: string }) {
 }
 
 export function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
+  const [questions, setQuestions] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/profile")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { starterQuestions?: string[] } | null) => {
+        if (!cancelled && data?.starterQuestions?.length) setQuestions(data.starterQuestions);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const prompts = questions.length
+    ? [...questions.slice(0, 3).map((text) => ({ label: "", text })), WATCH_PROMPT]
+    : EMPTY_PROMPTS;
   return (
     <div className="ask-start">
       <h2 className="ask-start-title">What should OpenNeko look into?</h2>
@@ -59,14 +76,14 @@ export function EmptyAsk({ onPick }: { onPick: (text: string) => void }) {
         OpenNeko shows each step while it works.
       </p>
       <div className="ask-start-prompts" aria-label="Example questions">
-        {EMPTY_PROMPTS.map((prompt) => (
+        {prompts.map((prompt) => (
           <Button
-            key={prompt.label}
+            key={prompt.text}
             variant="secondary"
             className="ask-start-prompt"
             onClick={() => onPick(prompt.text)}
           >
-            <strong>{prompt.label}</strong>
+            {prompt.label ? <strong>{prompt.label}</strong> : null}
             <span>{prompt.text.trim()}{prompt.text.endsWith(" ") ? "…" : ""}</span>
           </Button>
         ))}

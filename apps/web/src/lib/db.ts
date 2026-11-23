@@ -1,13 +1,3 @@
-/**
- * Web-app facade over @neko/db. Re-exports the shared org resolver so
- * routes and pages can `import { getOrgId } from "@/lib/db"`.
- *
- * Single-tenant for now — getOrgId() returns the id of the (currently
- * one) organization row, creating it on first call if none exists.
- */
-
-export { getOrgId } from "@neko/db";
-
 export type StageKind =
   | "business_profile_build"
   | "industry_insights_build"

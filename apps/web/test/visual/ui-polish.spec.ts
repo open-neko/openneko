@@ -6,8 +6,8 @@ test.beforeEach(async ({ page }) => {
 
 test("history, nested confirmation and phone navigation stay above chrome without moving the page", async ({ page }) => {
   let deletes = 0;
-  await page.route("**/api/onboarding/status", route => route.fulfill({ json: { state: "ready" } }));
-  await page.route("**/api/work/threads**", route => {
+  await page.route("**/api/v1/onboarding/status", route => route.fulfill({ json: { state: "ready" } }));
+  await page.route("**/api/v1/work/threads**", route => {
     if (route.request().method() === "DELETE") deletes++;
     return route.fulfill({ json: { threads: [{ id: "layout-check", title: "Synthetic layout check",
       createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z", lastMessageAt: "2026-09-01T00:00:00Z" }] } });
@@ -73,11 +73,11 @@ test("history, nested confirmation and phone navigation stay above chrome withou
 
 test("skill counts stay readable and cancelling deletion preserves the skill", async ({ page }) => {
   let deletes = 0;
-  await page.route("**/api/work/skills**", route => {
+  await page.route("**/api/v1/work/skills**", route => {
     if (route.request().method() === "DELETE") deletes++;
     return route.fulfill({ json: { skills: Array.from({ length: 22 }, (_, index) => ({
       name: `example-skill-${index}`, description: "Synthetic UI verification skill",
-      fileCount: 12, updatedAt: "2026-09-01T00:00:00Z",
+      fileCount: 12, updatedAt: "2026-09-01T00:00:00Z", scope: "team", canEdit: true, canShare: false,
     })) } });
   });
   for (const width of [1280, 820, 390]) {
@@ -135,12 +135,12 @@ test("workflow drawer has a light header, padded shared actions and unobstructed
     systemPromptOverlay: "", dailyRunBudget: null, runsToday: 0, minutesSaved30d: 0,
     createdByThreadId: null, createdByRunId: null,
   };
-  await page.route("**/api/workflows", route => route.fulfill({ json: { workflows: [workflow] } }));
-  await page.route("**/api/workflows/ui-polish", route => route.fulfill({ json: {
+  await page.route("**/api/v1/workflows", route => route.fulfill({ json: { workflows: [workflow] } }));
+  await page.route("**/api/v1/workflows/ui-polish", route => route.fulfill({ json: {
     workflow, subscriptions: [], recentRuns: [], recentActions: [], activitySparkline: [],
   } }));
-  await page.route("**/api/workflows/ui-polish/api-access", route => route.fulfill({ status: 403, json: { error: "Admin access required" } }));
-  await page.route("**/api/policies", route => route.fulfill({ json: { policies: [] } }));
+  await page.route("**/api/v1/workflows/ui-polish/api-access", route => route.fulfill({ status: 403, json: { error: "Admin access required" } }));
+  await page.route("**/api/v1/policies", route => route.fulfill({ json: { policies: [] } }));
   for (const width of [1280, 1024, 901, 900, 820, 721, 720, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/workflows?id=ui-polish");

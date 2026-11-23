@@ -3,12 +3,15 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/testsock"
 )
 
 func TestGraphjinImportUpdate(t *testing.T) {
@@ -49,5 +52,42 @@ func TestGraphjinImportRefusesUnselectedInstallation(t *testing.T) {
 	cmd.SetArgs([]string{"graphjin", "import", file})
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "selected production installation") {
 		t.Fatalf("expected production installation guard, got %v", err)
+	}
+}
+
+func TestGraphjinImportCallsWebAdminSocket(t *testing.T) {
+	dir := testsock.Dir(t)
+	socket := filepath.Join(dir, "web-admin.sock")
+	stop, err := serveWebAdmin(socket, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/admin/graphjin/import" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		sources, _ := body["update_sources"].([]any)
+		if len(sources) != 1 || sources[0].(map[string]any)["name"] != "customer" {
+			t.Fatalf("unexpected body: %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	t.Setenv(webAdminSocketEnv, socket)
+	t.Setenv("OPENNEKO_PROXIED", "1")
+	var out bytes.Buffer
+	cmd := NewRoot()
+	cmd.SetIn(strings.NewReader("sources:\n  - name: customer\n    type: postgres\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"graphjin", "import", "-"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != "GraphJin configuration imported" {
+		t.Fatalf("unexpected output: %q", out.String())
 	}
 }

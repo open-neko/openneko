@@ -1,6 +1,6 @@
 import { startupPhase, startupEvent, withStartupTrace } from "@neko/telemetry/startup";
-import { getGraphjinConfigSettingsForOrg, graphjinAgentEnabledForOrg, heldItems } from "@neko/db";
-import { filterHeldActions, runAllowedLibrary, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
+import { getGraphjinConfigSettingsForOrg, heldItems } from "@neko/db";
+import { filterHeldActions, runEntitlementActor, runHeldItemIds } from "./entitlement-scope";
 import type {
   AgentChatMessage,
   AgentEvent,
@@ -58,21 +58,15 @@ import {
   setWorkRunValue,
   setWorkThreadBackendState,
 } from "./store";
-import type { GraphjinDataPath, GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
-import type { PluginActionDescriptor } from "./tools";
+import type { GraphjinMcpToolPolicy } from "./graphjin-tool-policy";
+import type { PackActionDescriptor } from "./tools";
 import { createToolOutputRecorder } from "./tool-output/metrics";
 import { runAgentBackend } from "./agent-core";
 import { createAgentEventTelemetry } from "./agent-event-telemetry";
 import { structuredTurnSummary } from "./structured-turn-summary";
 import {
-  parseAppWorkContext,
-  parseRecordWorkContext,
-  type WorkDataSurface,
-} from "./data-surface";
-import {
   inProcessControlPlane,
   type AgentControlPlane,
-  type PluginCatalog,
 } from "./control-plane";
 import {
   ensureWorkWorkspace as defaultEnsureWorkWorkspace,
@@ -81,6 +75,10 @@ import {
 import { errorCodeOf, type HarnessObserver } from "@neko/telemetry";
 import { SandboxFailure } from "./sandbox-failure";
 import { spendCapFromSignal } from "../spend/run-guard";
+import { sandboxForOrg } from "./sandbox-org";
+import { skillRunnable } from "./sandbox-service";
+import { runSkillScope } from "./admin-skills";
+import { ownRunSkills, runSkillsWithOwn } from "./member-skills";
 
 /**
  * Delivery channel for a run. "web" renders a2ui cards (the channel injects the
@@ -100,15 +98,8 @@ export type RunChatTurnOptions = {
   includeUxMetadata?: boolean;
   emit: (event: AgentEvent) => Promise<void>;
   signal?: AbortSignal;
-  /**
-   * Plugin action kinds to surface to the agent as MCP tools, one
-   * per kind. The worker passes its plugin registry snapshot here;
-   * tests pass an empty array to keep the agent's surface stable.
-   * Mounted through the sandbox MCP bridge.
-   */
-  pluginActions?: readonly PluginActionDescriptor[];
-  /** Installed pack actions. Kept separate from the plugin registry. */
-  packActions?: readonly import("./tools").PackActionDescriptor[];
+  /** Installed pack actions, discovered from installed pack artifacts. */
+  packActions?: readonly PackActionDescriptor[];
   /**
    * Control-plane impl for the DB-touching MCP tools. Default (undefined)
    * uses the in-process plane; the agent sandbox injects a broker client.
@@ -136,12 +127,6 @@ export type RunChatTurnDeps = {
   listInstalledSkills: typeof defaultListInstalledSkills;
   getThreadBot: typeof getThreadBot;
   syncSkillIndex: typeof syncSkillIndex;
-  /**
-   * Runs the agent loop. Production hosts inject the OpenShell sandbox
-   * impl (agentRuntimeDepsFromConfig) — SEC9: the only runtime. The default
-   * (runAgentBackend in-process) exists for tests, which exercise the
-   * core without a sandbox. The DB-bound prologue/epilogue stay host-side.
-   */
   runCore: typeof runAgentBackend;
 };
 
@@ -153,7 +138,7 @@ export type RunChatTurnResult = {
   degraded?: boolean;
 };
 
-function needsInputText(
+export function needsInputText(
   event: Extract<AgentEvent, { type: "needs_input" }>,
 ): string {
   const questions = event.questions?.length
@@ -189,7 +174,7 @@ function backendLabel(id: string): string {
  * never reach a user on any channel. Matches `call:<ns>:<tool>{…}` (closed or
  * truncated at end-of-text). Returns the remaining prose, trimmed.
  */
-function stripDanglingToolCalls(text: string): string {
+export function stripDanglingToolCalls(text: string): string {
   return text
     .replace(/\bcall:[A-Za-z0-9_.:-]+\s*\{[^{}]*(?:\}|$)/g, "")
     .replace(/[ \t]+\n/g, "\n")
@@ -211,15 +196,29 @@ function collectStrings(value: unknown, depth = 0): string[] {
 }
 
 /**
- * OpenShell returns policy denials inside tool output JSON. Convert that
- * implementation detail into a channel-neutral event while the exact host is
- * still available. Exported for focused regression tests.
+ * A tool reports a network denial inside its output: the harness's web_fetch
+ * names a host that is not on the run's allowlist, and older runtimes wrote a
+ * "not permitted by policy" line. Convert either into a channel-neutral event
+ * while the exact host is still available. Exported for focused regression
+ * tests.
  */
 export function extractNetworkPolicyDenial(
   event: AgentEvent,
 ): Extract<AgentEvent, { type: "capability_denied" }> | null {
   if (event.type !== "tool_end") return null;
   const text = [event.error ?? "", ...collectStrings(event.result)].join("\n");
+  const allowlist = text.match(/\bhost ([a-z0-9.-]+)(?::(\d+))? is not on the web allowlist/i);
+  if (allowlist) {
+    const port = allowlist[2] ? Number(allowlist[2]) : undefined;
+    return {
+      type: "capability_denied",
+      capability: "network_egress",
+      reason: "policy_denied",
+      host: allowlist[1].toLowerCase(),
+      ...(Number.isFinite(port) ? { port } : {}),
+      method: "GET",
+    };
+  }
   if (!/policy_denied|not permitted by policy/i.test(text)) return null;
   const match = text.match(
     /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+([a-z0-9.-]+)(?::(\d+))?(\/[^\s"'\\]*)?\s+not permitted by policy/i,
@@ -268,42 +267,22 @@ async function runChatTurnTraced(
     );
     return { status: "failed", finalText: "", error: errMsg };
   }
-  const appContext = parseAppWorkContext(
-    bundle.thread.backendState.appContext,
-  );
-  const recordContext = parseRecordWorkContext(
-    bundle.thread.backendState.recordContext,
-  );
-  const dataSurface: WorkDataSurface = appContext || recordContext
-    ? "records"
-    : "customer";
-  const threadBot = dataSurface === "customer" && (opts.channel ?? "web") === "web"
+  const threadBot = (opts.channel ?? "web") === "web"
     ? await startupPhase("bot.load", () => (deps.getThreadBot ?? getThreadBot)(orgId, threadId))
     : null;
 
   const backend = await startupPhase("config.backend", () => resolveAgentBackend(orgId));
   const workspace = await startupPhase("workspace.prepare", () => ensureWorkWorkspace(orgId, threadId, runId));
 
-  // An eval's direct-tool policy keeps the direct path.
-  const graphjinDataPath: GraphjinDataPath =
-    dataSurface === "customer" && !opts.graphjinToolPolicy &&
-    await startupPhase("config.graphjin_agent", () => graphjinAgentEnabledForOrg(orgId))
-      ? "agent"
-      : "direct";
-
   // Knowledge layering: agentic deployments (auth_mode=jwt) get the slim
   // gj_catalog bootstrap; legacy ones keep the broad discovery dumps.
-  if (dataSurface === "customer") {
-    const refresh = await startupPhase("knowledge.prefetch", () => prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot));
-    if (!refresh.ok) {
-      console.warn(
-        `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
-      );
-    }
+  const refresh = await startupPhase("knowledge.prefetch", () => prefetchKnowledgeForOrg(orgId, workspace.knowledgeRoot));
+  if (!refresh.ok) {
+    console.warn(
+      `[work-run] org=${orgId} knowledge refresh failed (${refresh.error}); proceeding with on-disk pack`,
+    );
   }
-  const knowledge = dataSurface === "records"
-    ? { mode: "legacy" as const, tables: "{}", namespaces: "{}", insights: "{}", syntax: "{}" }
-    : await startupPhase("knowledge.read_pack", () => readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot)));
+  const knowledge = await startupPhase("knowledge.read_pack", () => readKnowledgePack(knowledgePackPaths(workspace.knowledgeRoot)));
 
   let assistantText = "";
   let turnUsageReported = false;
@@ -390,7 +369,7 @@ async function runChatTurnTraced(
   const actor = await startupPhase("identity.resolve", () => getWorkRunActor(runId));
 
   try {
-    if (dataSurface === "customer" && !backend.capabilities.mcpTools) {
+    if (!backend.capabilities.mcpTools) {
       throw new Error(
         "Customer data access requires the native GraphJin broker tool; this backend does not support MCP tools.",
       );
@@ -401,25 +380,19 @@ async function runChatTurnTraced(
     });
 
     // Rendering is a per-channel capability: a channel that can render the
-    // a2ui surface gets it (web as cards, telegram as HTML via its plugin
+    // a2ui surface gets it (web as cards, telegram as HTML via its
     // projection). Thin channels answer in plain markdown — no rendering
     // vocabulary in their prompt. See docs/PER_CHANNEL_RENDERING.md.
     const RENDERING_CHANNELS = new Set(["web", "telegram"]);
-    const customerSurface = dataSurface === "customer";
-    const channelWantsCards = RENDERING_CHANNELS.has(opts.channel ?? "web");
-    const wantsCards = customerSurface && channelWantsCards;
+    const wantsCards = RENDERING_CHANNELS.has(opts.channel ?? "web");
     const richCards = wantsCards && (opts.channel ?? "web") === "web";
-    const supportsCardTool = customerSurface && backend.capabilities.mcpTools;
+    const supportsCardTool = backend.capabilities.mcpTools;
     const supportsClarificationTool = backend.capabilities.mcpTools;
-    const supportsSkillTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsMemoryTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsWorkflowTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsPolicyTool = customerSurface && backend.capabilities.mcpTools;
-    const supportsPluginManagerTool =
-      customerSurface && backend.capabilities.mcpTools;
-    const sourceConfigSettings = dataSurface === "customer"
-      ? await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId))
-      : { sourceConfigEnabled: false };
+    const supportsSkillTool = backend.capabilities.mcpTools;
+    const supportsMemoryTool = backend.capabilities.mcpTools;
+    const supportsWorkflowTool = backend.capabilities.mcpTools;
+    const supportsPolicyTool = backend.capabilities.mcpTools;
+    const sourceConfigSettings = await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId));
     const supportsSourceConfigTool =
       backend.capabilities.mcpTools &&
       actor.role === "admin" &&
@@ -463,61 +436,53 @@ async function runChatTurnTraced(
     });
 
     const runActor = await runEntitlementActor(orgId, actor);
-    const [allowedSkills, allowedLibrary, teamMemory, heldPluginActions, heldPackActions] = await startupPhase("identity.entitlements", () =>
+    const [allowedSkills, teamMemory, heldPackActions] = await startupPhase("identity.entitlements", () =>
       Promise.all([
         runHeldItemIds(runActor, "skill"),
-        runAllowedLibrary(runActor),
         heldItems(runActor, "team_memory"),
-        filterHeldActions(runActor, opts.pluginActions ?? []),
         filterHeldActions(runActor, opts.packActions ?? []),
       ]));
-    const [memoryContext, installedSkills, profile] = await Promise.all([
-      customerSurface
-        ? startupPhase("context.memory", () => formatWorkMemoryPromptContext(
-            {
-              orgId,
-              threadId,
-              runId,
-              userId: effectiveMemoryLayer(orgId, actor),
-              teamMemory,
-            },
-            // Use the latest user message as the retrieval query so we pull
-            // memories semantically close to what the operator just asked.
-            { contextQuery: message, contextLimit: 5 },
-          ))
-        : Promise.resolve(""),
+    const [memoryContext, availableSkills, profile] = await Promise.all([
+      startupPhase("context.memory", () => formatWorkMemoryPromptContext(
+        {
+          orgId,
+          threadId,
+          runId,
+          userId: effectiveMemoryLayer(orgId, actor),
+          teamMemory,
+        },
+        // Use the latest user message as the retrieval query so we pull
+        // memories semantically close to what the operator just asked.
+        { contextQuery: message, contextLimit: 5 },
+      )),
       startupPhase("context.skills", () => listInstalledSkills(workspace.skillsRoot)).then(async (skills) => {
         // Ax finds skills by meaning, so its index holds every installed skill;
         // search filters to what the actor holds.
-        if (customerSurface && backend.id === "ax") {
+        if (backend.id === "ax") {
           await startupPhase("context.skill_index", () => (deps.syncSkillIndex ?? syncSkillIndex)(orgId, skills))
             .catch((error) => console.warn("[work-run] skill index sync failed:", error instanceof Error ? error.message : error));
         }
-        return customerSurface
-          ? skills.filter((skill) => !allowedSkills || allowedSkills.includes(skill.name))
-          : skills.filter((skill) => skill.name === "records");
+        return skills;
       }),
       startupPhase("context.persona", () => getOperatorProfile(orgId, actor.userId)),
     ]);
+    const runSkills = runSkillScope(
+      allowedSkills,
+      availableSkills.map((skill) => skill.name),
+      supportsSourceConfigTool,
+    );
+    const terminal = (await sandboxForOrg(orgId)) !== undefined;
+    const withOwn = runSkillsWithOwn(
+      availableSkills.filter(
+        (skill) => (!runSkills || runSkills.includes(skill.name)) && skillRunnable(skill.name, terminal),
+      ),
+      runSkills,
+      runActor.kind === "user" ? await ownRunSkills(workspace.orgRoot, runActor.userId) : [],
+      supportsSourceConfigTool,
+      terminal,
+    );
+    const installedSkills = withOwn.skills;
     const operatorProfile = buildOperatorProfileSection(profile);
-    let pluginCatalog: PluginCatalog | undefined;
-    const mayNeedCapabilityRecovery =
-      /\b(integration|plugin|network|egress|live data|external api|weather)\b/i.test(
-        message,
-      );
-    if (
-      !supportsPluginManagerTool &&
-      actor.role === "admin" &&
-      mayNeedCapabilityRecovery
-    ) {
-      try {
-        pluginCatalog = await startupPhase("context.plugin_catalog", () => (opts.controlPlane ?? inProcessControlPlane).listPlugins({ orgId }));
-      } catch (error) {
-        console.warn(
-          `[work-run] marketplace lookup failed: ${error instanceof Error ? error.message : error}`,
-        );
-      }
-    }
 
     const prompt = buildWorkPrompt({
       backend: backend.id,
@@ -539,18 +504,12 @@ async function runChatTurnTraced(
       supportsPolicyTool,
       supportsSourceConfigTool,
       supportsClarificationTool,
-      supportsPluginManagerTool,
       supportsNativeDelegation:
         backend.capabilities.nativeDelegation !== undefined &&
         opts.nativeDelegation !== "disabled",
-      pluginCatalog,
       inlineTranscript,
-      pluginActions: customerSurface ? heldPluginActions : [],
-      dataSurface,
-      graphjinDataPath,
-      ...(appContext ? { appContext } : {}),
-      ...(recordContext ? { recordContext } : {}),
       ...(threadBot ? { bot: threadBot } : {}),
+      scriptData: terminal,
     });
 
     await eventTelemetry.startAgent({
@@ -559,8 +518,8 @@ async function runChatTurnTraced(
       inputBytes: Buffer.byteLength(`${prompt}\n\n${message}`, "utf8"),
     });
     const coreResult = await runCore({
-      ...(allowedSkills && customerSurface ? { allowedSkills } : {}),
-      ...(allowedLibrary ? { allowedLibrary } : {}),
+      ...(withOwn.allowed ? { allowedSkills: withOwn.allowed } : {}),
+      ...(withOwn.ownNames.length > 0 ? { ownSkills: withOwn.ownNames } : {}),
       backend,
       prompt,
       userMessage: message,
@@ -569,22 +528,16 @@ async function runChatTurnTraced(
       runId,
       workspace,
       backendState: bundle.thread.backendState,
-      pluginActions: customerSurface ? heldPluginActions : [],
-      packActions: customerSurface ? heldPackActions : [],
+      packActions: heldPackActions,
       sourceConfigEnabled: supportsSourceConfigTool,
-      dataSurface,
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
         : {}),
-      ...(graphjinDataPath === "agent" ? { graphjinDataPath } : {}),
       ...(opts.nativeDelegation
         ? { nativeDelegation: opts.nativeDelegation }
         : {}),
       controlPlane: opts.controlPlane ?? inProcessControlPlane,
-      // The clarification server can render its deterministic form in any web
-      // Work chat, including records-scoped app chat. Generated answer-card
-      // vocabulary remains gated separately in the prompt above.
-      wantsCards: channelWantsCards,
+      wantsCards,
       cardSchema: richCards ? "rich" : "core",
       emit: wrappedEmit,
       signal,
@@ -629,11 +582,6 @@ async function runChatTurnTraced(
       const base = (
         backendStateChanged ? result.backendState : bundle.thread.backendState
       ) as Record<string, unknown>;
-      const protectedBase = {
-        ...base,
-        ...(appContext ? { appContext } : {}),
-        ...(recordContext ? { recordContext } : {}),
-      };
       // Transcript compaction is host-owned state. Inline backends commonly
       // return a fresh backend-state object every turn; replacing the stored
       // object must not silently discard an existing rolling summary.
@@ -641,8 +589,8 @@ async function runChatTurnTraced(
       await setWorkThreadBackendState(
         threadId,
         compaction
-          ? { ...protectedBase, compaction }
-          : protectedBase,
+          ? { ...base, compaction }
+          : base,
       );
     }
 
@@ -654,8 +602,8 @@ async function runChatTurnTraced(
       return await finishNeedsInput();
     }
 
-    // OpenShell has pulled the run artifact directory back to the host before
-    // runCore resolves. Publish every regular, non-symlink file from that
+    // The launcher has copied the run artifact directory back to the host
+    // before runCore resolves. Publish every regular, non-symlink file from that
     // directory as an explicit event; the web download route authorizes only
     // these emitted paths.
     if (result.status === "completed") {

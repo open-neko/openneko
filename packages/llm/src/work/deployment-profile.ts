@@ -1,15 +1,10 @@
-import {
-  behaviorThresholdsFromEnv,
-  type BehaviorThresholds,
-} from "./behavior-monitor";
-
 /**
  * SEC8 — the deployment dial. One knob (OPENNEKO_PROFILE) sets the
  * posture; everything it influences resolves through here so the
  * mapping is auditable in one place:
  *
  *   solo      — single operator IS the admin; default.
- *   team      — auth plugin on, member/admin split, CV2 layers.
+ *   team      — sign-in on, member/admin split, CV2 layers.
  *   org       — + admin-gated chat approvals, tighter behavior envelopes.
  *   hardened  — + strictest envelopes; expects a client-provided
  *               on-prem LLM endpoint (config path only — OpenNeko does
@@ -25,44 +20,6 @@ export function resolveDeploymentProfile(): DeploymentProfile {
     ? (raw as DeploymentProfile)
     : "solo";
   return requested;
-}
-
-/** Behavior envelopes shrink as the posture tightens; explicit env overrides still win. */
-const THRESHOLD_SCALE: Record<DeploymentProfile, number> = {
-  solo: 1,
-  team: 1,
-  org: 0.5,
-  hardened: 0.25,
-};
-
-export function profileBehaviorThresholds(
-  profile: DeploymentProfile = resolveDeploymentProfile(),
-): BehaviorThresholds {
-  const base = behaviorThresholdsFromEnv();
-  const scale = THRESHOLD_SCALE[profile];
-  const apply = (n: number) => Math.max(1, Math.floor(n * scale));
-  return {
-    controlPlaneCallsPerRun: apply(base.controlPlaneCallsPerRun),
-    actionRequestsPerHour: apply(base.actionRequestsPerHour),
-    memoryWritesPerHour: apply(base.memoryWritesPerHour),
-  };
-}
-
-export type ProfilePolicyDefaults = {
-  /** Who must approve chat-proposed plugin installs/uninstalls. */
-  pluginApproverRole: "admin" | null;
-};
-
-export function profilePolicyDefaults(
-  profile: DeploymentProfile = resolveDeploymentProfile(),
-): ProfilePolicyDefaults {
-  void profile;
-  return {
-    // Solo deployments resolve their operator as admin, so this also preserves
-    // userless administration while making multi-user/plugin-auth deployments
-    // admin-only by default.
-    pluginApproverRole: "admin",
-  };
 }
 
 const PUBLIC_MODEL_HOST_RE =

@@ -48,7 +48,7 @@ state transition, delivery, denial, audit record, or user-visible contract.
 | `RUNTIME-VALIDATE` | Invalid structured output is repaired within bounds or fails honestly | schema + attempt oracle |
 | `RUNTIME-CONCURRENCY` | Global/backend caps, queueing, cancellation, and fairness hold under parallel work | load/soak |
 | `RUNTIME-SHUTDOWN` | Process shutdown cancels agents and leaves jobs/runs recoverable | restart smoke |
-| `RUNTIME-SANDBOX` | Every production agent runs in the required OpenShell boundary with declared mounts and capabilities | containment E2E |
+| `RUNTIME-SANDBOX` | Every agent turn runs in openneko serve; terminal commands run only in the sandbox service, with declared mounts and capabilities | containment E2E |
 | `RUNTIME-OBSERVABILITY` | Canonical observations, OTel spans/metrics, and run summaries agree and never alter outcomes | telemetry conformance |
 
 ## 2. Data discovery, access, and calculation semantics
@@ -62,7 +62,6 @@ state transition, delivery, denial, audit record, or user-visible contract.
 | `DATA-DISCOVERY` | Catalog/schema discovery finds relevant tables, columns, relationships, and query patterns | answer + trace method |
 | `DATA-KNOWLEDGE` | Knowledge-pack prefetch, freshness, fallback, and agentic catalog modes are correct | digest + fault injection |
 | `DATA-DIRECT` | Direct GraphJin execution returns grounded read-only results through the brokered path | runtime oracle |
-| `DATA-DELEGATED` | Delegated GraphJin agent results carry sufficient data/evidence/usage and obey read-only policy | outer+inner trace + oracle |
 | `DATA-PLANNER-EXECUTE` | A delegated planner may propose, but the trusted host executes and verifies the final query | plan/query/oracle |
 | `DATA-MULTISOURCE` | One answer can select and reconcile several registered sources without confusing identities or dates | cross-source oracle |
 | `DATA-AUTH` | GraphJin tokens carry the correct org/user/role; row and source restrictions are enforced | cross-principal negative E2E |
@@ -99,11 +98,11 @@ state transition, delivery, denial, audit record, or user-visible contract.
 
 All current `AgentEvent` variants map here or to runtime/action semantics:
 `message`, `tool_start`, `tool_delta`, `tool_end`, `surface`, `artifact`,
-`status`, `usage`, `telemetry`, `error`, `capability_denied`, `done`, `output_emit`,
+`status`, `usage`, `telemetry`, `error`, `notice`, `capability_denied`, `done`, `output_emit`,
 `action_request_emit`, `action_request_result`, `needs_input`, `followups`, and
 `vitals`.
 
-## 4. Work context, memory, personas, skills, and versioning
+## 4. Work context, memory, personas, skills, and change records
 
 | ID | Semantic outcome | Primary verification |
 |---|---|---|
@@ -121,7 +120,7 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `WORK-PERSONA` | Operator role/profile changes prompt emphasis without weakening authorization | matched persona cases |
 | `WORK-COMPACTION` | Long-thread compaction retains decisions, figures, actions, and open tasks without cross-thread leakage | multi-turn oracle |
 | `WORK-SKILLS` | Skill discovery, dependency aggregation, install/use, and allowed-tool implications are correct | trace + artifact contract |
-| `WORK-CONFIG-VCS` | Snapshot/history/restore/promote/adopt of config artifacts preserve semantic content and attribution | repository/DB oracle |
+| `WORK-CONFIG-VCS` | Promote/adopt/copy/share of config artifacts preserve semantic content, and each change adds a config_change row with its attribution | DB oracle |
 
 ## 5. Workflow, observation, watcher, and action semantics
 
@@ -177,20 +176,7 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 
 ## 7. Records-engine semantics
 
-| ID | Semantic outcome | Primary verification |
-|---|---|---|
-| `RECORDS-REGISTRY` | App/object definitions, availability mirror, and catalog remain consistent | catalog/schema oracle |
-| `RECORDS-SCHEMA-PLAN` | Schema proposals, previews, counterproposals, DDL saga, and audit are deterministic and recoverable | state-machine E2E |
-| `RECORDS-READ` | List/detail/reference/aggregate queries honor filters, ordering, cursors, and projections | query/result oracle |
-| `RECORDS-WRITE` | Create/update/delete/backfill validate fields/references and record change history | pre/post-state oracle |
-| `RECORDS-RECYCLE` | Soft-deleted records are listed/restored/purged only with correct permission | state + auth oracle |
-| `RECORDS-POLICY` | App/object/field/row permissions and actor synchronization match GraphJin enforcement | cross-role differential |
-| `RECORDS-IMPORT` | CSV/artifact plan hash, sampling, batched execution, rejects, cancellation, resume, and receipt are correct | import fixture oracle |
-| `RECORDS-CONNECT` | Salesforce export/sync/cursor/cutover handle deltas, retries, conflicts, and provenance | fake connector + DB |
-| `RECORDS-IDENTITY` | Imported users reconcile/link/conflict/ignore and backfill ownership without scope escalation | identity state oracle |
-| `RECORDS-WATCH` | Starter watches bind/reconcile and enqueue evaluation exactly once per source event | event/receipt oracle |
-| `RECORDS-ACTION` | Records action execution obeys policy and produces the intended record mutation/receipt | action + state oracle |
-| `RECORDS-OPS` | Health, lifecycle, system findings, backup verification, and ops watches report real conditions | fault-injected smoke |
+Records left the product in November 2026. Its `RECORDS-*` IDs are retired.
 
 ## 8. Security and governance semantics
 
@@ -219,7 +205,7 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `OPS-PROVISION` | Provider, model, source, sandbox, and credential configuration reaches every required process consistently | deployment fixture |
 | `OPS-HEALTH` | Status distinguishes healthy, degraded, transient, and terminal failures with actionable causes | fault-injected smoke |
 | `OPS-DEMO` | Demo seed, simulator, and scenarios are reproducible and resettable | snapshot/digest smoke |
-| `OPS-BACKUP` | Records backup and verification detect corruption/missing data and report safely | backup restore test |
+| `OPS-BACKUP` | Backup files verify in full before restore, and restore reports failures safely | backup restore test |
 | `OPS-UPGRADE` | Config/schema/plugin/runtime upgrades preserve supported state and fail safely | upgrade matrix |
 | `OPS-RESOURCE` | Disk, memory, network, provider quota, and sandbox limits degrade predictably and remain observable | soak/fault injection |
 
@@ -238,7 +224,6 @@ The machine registry will enumerate legal and illegal transitions for at least:
 - source subscription and source-change receipt;
 - channel identity link;
 - plugin install/runtime state;
-- records schema saga, import run, connector cursor/cutover, and recycle state;
 - configuration change/promote/adopt/restore;
 - eval run, attempt, episode, shard, and baseline promotion.
 
@@ -260,14 +245,8 @@ All current worker jobs map to the registry:
 |---|---|
 | `work-run` | `RUNTIME-*`, `WORK-*`, `OUTPUT-*` |
 | `business-profile-build`, `industry-insights-build`, `bootstrap-metrics-build`, `metric-refresh` | `ONBOARD-*`, `METRIC-REFRESH` |
-| `workflow-run-fire`, `workflow-scheduler`, `workflow-output-ttl-sweep` | `FLOW-RUN`, `FLOW-CRON`, `FLOW-OUTPUT-TTL` |
+| `workflow_run_fire`, `workflow_api_sweep`, `workflow-scheduler`, `workflow_output_ttl_sweep` (River, in `openneko web`) | `FLOW-RUN`, `FLOW-CRON`, `FLOW-OUTPUT-TTL` |
 | `action-execute` | `ACTION-EXECUTE`, `ACTION-IDEMPOTENCY`, `ACTION-AUDIT` |
-| `records-watch-evaluate` | `RECORDS-WATCH`, `WATCH-*` |
-| `records-import` | `RECORDS-IMPORT` |
-| `records-salesforce-export`, `records-salesforce-sync`, `records-salesforce-sync-sweep`, `records-salesforce-cutover` | `RECORDS-CONNECT` |
-| `records-identity-link` | `RECORDS-IDENTITY` |
-| `library-distill` | `LIBRARY-DISTILL`, `LIBRARY-LAYERS` |
-| `records-backup-verify`, `records-ops-health`, `records-ops-watch`, `records-ops-finding`, `records-lifecycle-finding`, `records-system-finding` | `RECORDS-OPS`, `OPS-BACKUP` |
 
 ## 12. Corpus growth rule
 

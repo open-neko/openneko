@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Skeleton } from "@/components/ui/skeleton";
 import { presentWorkFailure } from "@/lib/work-failure";
+import type { OfflineQueueLosses, QueuedQuestion } from "./work-offline-queue";
+import type { HeldBlock } from "./work-streaming-text";
 import type { WorkEvent } from "./work-types";
 
 const ANSWER_CARD_PLACEHOLDER_MS = 60_000;
@@ -48,6 +50,25 @@ export function AnswerInProgress({ since, step, sources }: { since?: string; ste
   );
 }
 
+const HELD_BLOCK_LABEL: Record<HeldBlock, string> = {
+  table: "Writing a table",
+  code: "Writing a code block",
+  card: "Preparing a card",
+};
+
+/** Stands in for a table, code block or card until the agent completes it. */
+export function StreamingBlockPlaceholder({ block }: { block: HeldBlock }) {
+  return (
+    <div className="work-block-pending" role="status" aria-live="polite" data-block={block}>
+      <div className="answer-draft-note">
+        <span className="answer-draft-pulse" aria-hidden="true" />
+        {HELD_BLOCK_LABEL[block]}
+      </div>
+      <Skeleton className="h-10" />
+    </div>
+  );
+}
+
 export function WorkFailureNotice({ message }: { message: string }) {
   const failure = presentWorkFailure(message);
   return (
@@ -64,6 +85,69 @@ export function WorkFailureNotice({ message }: { message: string }) {
           {failure.detail}
         </p>
       </Disclosure>
+    </div>
+  );
+}
+
+const OFFLINE_NOTICE =
+  "ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 rounded-xl border border-border bg-warn-soft px-3 py-1.5 text-ui-caption font-medium text-warn-ink";
+
+function questions(count: number): string {
+  return count === 1 ? "1 question" : `${count} questions`;
+}
+
+/** Tells once how many waiting questions this browser removed unsent. */
+export function OfflineLossNotice({
+  losses,
+  onDismiss,
+}: {
+  losses: OfflineQueueLosses;
+  onDismiss: () => void;
+}) {
+  const lines: string[] = [];
+  if (losses.expired > 0) {
+    lines.push(
+      `${questions(losses.expired)} that waited for the network ${losses.expired === 1 ? "was" : "were"} not sent and removed after 7 days.`,
+    );
+  }
+  if (losses.otherUser > 0) {
+    lines.push(
+      `${questions(losses.otherUser)} that another user typed in this browser ${losses.otherUser === 1 ? "was" : "were"} not sent and removed.`,
+    );
+  }
+  return (
+    <div role="status" data-testid="offline-lost-notice" className={OFFLINE_NOTICE}>
+      <span>{lines.join(" ")}</span>
+      <Button size="sm" variant="secondary" onClick={onDismiss}>
+        Dismiss
+      </Button>
+    </div>
+  );
+}
+
+/** Refused questions of other chats, with a link to each chat. */
+export function OfflineFailedElsewhere({ items }: { items: readonly QueuedQuestion[] }) {
+  const chats = new Map<string, string>();
+  for (const item of items) {
+    const href = item.threadId
+      ? `${item.threadBase}/${item.threadId}`
+      : item.threadBase === "/work"
+        ? "/work"
+        : null;
+    if (href && !chats.has(href)) chats.set(href, item.content);
+  }
+  return (
+    <div role="status" data-testid="offline-failed-elsewhere" className={OFFLINE_NOTICE}>
+      <span>
+        The server refused {questions(items.length)} in other chats.
+      </span>
+      {[...chats].map(([href, content]) => (
+        <Button key={href} asChild size="sm" variant="secondary">
+          <Link href={href} title={content}>
+            Open “{content.length > 32 ? `${content.slice(0, 31)}…` : content}”
+          </Link>
+        </Button>
+      ))}
     </div>
   );
 }
@@ -133,19 +217,11 @@ export function NeedsInputNotice({
 export function CapabilityDeniedNotice({
   denial,
   canAdminister,
-  onRequest,
 }: {
   denial: Extract<WorkEvent, { type: "capability_denied" }>;
   canAdminister: boolean;
-  onRequest: (prompt: string) => void;
 }) {
   const endpoint = `${denial.host}${denial.port ? `:${denial.port}` : ""}`;
-  const requestPrompt = [
-    `Find an appropriate approved integration that can securely access ${endpoint}`,
-    "for the request I just made.",
-    "Show me the exact integration and file an approval-gated install request.",
-    "Do not enable blanket network access.",
-  ].join(" ");
   return (
     <section className="work-capability-denied" role="status">
       <div className="work-capability-kicker">Network access blocked</div>
@@ -164,27 +240,18 @@ export function CapabilityDeniedNotice({
         <div className="work-capability-recovery">
           <span>Safe recovery</span>
           {canAdminister ? (
-            <>
-              <p>
-                Ask OpenNeko to find the right integration. Installation will
-                still require your explicit approval.
-              </p>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => onRequest(requestPrompt)}
-              >
-                Request secure integration
-              </Button>
-            </>
+            <p>
+              Install a solution pack that connects this service. A pack
+              declares the hosts it reaches, so access stays scoped.
+            </p>
           ) : (
             <p>
-              Contact an OpenNeko administrator to install an integration
-              approved for this host.
+              Contact an OpenNeko administrator to install a solution pack
+              that connects this host.
             </p>
           )}
-          <Link href={canAdminister ? "/admin/plugins" : "/integrations"}>
-            {canAdminister ? "Review plugins" : "View integrations"}
+          <Link href={canAdminister ? "/admin/settings/packs" : "/integrations"}>
+            {canAdminister ? "Review solution packs" : "View integrations"}
           </Link>
         </div>
       </div>

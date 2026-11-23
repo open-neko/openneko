@@ -33,6 +33,7 @@ type WorkflowListItem = {
   steps: { id: string; description: string }[];
   createdAt: string;
   updatedAt: string;
+  accessHeld?: boolean;
 };
 
 type Subscription = {
@@ -66,6 +67,7 @@ type RecentRun = {
   finishedAt: string | null;
   durationMs: number | null;
   createdAt: string;
+  scheduleFiring?: boolean;
 };
 
 type RecentAction = {
@@ -190,7 +192,7 @@ export default function WorkflowsPage() {
 
   const fetchList = useCallback(async () => {
     try {
-      const res = await fetch("/api/workflows", { cache: "no-store" });
+      const res = await fetch("/api/v1/workflows", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setError(null);
@@ -226,7 +228,7 @@ export default function WorkflowsPage() {
         destructive: true,
       });
       if (!ok) return;
-      const res = await fetch(`/api/workflows/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/v1/workflows/${id}`, { method: "DELETE" });
       if (!res.ok) {
         setError(`Couldn't delete (HTTP ${res.status})`);
         return;
@@ -568,7 +570,7 @@ function WorkflowRow({
   useEffect(() => {
     if (sparkline) return;
     let cancelled = false;
-    void fetch(`/api/workflows/${w.id}`, { cache: "no-store" })
+    void fetch(`/api/v1/workflows/${w.id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data: DrawerPayload) => {
         if (cancelled) return;
@@ -627,6 +629,11 @@ function WorkflowRow({
                 </>
               )}
             </div>
+            {w.accessHeld && (
+              <div className="text-ui-body-sm text-text2 mt-1">
+                API runs wait for an admin to approve this version.
+              </div>
+            )}
           </div>
         </button>
         <IconButton
@@ -662,7 +669,7 @@ function WorkflowDetail({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/workflows/${workflowId}`, {
+      const res = await fetch(`/api/v1/workflows/${workflowId}`, {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -686,7 +693,7 @@ function WorkflowDetail({
     // Policies are org-level today (no per-workflow override). Fetch the
     // active set so the drawer's Policy section reflects what's actually
     // gating actions for this org.
-    void fetch("/api/policies", { cache: "no-store" })
+    void fetch("/api/v1/policies", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { policies: PolicySummary[] }) =>
         setPolicies(
@@ -702,7 +709,7 @@ function WorkflowDetail({
     if (!data) return;
     setBusy(true);
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      await fetch(`/api/v1/workflows/${workflowId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !data.workflow.enabled }),
@@ -719,7 +726,7 @@ function WorkflowDetail({
     if (!data) return;
     setBusy(true);
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      await fetch(`/api/v1/workflows/${workflowId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pauseForToday: true }),
@@ -735,7 +742,7 @@ function WorkflowDetail({
     if (!data) return;
     setBusy(true);
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      await fetch(`/api/v1/workflows/${workflowId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cronEnabled: !data.workflow.cronEnabled }),
@@ -750,7 +757,7 @@ function WorkflowDetail({
   const runNow = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/workflows/${workflowId}/runs`, {
+      const res = await fetch(`/api/v1/workflows/${workflowId}/manual-runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -983,42 +990,61 @@ function WorkflowDetail({
                 key={r.id}
                 className="flex items-baseline gap-2 text-ui-body-sm"
               >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="workflow-drawer-run-link"
-                  onClick={() => router.push(`/runs/${r.id}`)}
-                >
-                  <span
-                    className={cn(
-                      "inline-block w-3.5 text-center",
-                      runStatusColor(r.status),
-                    )}
-                  >
-                    {statusGlyph(r.status)}
-                  </span>
-                  <span className="workflow-drawer-run-meta text-xs tabular-nums text-text2">
-                    {formatRelative(r.createdAt)} · {r.triggerKind}
-                    {r.executionMode ? ` ${r.executionMode}` : ""} ·{" "}
-                    {formatDuration(r.durationMs)}
-                    {recentRunTelemetry(r) ? ` · ${recentRunTelemetry(r)}` : ""}
-                  </span>
-                  {r.executionMode ? (
-                    <Badge
-                      variant={
-                        r.executionMode === "batch" ? "success" : "muted"
-                      }
+                {r.scheduleFiring ? (
+                  <span className="flex items-baseline gap-2">
+                    <span
+                      className={cn(
+                        "inline-block w-3.5 text-center",
+                        runStatusColor(r.status),
+                      )}
                     >
-                      {r.executionMode}
-                    </Badge>
-                  ) : null}
-                  <span
-                    className="workflow-drawer-run-arrow ml-auto text-text3 text-ui-caption transition-[color,transform] duration-[0.18s]"
-                    aria-hidden="true"
-                  >
-                    →
+                      {statusGlyph(r.status)}
+                    </span>
+                    <span className="text-xs tabular-nums text-text2">
+                      {formatRelative(r.createdAt)} · {r.triggerKind} · did not
+                      start{r.error ? `: ${r.error}` : ""}
+                    </span>
                   </span>
-                </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="workflow-drawer-run-link"
+                    onClick={() => router.push(`/runs/${r.id}`)}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block w-3.5 text-center",
+                        runStatusColor(r.status),
+                      )}
+                    >
+                      {statusGlyph(r.status)}
+                    </span>
+                    <span className="workflow-drawer-run-meta text-xs tabular-nums text-text2">
+                      {formatRelative(r.createdAt)} · {r.triggerKind}
+                      {r.executionMode ? ` ${r.executionMode}` : ""} ·{" "}
+                      {formatDuration(r.durationMs)}
+                      {recentRunTelemetry(r)
+                        ? ` · ${recentRunTelemetry(r)}`
+                        : ""}
+                    </span>
+                    {r.executionMode ? (
+                      <Badge
+                        variant={
+                          r.executionMode === "batch" ? "success" : "muted"
+                        }
+                      >
+                        {r.executionMode}
+                      </Badge>
+                    ) : null}
+                    <span
+                      className="workflow-drawer-run-arrow ml-auto text-text3 text-ui-caption transition-[color,transform] duration-[0.18s]"
+                      aria-hidden="true"
+                    >
+                      →
+                    </span>
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -1083,7 +1109,11 @@ function WorkflowDetail({
         </Button>
       </div>
       <div className="px-[var(--panel-padding)] pb-5">
-        <ItemAccessPanel itemType="workflow" itemId={workflow.id} label={workflow.name} />
+        <ItemAccessPanel
+          itemType="workflow"
+          itemId={workflow.id}
+          label={workflow.name}
+        />
       </div>
     </div>
   );

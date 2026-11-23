@@ -1,34 +1,94 @@
-// Embedding computation belongs to the shared, lazily started service.
-// Keep the model and vector contract identical to existing pgvector rows.
-export const EMBEDDING_DIM = 384;
-const EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
+import { gatewayCall } from "./gateway-call";
 
-export async function embedText(text: string, timeoutMs = 15_000): Promise<number[]> {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error("embedText: text is empty");
-  if (trimmed.length > 32000) throw new Error("embedText: text exceeds 32000 characters");
-  const baseUrl = process.env.NEKO_EMBEDDING_URL?.trim();
-  if (!baseUrl) throw new Error("NEKO_EMBEDDING_URL is not configured");
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/embeddings`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text: trimmed }),
-    // Interactive queries have a short deadline; durable jobs allow cold startup.
-    signal: AbortSignal.timeout(timeoutMs),
-    redirect: "error",
-  });
-  if (!response.ok) throw new Error(`embedding service returned HTTP ${response.status}`);
-  const body = await response.json();
-  if (body?.model !== EMBEDDING_MODEL || body?.dimensions !== EMBEDDING_DIM ||
-      !Array.isArray(body?.vector) || body.vector.length !== EMBEDDING_DIM ||
-      !body.vector.every((value: unknown) => typeof value === "number" && Number.isFinite(value))) {
-    throw new Error("embedding service returned an incompatible vector");
+export type EmbeddingConfig = {
+  url: string;
+  apiKey: string | null;
+  model: string;
+  dimensions: number | null;
+};
+
+export class EmbeddingOffError extends Error {
+  constructor() {
+    super("embedding is off: NEKO_EMBEDDING_URL and NEKO_EMBEDDING_MODEL are not both set");
   }
-  return body.vector;
 }
 
-// Format a JS number[] as the literal pgvector accepts when bound as text.
-// pgvector wants `[0.1,0.2,...]` (square brackets, comma-separated, no spaces).
+const MAX_DIMENSIONS = 16_000;
+
+export function embeddingConfig(env: NodeJS.ProcessEnv = process.env): EmbeddingConfig | null {
+  const url = env.NEKO_EMBEDDING_URL?.trim().replace(/\/+$/, "");
+  const model = env.NEKO_EMBEDDING_MODEL?.trim();
+  if (!url || !model) return null;
+  const dimensions = Number.parseInt(env.NEKO_EMBEDDING_DIMENSIONS?.trim() ?? "", 10);
+  return {
+    url,
+    apiKey: env.NEKO_EMBEDDING_API_KEY?.trim() || null,
+    model,
+    dimensions: dimensions > 0 && dimensions <= MAX_DIMENSIONS ? dimensions : null,
+  };
+}
+
+export function embeddingModel(): string | null {
+  const config = embeddingConfig();
+  if (!config) return null;
+  return config.dimensions ? `${config.model}@${config.dimensions}` : config.model;
+}
+
+export const MAX_EMBEDDING_INPUTS = 64;
+
+export type EmbeddingRequest = { url: string; model: string; dimensions?: number; input: string[] };
+export type EmbeddingResult = { vectors: number[][]; model: string; input_tokens?: number };
+export type EmbeddingTransport = (request: EmbeddingRequest, key: string, timeoutMs: number) => Promise<EmbeddingResult>;
+
+let transportOverride: EmbeddingTransport | undefined;
+
+export function setEmbeddingTransport(transport: EmbeddingTransport | undefined): void {
+  transportOverride = transport;
+}
+
+const viaGateway: EmbeddingTransport = (request, key, timeoutMs) =>
+  gatewayCall<EmbeddingResult>({
+    frame: { type: "embed", embed: request, ...(key ? { model_key: key } : {}) },
+    mode: "embed",
+    env: key ? { HARNESS_EMBEDDING_API_KEY: key } : {},
+    input: request,
+    label: "embedding",
+    timeoutMs,
+  });
+
+/** One vector per text, in order, from the Go gateway in apps/ax-harness/embedding. */
+export async function embedTexts(texts: string[], timeoutMs = 15_000): Promise<number[][]> {
+  const config = embeddingConfig();
+  if (!config) throw new EmbeddingOffError();
+  const input = texts.map((text) => text.trim());
+  if (input.length === 0 || input.length > MAX_EMBEDDING_INPUTS) throw new Error(`embedTexts: give 1 to ${MAX_EMBEDDING_INPUTS} texts`);
+  if (input.some((text) => !text)) throw new Error("embedText: text is empty");
+  if (input.some((text) => text.length > 32000)) throw new Error("embedText: text exceeds 32000 characters");
+  const request: EmbeddingRequest = {
+    url: config.url,
+    model: config.model,
+    ...(config.dimensions ? { dimensions: config.dimensions } : {}),
+    input,
+  };
+  const result = await (transportOverride ?? viaGateway)(request, config.apiKey ?? "", timeoutMs);
+  const vectors = result?.vectors;
+  if (!Array.isArray(vectors) || vectors.length !== input.length || !vectors.every((vector) => validVector(vector, config.dimensions))) {
+    throw new Error("embedding service returned an incompatible vector");
+  }
+  return vectors;
+}
+
+export async function embedText(text: string, timeoutMs = 15_000): Promise<number[]> {
+  const [vector] = await embedTexts([text], timeoutMs);
+  return vector!;
+}
+
+function validVector(vector: unknown, dimensions: number | null): vector is number[] {
+  return Array.isArray(vector) && vector.length > 0 && vector.length <= MAX_DIMENSIONS &&
+    (dimensions === null || vector.length === dimensions) &&
+    vector.every((value: unknown) => typeof value === "number" && Number.isFinite(value));
+}
+
 export function vectorLiteral(vec: number[]): string {
   return `[${vec.join(",")}]`;
 }

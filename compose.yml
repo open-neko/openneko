@@ -5,528 +5,99 @@ x-neko-app-env: &neko-app-env
   XDG_CACHE_HOME: /tmp/openneko-home/.cache
   XDG_DATA_HOME: /tmp/openneko-home/.local/share
   XDG_STATE_HOME: /tmp/openneko-home/.local/state
-  NEKO_PG_HOST: neko-db
-  NEKO_PG_PORT: "5432"
-  NEKO_PG_USER: neko
-  NEKO_PG_PASSWORD: secret
-  NEKO_PG_DATABASE: neko
-  RECORDS_PG_HOST: records-db
-  RECORDS_PG_PORT: "5432"
-  RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-  RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-  RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-  OPENNEKO_RECORDS_GRAPHJIN_URL: http://records-graphjin:8090
-  NEKO_EMBEDDING_URL: http://embedding:5003
-  NO_PROXY: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
-  no_proxy: localhost,127.0.0.1,::1,neko-db,records-db,neko-backup,worker,web,embedding,librarian,neko-graphjin,records-graphjin,records-watch-graphjin,graphjin,adventureworks-db,host.docker.internal,host.internal
+  OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
+  OPENNEKO_SERVE_URL: http://openneko-serve:8090
+  NEKO_EMBEDDING_URL: ${NEKO_EMBEDDING_URL:-}
+  NEKO_EMBEDDING_MODEL: ${NEKO_EMBEDDING_MODEL:-}
+  NEKO_EMBEDDING_API_KEY_FILE: /run/secrets/embedding-api-key
+  OPENNEKO_METRICS_REFRESH: ${OPENNEKO_METRICS_REFRESH:-off}
+  NEKO_EMBEDDING_DIMENSIONS: ${NEKO_EMBEDDING_DIMENSIONS:-}
+  NO_PROXY: localhost,127.0.0.1,::1,neko-db,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+  no_proxy: localhost,127.0.0.1,::1,neko-db,web,graphjin,openneko-serve,adventureworks-db,host.docker.internal,host.internal
+
+x-database-url: &database-url
+  - source: database-url
+    uid: "1001"
+    gid: "1001"
+    mode: 0400
+
+x-sandbox-key: &sandbox-key
+  source: sandbox-key
+  uid: "1001"
+  gid: "1001"
+  mode: 0400
+
+x-embedding-api-key: &embedding-api-key
+  source: embedding-api-key
+  uid: "1001"
+  gid: "1001"
+  mode: 0400
 
 services:
-  neko-db:
-    # pgvector image — base postgres:16 + the vector extension preinstalled.
-    # work_memory.embedding stores 384-dim vectors from transformers.js
-    # (Xenova/all-MiniLM-L6-v2) for context-based memory retrieval.
-    build:
-      context: .
-      target: neko-db
-    restart: unless-stopped
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        if [ -f "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ] && [ -s "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ]; then
-          PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        else
-          # Plain `docker compose up` from a fresh checkout: the key file is
-          # provisioned by `openneko start`, so it does not exist yet and
-          # Docker mounts an empty directory in its place. Fall back to the
-          # well-known development cipher pass instead of dying on cat.
-          # (A literal, not an env var: the packaged compose's security test
-          # forbids the pass in container environment metadata, and the
-          # parity test keeps both files' environment lists identical.
-          # Real deployments override by providing OPENNEKO_BACKUP_KEY_FILE.)
-          echo "openneko: $${PGBACKREST_REPO1_CIPHER_PASS_FILE} is not a readable key file; using the development cipher pass" >&2
-          PGBACKREST_REPO1_CIPHER_PASS="openneko-development-backup-key-change-me"
-        fi
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-postgres-entrypoint "$$@"
-      - --
-    environment:
-      POSTGRES_USER: neko
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: neko
-      PGDATA: /var/lib/postgresql/neko
-      OPENNEKO_PGBACKREST_STANZA: openneko-metadata
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
-    ports:
-      - "127.0.0.1:${OPENNEKO_DB_PORT:-5432}:5432"
-    volumes:
-      - neko-db-data:/var/lib/postgresql/neko
-      - neko-db-socket:/var/run/postgresql
-      - ${OPENNEKO_BACKUP_KEY_FILE:-./.openneko/development-backup-key}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:-./.openneko/backups}:/var/lib/pgbackrest
-    command:
-      - postgres
-      - -c
-      - archive_mode=on
-      - -c
-      - archive_command=pgbackrest --stanza=openneko-metadata archive-push %p
-      - -c
-      - archive_timeout=60s
-      - -c
-      - wal_compression=on
-      - -c
-      - temp_file_limit=5GB
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U neko -d neko
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  # Business data lives in its own Postgres lifecycle. It starts with the
-  # worker so an approved app_create can execute without host-level Docker
-  # access or a second, out-of-band operator step.
-  records-db:
-    build:
-      context: .
-      target: records-db
-    restart: unless-stopped
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        if [ -f "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ] && [ -s "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ]; then
-          PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        else
-          # Plain `docker compose up` from a fresh checkout: the key file is
-          # provisioned by `openneko start`, so it does not exist yet and
-          # Docker mounts an empty directory in its place. Fall back to the
-          # well-known development cipher pass instead of dying on cat.
-          # (A literal, not an env var: the packaged compose's security test
-          # forbids the pass in container environment metadata, and the
-          # parity test keeps both files' environment lists identical.
-          # Real deployments override by providing OPENNEKO_BACKUP_KEY_FILE.)
-          echo "openneko: $${PGBACKREST_REPO1_CIPHER_PASS_FILE} is not a readable key file; using the development cipher pass" >&2
-          PGBACKREST_REPO1_CIPHER_PASS="openneko-development-backup-key-change-me"
-        fi
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-postgres-entrypoint "$$@"
-      - --
-    environment:
-      POSTGRES_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      POSTGRES_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-      POSTGRES_DB: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-      PGDATA: /var/lib/postgresql/records
-      OPENNEKO_PGBACKREST_STANZA: openneko-records
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
-    ports:
-      - "127.0.0.1:${OPENNEKO_RECORDS_DB_PORT:-5434}:5432"
-    volumes:
-      - records-db-data:/var/lib/postgresql/records
-      - records-db-socket:/var/run/postgresql
-      - ${OPENNEKO_BACKUP_KEY_FILE:-./.openneko/development-backup-key}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:-./.openneko/backups}:/var/lib/pgbackrest
-    command:
-      - postgres
-      - -c
-      - archive_mode=on
-      - -c
-      - archive_command=pgbackrest --stanza=openneko-records archive-push %p
-      - -c
-      - archive_timeout=60s
-      - -c
-      - wal_compression=on
-      - -c
-      - temp_file_limit=5GB
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  # One-shot storage ABI gate. It repairs persisted indexes in BOTH managed
-  # databases after a libc/collation-runtime transition and records the
-  # enforced contract independently of schema migrations. Every database
-  # consumer waits for successful completion, so an incompatible image fails
-  # closed before application reads or writes begin.
-  storage-reconcile:
+  # Start steps. Services in the "steps" profile are not part of `up`.
+  # `openneko start`, `upgrade` and `restore` run them in this order with
+  # `compose run --rm` and stop at the first failure. From a source checkout,
+  # `docker compose run --rm openneko-serve-init` runs the whole chain.
+  #
+  # Checks an external database before the other steps: connection, TLS,
+  # the vector extension and the rights to create the serve roles. It prints
+  # the SQL an operator must run when a right is missing.
+  database-check:
+    profiles: ["steps"]
     build:
       context: .
       target: neko-cli
     restart: "no"
-    command: ["storage", "reconcile"]
-    depends_on:
-      neko-db:
-        condition: service_healthy
-      records-db:
-        condition: service_healthy
+    command: ["database", "check"]
+    secrets: *database-url
     environment:
-      NEKO_PG_HOST: neko-db
-      NEKO_PG_PORT: "5432"
-      NEKO_PG_USER: neko
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
-      NEKO_PG_DATABASE: neko
-      RECORDS_PG_HOST: records-db
-      RECORDS_PG_PORT: "5432"
-      RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-      RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
       XDG_CONFIG_HOME: /config
     volumes:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
 
-  # Encrypted whole-deployment backups: paired pgBackRest base backups for
-  # metadata + records, continuous WAL from both database containers, and an
-  # encrypted snapshot of the config/GraphJin volumes in one global manifest.
-  # Its read-only mounts also power the storage-capacity endpoint used for
-  # records write backpressure.
-  neko-backup:
+  # Reports the collation state of the external database. The bundled
+  # database overlay turns it into the storage ABI gate, which repairs.
+  storage-reconcile:
+    profiles: ["steps"]
     build:
       context: .
-      target: neko-backup
-    restart: unless-stopped
-    command: ["serve"]
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        if [ -f "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ] && [ -s "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ]; then
-          PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        else
-          # Plain `docker compose up` from a fresh checkout: the key file is
-          # provisioned by `openneko start`, so it does not exist yet and
-          # Docker mounts an empty directory in its place. Fall back to the
-          # well-known development cipher pass instead of dying on cat.
-          # (A literal, not an env var: the packaged compose's security test
-          # forbids the pass in container environment metadata, and the
-          # parity test keeps both files' environment lists identical.
-          # Real deployments override by providing OPENNEKO_BACKUP_KEY_FILE.)
-          echo "openneko: $${PGBACKREST_REPO1_CIPHER_PASS_FILE} is not a readable key file; using the development cipher pass" >&2
-          PGBACKREST_REPO1_CIPHER_PASS="openneko-development-backup-key-change-me"
-        fi
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-backup-entrypoint "$$@"
-      - --
-    depends_on:
-      neko-db:
-        condition: service_healthy
-      records-db:
-        condition: service_healthy
-      storage-reconcile:
-        condition: service_completed_successfully
-    environment:
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
-      NEKO_PG_USER: neko
-      NEKO_PG_DATABASE: neko
-      RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-      OPENNEKO_BACKUP_INTERVAL_SEC: ${OPENNEKO_BACKUP_INTERVAL_SEC:-86400}
-      OPENNEKO_BACKUP_RETENTION_FULL: ${OPENNEKO_BACKUP_RETENTION_FULL:-7}
-      OPENNEKO_BACKUP_RETENTION_DIFF: ${OPENNEKO_BACKUP_RETENTION_DIFF:-4}
-    volumes:
-      - neko-db-data:/var/lib/postgresql/neko:ro
-      - records-db-data:/var/lib/postgresql/records:ro
-      - neko-db-socket:/sockets/neko:ro
-      - records-db-socket:/sockets/records:ro
-      - openneko-config:/snapshots/config:ro
-      - openneko-graphjin-cli:/snapshots/graphjin:ro
-      - openneko-records-graphjin:/snapshots/records-graphjin:ro
-      - openneko-plugins:/snapshots/plugins:ro
-      - openneko-agent-home:/volumes/staging:ro
-      - ${OPENNEKO_HOST_CONFIG_DIR:-./.openneko/host-config}:/snapshots/host-config:ro
-      - ${OPENNEKO_BACKUP_KEY_FILE:-./.openneko/development-backup-key}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:-./.openneko/backups}:/var/lib/pgbackrest
-    expose:
-      - "9470"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9470/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  # Destructive restore is isolated behind an explicit profile. The host CLI
-  # stops dependents and databases before running this one-shot with RW mounts.
-  neko-restore:
-    profiles: ["ops"]
-    build:
-      context: .
-      target: neko-backup
-    entrypoint:
-      - /bin/sh
-      - -ceu
-      - |
-        if [ -f "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ] && [ -s "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}" ]; then
-          PGBACKREST_REPO1_CIPHER_PASS=$$(cat "$${PGBACKREST_REPO1_CIPHER_PASS_FILE}")
-        else
-          # Plain `docker compose up` from a fresh checkout: the key file is
-          # provisioned by `openneko start`, so it does not exist yet and
-          # Docker mounts an empty directory in its place. Fall back to the
-          # well-known development cipher pass instead of dying on cat.
-          # (A literal, not an env var: the packaged compose's security test
-          # forbids the pass in container environment metadata, and the
-          # parity test keeps both files' environment lists identical.
-          # Real deployments override by providing OPENNEKO_BACKUP_KEY_FILE.)
-          echo "openneko: $${PGBACKREST_REPO1_CIPHER_PASS_FILE} is not a readable key file; using the development cipher pass" >&2
-          PGBACKREST_REPO1_CIPHER_PASS="openneko-development-backup-key-change-me"
-        fi
-        export PGBACKREST_REPO1_CIPHER_PASS
-        unset PGBACKREST_REPO1_CIPHER_PASS_FILE
-        exec /usr/local/bin/openneko-backup-entrypoint "$$@"
-      - --
-    environment:
-      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/openneko-backup-key
-      OPENNEKO_BACKUP_RESTORE_MODE: "1"
-    volumes:
-      - neko-db-data:/restore/neko
-      - records-db-data:/restore/records
-      - openneko-config:/restore/config
-      - openneko-graphjin-cli:/restore/graphjin
-      - openneko-records-graphjin:/restore/records-graphjin
-      - openneko-plugins:/restore/plugins
-      - ${OPENNEKO_HOST_CONFIG_DIR:-./.openneko/host-config}:/restore/host-config
-      - ${OPENNEKO_BACKUP_KEY_FILE:-./.openneko/development-backup-key}:/run/secrets/openneko-backup-key:ro
-      - ${OPENNEKO_BACKUP_REPOSITORY:-./.openneko/backups}:/var/lib/pgbackrest
-
-  # One-shot ownership repair for the generated records config volume. Docker
-  # creates a fresh named volume as root before the non-root worker mounts it;
-  # this also repairs volumes created by an older release during upgrades.
-  records-graphjin-config-init:
-    image: alpine:3.22
-    user: "0:0"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        mkdir -p /config/watch
-        chown -R 1001:1001 /config
-        chmod 0700 /config /config/watch
-    volumes:
-      - openneko-records-graphjin:/config
+      target: neko-cli
     restart: "no"
-
-  # Dedicated records data plane. Its supervisor stays stopped until the
-  # worker has generated a complete, live-catalog-derived RBAC config into the
-  # shared volume, and stops again around every schema projection.
-  records-graphjin:
-    build:
-      context: .
-      target: records-graphjin
-    user: "1001:999"
-    restart: unless-stopped
-    depends_on:
-      records-graphjin-config-init:
-        condition: service_completed_successfully
-      records-db:
-        condition: service_healthy
-      storage-reconcile:
-        condition: service_completed_successfully
-    volumes:
-      - openneko-records-graphjin:/config:ro
-    expose:
-      - "8090"
-    healthcheck:
-      # Readiness is the endpoint accepting HTTP, not anonymous GraphQL access.
-      # Generated RBAC may intentionally answer this unauthenticated GET with a
-      # non-2xx status, so do not make curl fail on the response status itself.
-      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8090/api/v1/graphql"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  # Native durable gj_watch runner. This is deliberately separate from the
-  # human/chat records GraphJin instance because GraphJin source mode and the
-  # generated legacy per-table RBAC model are mutually exclusive. Its distinct
-  # signing domain also prevents human records tokens from reaching watch
-  # control roots. The worker fences and projects both instances together
-  # around schema changes.
-  records-watch-graphjin:
-    build:
-      context: .
-      target: records-graphjin
-    user: "1001:999"
-    restart: unless-stopped
-    depends_on:
-      records-graphjin-config-init:
-        condition: service_completed_successfully
-      records-db:
-        condition: service_healthy
-      storage-reconcile:
-        condition: service_completed_successfully
+    command: ["storage", "reconcile", "--report-only"]
+    secrets: *database-url
     environment:
-      OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR: /config/watch
-    volumes:
-      - openneko-records-graphjin:/config:ro
-    expose:
-      - "8090"
-    healthcheck:
-      # The private watch endpoint likewise rejects unauthenticated GraphQL;
-      # receiving an HTTP response is its readiness signal.
-      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8090/api/v1/graphql"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  # Customer-data GraphJin. This is the endpoint stored per organization and
-  # configured to point at the customer's existing databases/APIs. A fresh
-  # production install starts with only GraphJin's governed config plane; the
-  # demo overlay adds AdventureWorks as its initial data source.
-  graphjin-config-init:
-    image: alpine:3.20
-    user: "0:0"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        if [ ! -f /config/agentic.yml ]; then
-          cp /seed/customer.sources.yml /config/agentic.yml
-          KEY=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')
-          sed -i "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$$KEY|" /config/agentic.yml
-        fi
-        cp /seed/graphjin-supervisor.sh /config/.openneko-graphjin-supervisor.sh.tmp
-        chmod 0755 /config/.openneko-graphjin-supervisor.sh.tmp
-        mv /config/.openneko-graphjin-supervisor.sh.tmp /config/.openneko-graphjin-supervisor.sh
-        chown -R 1001:999 /config 2>/dev/null || true
-        find /config -type d -exec chmod 0700 {} +
-        find /config -type f -exec chmod 0600 {} +
-        chmod 0700 /config/.openneko-graphjin-supervisor.sh
-    volumes:
-      - openneko-graphjin-cli:/config
-      - ./db/graphjin/customer.sources.example.yml:/seed/customer.sources.yml:ro
-      - ./scripts/graphjin-supervisor.sh:/seed/graphjin-supervisor.sh:ro
-    restart: "no"
-
-  # One-shot: resolves (or creates, under an advisory lock) the single org
-  # row and reconciles the per-org JWT secret into the customer GraphJin
-  # sources config BEFORE the server's first start. GraphJin 3.18 does not
-  # hot-reload auth keys; expressing that as `graphjin -> worker` cycled
-  # against the adventureworks overlay's `worker -> graphjin` edge, so this
-  # one-shot carries the ordering instead. Reconciles unconditionally, so
-  # key rotation, restores, and partial volume wipes self-heal on the next
-  # stack start.
-  graphjin-secret-init:
-    build:
-      context: .
-      target: worker
-    working_dir: /app
-    # Guarded for supervisor/image version skew: the main-supervisor deploy
-    # path pairs a supervisor (and this embedded compose) built from main
-    # with application images from the latest smoked RELEASE, which may
-    # predate the init script. Older images fall back to the worker's
-    # boot-time reconcile — the pre-secret-init behavior every released
-    # worker still carries — instead of failing the whole bring-up.
-    command:
-      - /bin/sh
-      - -c
-      - |
-        SCRIPT=node_modules/@neko/llm/src/graphjin/init-secret.mjs
-        if [ -f "$$SCRIPT" ]; then
-          exec node --import tsx/esm "$$SCRIPT"
-        fi
-        echo "[graphjin-secret-init] image predates the embedded secret-init script; the worker reconciles the per-org JWT secret at boot instead"
-    depends_on:
-      neko-migrate:
-        condition: service_completed_successfully
-      openneko-config-init:
-        condition: service_completed_successfully
-      graphjin-config-init:
-        condition: service_completed_successfully
-    environment:
-      <<: *neko-app-env
-      GRAPHJIN_SOURCES_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
+      XDG_CONFIG_HOME: /config
     volumes:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
-      - openneko-graphjin-cli:/config/graphjin
-    restart: "no"
 
-  graphjin:
-    # Use the same locally built, pinned runtime as the records data planes.
-    # Released installs use the matching released image in the embedded
-    # Compose file; this source Compose file must exercise the current pin.
-    build:
-      context: .
-      target: records-graphjin
-    user: "1001:999"
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        if [ -x /usr/local/bin/openneko-graphjin-supervisor.sh ]; then
-          exec /usr/local/bin/openneko-graphjin-supervisor.sh "$$@"
-        fi
-        exec /bin/sh /config/.openneko-graphjin-supervisor.sh "$$@"
-      - --
-    restart: unless-stopped
-    depends_on:
-      graphjin-config-init:
-        condition: service_completed_successfully
-      # The per-org JWT secret is reconciled into agentic.yml by the
-      # graphjin-secret-init one-shot. GraphJin 3.18 does not hot-reload
-      # auth keys, so start only after that reconciliation has completed.
-      graphjin-secret-init:
-        condition: service_completed_successfully
-    ports:
-      - "127.0.0.1:${GRAPHJIN_PORT:-8080}:8080"
-    environment:
-      GO_ENV: agentic
-      GRAPHJIN_AGENT_API_KEY: ${GRAPHJIN_AGENT_API_KEY:-}
-      GJ_AGENT_PROVIDER: ${GRAPHJIN_AGENT_PROVIDER:-openai}
-      GJ_AGENT_MODEL: ${GRAPHJIN_AGENT_MODEL:-gpt-4.1-mini}
-    volumes:
-      - openneko-graphjin-cli:/config
-    command: ["serve", "--path", "/config"]
-    healthcheck:
-      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:8080/api/v1/graphql"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
-
-  # One-shot: applies SQL migrations to neko-db after both database volumes
-  # satisfy the enforced storage contract. Every long-running service depends
-  # on this completing successfully, so schema and storage are ready together.
+  # Applies SQL migrations after the storage gate.
   neko-migrate:
+    profiles: ["steps"]
     build:
       context: .
       target: neko-cli
     restart: "no"
     command: ["migrate"]
     depends_on:
-      neko-db:
-        condition: service_healthy
       storage-reconcile:
         condition: service_completed_successfully
-    # NEKO_PG_PASSWORD here is the bootstrap fallback only — once /setup
-    # rotates the password the openneko CLI's defaultConn reads it from
-    # /config/openneko/config.json on the shared volume. Without this volume
-    # mount, re-`compose up` after rotation would fail with stale creds.
+    # With the bundled database, config.json on the config volume holds the
+    # password that setup rotates.
+    secrets: *database-url
     environment:
-      NEKO_PG_HOST: neko-db
-      NEKO_PG_PORT: "5432"
-      NEKO_PG_USER: neko
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
-      NEKO_PG_DATABASE: neko
-      # Direct source Compose has no host supervisor process to inject the
-      # per-install derived gateway password. Keep migration + gateway on one
-      # stable development-only value; packaged installs derive a unique one.
-      OPENNEKO_OPENSHELL_DB_PASSWORD: ${OPENNEKO_OPENSHELL_DB_PASSWORD:-openneko-openshell-development-password}
-      # A managed migration must never fall back to a container-local key and
-      # rotate the role independently of the gateway credential.
-      OPENNEKO_REQUIRE_EXPLICIT_OPENSHELL_DB_PASSWORD: "1"
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
       OPENNEKO_SKIP_MIGRATE: ${OPENNEKO_SKIP_MIGRATE:-}
       XDG_CONFIG_HOME: /config
     volumes:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
 
   # The migration CLI runs as root and may create the shared config directory
-  # and secret key on first boot. Repair ownership before the non-root worker
-  # mounts the volume so a completely fresh Compose project can start.
+  # and secret key on first boot. Repair ownership before the non-root services
+  # mount the volume so a completely fresh Compose project can start.
   openneko-config-init:
+    profiles: ["steps"]
     image: alpine:3.22
     user: "0:0"
     entrypoint:
@@ -544,245 +115,133 @@ services:
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
     restart: "no"
 
-  neko-graphjin:
+  # Creates the serve roles of this database and sets their passwords,
+  # writes serve's credentials
+  # and creates the customer GraphJin config when it is missing. Serve holds
+  # no main database login and no secret-key.
+  openneko-serve-init:
+    profiles: ["steps"]
     build:
       context: .
-      target: neko-graphjin
-    restart: unless-stopped
+      target: neko-serve
+    command: ["serve-init", "--dir", "/credentials"]
     depends_on:
-      # neko-db must be reachable for graphjin to connect; neko-migrate must
-      # have finished so graphjin's schema cache reflects all pending
-      # migrations. db_schema_poll_duration: 10s in neko.yml also picks up
-      # post-boot migrations, but the explicit dep keeps first-boot
-      # deterministic.
-      neko-db:
-        condition: service_healthy
       neko-migrate:
         condition: service_completed_successfully
-    # The custom entrypoint reads the password from /openneko-config/config.json
-    # (written by the worker entrypoint + the /setup wizard) on every container
-    # start, so password rotation works after a simple `docker compose restart
-    # neko-graphjin`. NEKO_PG_PASSWORD here is the bootstrap fallback used the
-    # very first time, before config.json exists.
-    #
-    # OPENNEKO_CONFIG_VOLUME selects the source of /openneko-config. Default is
-    # the named volume `openneko-config`, shared with web+worker when they too
-    # run in compose. In host-hybrid dev (`pnpm dev:up`), it's overridden to the
-    # operator's `$HOME/.config/openneko` so host web/worker and in-Docker
-    # graphjin share the same physical config.json without a manual sync.
+      openneko-config-init:
+        condition: service_completed_successfully
+    secrets: *database-url
     environment:
-      NEKO_PG_PASSWORD: ${NEKO_PG_PASSWORD:-secret}
+      OPENNEKO_DATABASE_URL_FILE: /run/secrets/database-url
+      XDG_CONFIG_HOME: /config
+      OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
     volumes:
-      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/openneko-config:ro
+      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
+      - openneko-serve-credentials:/credentials
+      - openneko-graphjin-cli:/config/graphjin
+    restart: "no"
+
+  # openneko serve: each user's private files, their keyword index in
+  # OpenNeko's database, SQL over sheet tables, agent turns, the customer GraphJin on
+  # 8080 and the subscriptions GraphJin on 8089 (workflow outputs, read as
+  # the subscriptions role).
+  # Web calls it with short-lived tokens signed with a key derived
+  # from the secret-key. GraphJin does not reload auth keys, so the start
+  # steps write the per-org JWT secret before serve starts.
+  openneko-serve:
+    build:
+      context: .
+      target: neko-serve
+    command: ["serve"]
+    networks:
+      default:
+        aliases: [graphjin]
     ports:
+      - "127.0.0.1:${GRAPHJIN_PORT:-8080}:8080"
       - "127.0.0.1:${OPENNEKO_GRAPHJIN_PORT:-8089}:8089"
-    healthcheck:
-      # graphjin serves no /health route (it 500s); the GraphQL endpoint
-      # answering is the honest readiness signal.
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8089/api/v1/graphql"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  embedding:
-    # The listener is always available; ONNX/model memory exists only on demand.
-    image: ${OPENNEKO_EMBEDDING_IMAGE:-openneko-embedding:dev}
-    build:
-      context: .
-      target: embedding
-    restart: unless-stopped
+    secrets:
+      - *sandbox-key
     environment:
-      OPENNEKO_SERVICE_IDLE_TIMEOUT: ${OPENNEKO_EMBEDDING_IDLE_TIMEOUT:-5m}
-    read_only: true
-    cpus: ${OPENNEKO_EMBEDDING_CPUS:-1.0}
-    mem_limit: ${OPENNEKO_EMBEDDING_MEMORY:-1g}
-    pids_limit: 64
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    expose:
-      - "5003"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5003/health/ready"]
-      interval: 15s
-      timeout: 3s
-      retries: 3
-
-  librarian:
-    # OpenNeko's digital-document extractor. The selected Docling layout/table
-    # models are copied into this image at build time; model resolution is
-    # forced offline, so there is no first-use model pull. Deliberately its own
-    # container: the Torch stack and its CPU/RAM spikes have no place in the
-    # worker process that also runs watchers,
-    # actions, channels, and the sandbox broker. It is the ONLY extractor — the
-    # worker has no in-process fallback, so if this service is down, document
-    # distillation fails and is retried, rather than silently cataloging
-    # lower-fidelity text. A required part of the stack for the library feature.
-    image: ${OPENNEKO_LIBRARIAN_IMAGE:-openneko-librarian:dev}
-    build:
-      context: .
-      dockerfile: apps/librarian/Dockerfile
-      target: librarian
-    restart: unless-stopped
-    environment:
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
-      DOCLING_ARTIFACTS_PATH: /opt/docling/models
-      NEKO_LIBRARIAN_RESULT_TTL_SECONDS: ${OPENNEKO_LIBRARIAN_RESULT_TTL_SECONDS:-900}
-      NEKO_LIBRARIAN_RESULT_MAX_BYTES: ${OPENNEKO_LIBRARIAN_RESULT_MAX_BYTES:-536870912}
-      OPENNEKO_SERVICE_IDLE_TIMEOUT: ${OPENNEKO_LIBRARIAN_IDLE_TIMEOUT:-5m}
+      OPENNEKO_SERVE_CREDENTIALS: /credentials
+      OPENNEKO_SERVE_ADDR: 0.0.0.0:8090
+      OPENNEKO_FILES_DIR: /data/files
+      OPENNEKO_FILES_INDEX_DIR: /data/file-index
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/check/check.sock
+      OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
+      OPENNEKO_SANDBOX_KEY_FILE: /run/secrets/sandbox-key
+      OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_GRAPHJIN_ADDR: 0.0.0.0:8080
+      OPENNEKO_SUBSCRIPTIONS_ADDR: 0.0.0.0:8089
+      OPENNEKO_SUBSCRIPTIONS_DIR: /data/subscriptions
+      OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     volumes:
-      - librarian-results:/var/lib/neko-librarian/results
-    read_only: true
-    # The CLI sets this to min(host CPUs, 4). The one-CPU fallback keeps raw
-    # Compose use portable when the supervisor is not involved.
-    cpus: ${OPENNEKO_LIBRARIAN_CPUS:-1.0}
-    mem_limit: 4g
-    pids_limit: 256
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:size=512m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    expose:
-      - "5001"
-    healthcheck:
-      # The owned image deliberately has no curl dependency.
-      test:
-        - "CMD"
-        - "python3"
-        - "-c"
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5001/health/ready', timeout=5).status==200 else 1)"
-      interval: 15s
-      timeout: 8s
-      retries: 10
-      start_period: 60s
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-run:/run/openneko
+      - openneko-serve-credentials:/credentials:ro
+      - openneko-files:/data
+      - openneko-graphjin-cli:/config/graphjin
+    restart: unless-stopped
 
   web:
     build:
       context: .
       target: web
     depends_on:
-      # Schema is guaranteed ready by neko-migrate before web boots.
-      neko-migrate:
-        condition: service_completed_successfully
-      neko-graphjin:
+      openneko-serve:
         condition: service_started
-      graphjin:
-        condition: service_started
-      graphjin-secret-init:
-        condition: service_completed_successfully
-      # Web is the user-facing readiness boundary. Do not serve the temporary
-      # recovery screen while the control plane is still starting.
-      worker:
-        condition: service_healthy
+    secrets:
+      - source: database-url
+        uid: "1001"
+        gid: "1001"
+        mode: 0400
+      - *sandbox-key
+      - *embedding-api-key
     environment:
       <<: *neko-app-env
-      WORKER_ADMIN_URL: http://worker:4100
+      OPENNEKO_WEB_ADMIN_SOCKET: /tmp/openneko-web-admin.sock
       OPENNEKO_RESTART_WEB_ON_PASSWORD_CHANGE: "1"
       # Base URL for emailed sign-in links and OAuth callbacks. Set it to the
       # URL people open when the web port is behind a proxy or another host.
       OPENNEKO_PUBLIC_URL: ${OPENNEKO_PUBLIC_URL:-http://localhost:${OPENNEKO_PORT:-3000}}
       OPENNEKO_MAP_STYLE: ${OPENNEKO_MAP_STYLE:-}
-      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
+      OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
+      OPENNEKO_SERVE_SOCKET: /run/openneko/serve.sock
+      OPENNEKO_CONFIG_CHECK_SOCKET: /run/openneko/check/check.sock
+      OPENNEKO_SANDBOX_URL: ${OPENNEKO_SANDBOX_URL:-}
+      OPENNEKO_SANDBOX_KEY_FILE: /run/secrets/sandbox-key
+      OPENNEKO_AGENT_RUNS_DIR: /var/lib/openneko/agent-runs
     ports:
       - "${OPENNEKO_WEB_BIND_ADDRESS:-0.0.0.0}:${OPENNEKO_PORT:-3000}:8080"
     volumes:
-      # Honors OPENNEKO_CONFIG_VOLUME like neko-migrate/neko-graphjin, so the
+      # Honors OPENNEKO_CONFIG_VOLUME like neko-migrate, so the
       # host-hybrid dev layout shares one physical config dir (and one
       # secret-key) instead of splitting it across a named volume.
       - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
       - openneko-graphjin-cli:/config/graphjin
       - openneko-agent-home:/tmp/openneko-home
       - openneko-agent-tmp:/tmp/openneko-tmp
-    restart: unless-stopped
-
-  worker:
-    build:
-      context: .
-      target: worker
-    depends_on:
-      # Schema is guaranteed ready by neko-migrate before worker boots.
-      neko-migrate:
-        condition: service_completed_successfully
-      openneko-config-init:
-        condition: service_completed_successfully
-      records-db:
-        condition: service_healthy
-      neko-backup:
-        condition: service_healthy
-      records-graphjin:
-        condition: service_started
-      records-watch-graphjin:
-        condition: service_started
-      # The per-org JWT secret is seeded by graphjin-secret-init before
-      # either GraphJin or the worker starts; the worker's own boot pass is
-      # a re-verify. Depending on the one-shots avoids a startup cycle.
-      graphjin-config-init:
-        condition: service_completed_successfully
-      graphjin-secret-init:
-        condition: service_completed_successfully
-      librarian:
-        condition: service_healthy
-      embedding:
-        condition: service_healthy
-    environment:
-      <<: *neko-app-env
-      OPENNEKO_GRAPHJIN_URL: http://neko-graphjin:8089
-      OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml
-      RECORDS_PG_HOST: records-db
-      RECORDS_PG_PORT: "5432"
-      RECORDS_PG_USER: ${OPENNEKO_RECORDS_PG_USER:-records}
-      RECORDS_PG_PASSWORD: ${OPENNEKO_RECORDS_PG_PASSWORD:-records-secret}
-      RECORDS_PG_DATABASE: ${OPENNEKO_RECORDS_PG_DATABASE:-records}
-      OPENNEKO_RECORDS_GRAPHJIN_CONFIG_DIR: /config/records-graphjin
-      OPENNEKO_RECORDS_WATCH_GRAPHJIN_URL: http://records-watch-graphjin:8090
-      OPENNEKO_RECORDS_OPS_URL: http://neko-backup:9470
-      OPENNEKO_BACKUP_URL: http://neko-backup:9470
-      # Plugin manifest + per-user secrets live on the openneko-config
-      # volume, not under /app (which is read-only-ish post-build). The
-      # vendored `openneko` CLI on PATH writes to these same paths, so
-      # `openneko install …` from inside the worker hot-loads on the
-      # next action_request without a rebuild. Default config dir is
-      # /config so secrets land at /config/openneko/secrets.json.
-      OPENNEKO_PLUGINS_MANIFEST_PATH: /config/openneko/plugins.json
-      OPENNEKO_PLUGIN_INSTALL_DIR: /var/lib/openneko/plugins
-      # The library distiller's sole document extractor (Docling). Required:
-      # if the librarian service is unreachable, extraction fails and the
-      # document is retried — there is no in-worker fallback.
-      NEKO_LIBRARIAN_URL: http://librarian:5001
-      NEKO_LIBRARIAN_FINGERPRINT: neko-librarian:dev:docling-slim-2.124.0:layout-8f39ad3:tableformer-fc0f2d4:digital-text-v1
-    expose:
-      - "4100"
-    volumes:
-      - ${OPENNEKO_CONFIG_VOLUME:-openneko-config}:/config/openneko
-      - openneko-graphjin-cli:/config/graphjin
-      - openneko-records-graphjin:/config/records-graphjin
-      - openneko-agent-home:/tmp/openneko-home
-      - openneko-agent-tmp:/tmp/openneko-tmp
-      - openneko-plugins:/var/lib/openneko/plugins
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
+      - openneko-agent-runs:/var/lib/openneko/agent-runs
+      - openneko-run:/run/openneko
     restart: unless-stopped
 
 volumes:
-  librarian-results:
-  neko-db-data:
-  neko-db-socket:
-  records-db-data:
-  records-db-socket:
   openneko-config:
+  openneko-files:
+  openneko-serve-credentials:
   openneko-graphjin-cli:
-  openneko-records-graphjin:
   openneko-agent-home:
   openneko-agent-tmp:
-  openneko-plugins:
+  openneko-agent-runs:
+  openneko-run:
+
+secrets:
+  database-url:
+    environment: OPENNEKO_DATABASE_URL
+  # `openneko` sets these two to empty when they are unset; an empty secret
+  # mounts no file, and web and serve read that as off.
+  sandbox-key:
+    environment: OPENNEKO_SANDBOX_KEY
+  embedding-api-key:
+    environment: NEKO_EMBEDDING_API_KEY

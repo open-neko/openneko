@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/open-neko/neko/apps/openneko/internal/gjhost"
 )
 
 func TestClassifyStack(t *testing.T) {
@@ -15,8 +18,7 @@ func TestClassifyStack(t *testing.T) {
 		{"empty is down", nil, down},
 		{"all up + one-shot migrate done", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "worker", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "healthy"},
+			{Service: "openneko-serve", State: "running", Health: ""},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "storage-reconcile", State: "exited", ExitCode: 0},
 			{Service: "neko-migrate", State: "exited", ExitCode: 0},
@@ -24,31 +26,36 @@ func TestClassifyStack(t *testing.T) {
 		}, serving},
 		{"running without a healthcheck counts as serving", []composeService{
 			{Service: "web", State: "running", Health: ""},
+			{Service: "openneko-serve", State: "running", Health: ""},
 		}, serving},
+		{"a stack whose web and openneko-serve were never created is down", []composeService{
+			{Service: "neko-db", State: "running", Health: "healthy"},
+			{Service: "adventureworks-db", State: "running", Health: "healthy"},
+		}, down},
 		{"unhealthy is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "unhealthy"},
+			{Service: "openneko-serve", State: "running", Health: "unhealthy"},
 		}, degraded},
 		{"starting is degraded", []composeService{
-			{Service: "worker", State: "running", Health: "starting"},
+			{Service: "web", State: "running", Health: "healthy"},
+			{Service: "openneko-serve", State: "running", Health: "starting"},
 		}, degraded},
 		{"a long-running service exited non-zero is down", []composeService{
-			{Service: "worker", State: "exited", ExitCode: 1},
+			{Service: "openneko-serve", State: "exited", ExitCode: 1},
 		}, down},
 		{"down outranks degraded", []composeService{
 			{Service: "web", State: "running", Health: "starting"},
-			{Service: "worker", State: "exited", ExitCode: 1},
+			{Service: "openneko-serve", State: "exited", ExitCode: 1},
 		}, down},
 		{"a failed one-shot setup job is degraded, not down", []composeService{
 			{Service: "web", State: "running", Health: "healthy"},
-			{Service: "worker", State: "running", Health: "healthy"},
-			{Service: "neko-graphjin", State: "running", Health: "healthy"},
+			{Service: "openneko-serve", State: "running", Health: ""},
 			{Service: "neko-db", State: "running", Health: "healthy"},
 			{Service: "neko-adventureworks-seed", State: "exited", ExitCode: 1},
 		}, degraded},
 		{"a downed long-running service still outranks a failed one-shot job", []composeService{
 			{Service: "neko-adventureworks-seed", State: "exited", ExitCode: 1},
-			{Service: "worker", State: "exited", ExitCode: 1},
+			{Service: "openneko-serve", State: "exited", ExitCode: 1},
 		}, down},
 	}
 	for _, tc := range tests {
@@ -57,8 +64,8 @@ func TestClassifyStack(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("classifyStack = %v, want %v", got, tc.want)
 			}
-			if len(tc.services) > 0 && len(lines) != len(tc.services) {
-				t.Fatalf("expected one line per service, got %d for %d", len(lines), len(tc.services))
+			if len(tc.services) > 0 && len(lines) < len(tc.services) {
+				t.Fatalf("expected a line per service, got %d for %d", len(lines), len(tc.services))
 			}
 		})
 	}
@@ -89,5 +96,22 @@ func TestWriteStatusEmitsVerdictWord(t *testing.T) {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("state %v output missing %q: %s", state, want, b.String())
 		}
+	}
+}
+
+func TestGraphjinStatusLine(t *testing.T) {
+	since := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	down := describeGraphjinState(gjhost.State{State: gjhost.StateRestarting, Reason: "exit status 1: api: error initializing auth handler: auth: unknown auth type: x", Since: since, Restarts: 3})
+	line, ok := graphjinStatusLine("graphjin", down, false)
+	if ok || !strings.Contains(line, "restarting since 2026-11-10T09:00:00Z, 3 restarts: exit status 1: api: error initializing auth handler") {
+		t.Fatalf("line = %q, ok = %v", line, ok)
+	}
+	line, ok = graphjinStatusLine("graphjin", describeGraphjinState(gjhost.State{State: gjhost.StateRunning, Since: since}), true)
+	if !ok || line != "  ✅ graphjin — running since 2026-11-10T09:00:00Z" {
+		t.Fatalf("line = %q, ok = %v", line, ok)
+	}
+	line, ok = graphjinStatusLine("subscriptions", describeGraphjinState(gjhost.State{State: gjhost.StateRunning, Since: since}), true)
+	if !ok || line != "  ✅ subscriptions — running since 2026-11-10T09:00:00Z" {
+		t.Fatalf("line = %q, ok = %v", line, ok)
 	}
 }

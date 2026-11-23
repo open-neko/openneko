@@ -36,7 +36,7 @@ html {
 }
 
 /* Context navigation shares the title's content edge, including narrow forms. */
-body:has(> .app-rail-wrap) .app-header.has-context {
+body:has(.app-rail-wrap) .app-header.has-context {
   width: 100%;
   margin: 0 0 12px;
   padding: 20px 0 0;

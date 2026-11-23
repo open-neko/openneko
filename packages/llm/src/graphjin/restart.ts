@@ -20,13 +20,13 @@ export async function requestGraphjinRestart(configFile: string, endpoint: strin
     const acknowledged = await readFile(acknowledgementFile, "utf8").catch(() => "");
     if (acknowledged.trim() === token) {
       try {
-        await fetch(endpoint, {
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ query: "query OpenNekoRestartReady { __typename }" }),
           signal: AbortSignal.timeout(2_000),
         });
-        return;
+        if (response.status !== 503) return;
       } catch {
         // The supervisor acknowledged the replacement child; wait until its
         // listener is reachable.
@@ -35,6 +35,6 @@ export async function requestGraphjinRestart(configFile: string, endpoint: strin
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(
-    "graphjin_restart_required: the GraphJin supervisor did not acknowledge the restart",
+    "graphjin_restart_required: GraphJin did not answer after the restart; see `openneko graphjin status`",
   );
 }

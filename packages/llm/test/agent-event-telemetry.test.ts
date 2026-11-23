@@ -24,7 +24,7 @@ describe("agent event telemetry", () => {
     await telemetry.observeEvent({
       type: "tool_start",
       id: "tool-1",
-      name: "neko_graphjin_agent",
+      name: "mcp_neko_graphjin_execute_graphql",
       input: { authorization: `Bearer ${secret}`, query: payload },
     });
     await telemetry.observeEvent({
@@ -59,9 +59,7 @@ describe("agent event telemetry", () => {
       expect.arrayContaining([
         "model.request",
         "tool.start",
-        "delegation.start",
         "model.response",
-        "delegation.end",
         "tool.end",
         "run.first_output",
         "retry",
@@ -76,7 +74,7 @@ describe("agent event telemetry", () => {
     ).toEqual({ "openneko.retry.reason": "empty_output" });
   });
 
-  it("closes open model, delegation, tool, and stage spans on failure", async () => {
+  it("closes open model, tool, and stage spans on failure", async () => {
     const sink = new MemoryObservationSink();
     const observer = createHarnessObserver({ runId: "run-2", sinks: [sink] });
     const telemetry = createAgentEventTelemetry({
@@ -88,7 +86,7 @@ describe("agent event telemetry", () => {
     await telemetry.observeEvent({
       type: "tool_start",
       id: "tool-open",
-      name: "neko_graphjin_agent",
+      name: "mcp_neko_graphjin_execute_graphql",
       input: { value: "private" },
     });
     await telemetry.closeOpen({
@@ -99,14 +97,14 @@ describe("agent event telemetry", () => {
     });
 
     const endings = sink.observations.filter((item) =>
-      ["tool.end", "delegation.end", "model.response", "stage.end"].includes(
+      ["tool.end", "model.response", "stage.end"].includes(
         item.kind,
       ),
     );
-    expect(endings).toHaveLength(5);
+    expect(endings).toHaveLength(3);
     expect(
       endings.filter((item) => item.kind === "model.response"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(endings.every((item) => item.status === "error")).toBe(true);
   });
 

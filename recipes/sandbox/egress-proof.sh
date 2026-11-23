@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Usage: recipes/sandbox/egress-proof.sh <sandbox image>
+# Proves the sandbox's egress controls with real containers: the network
+# checks in TestEgressProof, then the neko_data and declared-query tests
+# against a sandbox on the closed network with an empty egress list.
+set -euo pipefail
+
+image="${1:?give the sandbox image, for example openneko-sandbox:local}"
+suffix="${OPENNEKO_EGRESS_PROOF_SUFFIX:-e}"
+here="$(cd "$(dirname "$0")" && pwd)"
+repo="$(cd "$here/../.." && pwd)"
+
+(cd "$here" && OPENNEKO_EGRESS_PROOF_IMAGE="$image" OPENNEKO_EGRESS_PROOF_REQUIRED=1 go test -count=1 -run TestEgressProof -v -timeout 20m .)
+
+work="$(mktemp -d)"
+project=openneko-egress-data-${suffix}
+compose() {
+  OPENNEKO_VERSION=source OPENNEKO_SANDBOX_IMAGE="$image" OPENNEKO_SANDBOX_DIR="$work/socket" OPENNEKO_SANDBOX_GID="$(id -g)" OPENNEKO_SANDBOX_KEY="$key" \
+    docker compose -p "$project" -f "$here/compose.native.yml" -f "$work/proof.yml" "$@"
+}
+key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+mkdir "$work/socket"
+cat > "$work/proof.yml" <<YAML
+services:
+  openneko-sandbox:
+    pull_policy: never
+    container_name: openneko-sandbox-data-${suffix}
+  openneko-egress:
+    pull_policy: never
+    container_name: openneko-egress-data-${suffix}
+networks:
+  openneko-sandbox:
+    name: openneko-sandbox-data-${suffix}
+  openneko-egress:
+    name: openneko-egress-data-${suffix}
+volumes:
+  openneko-sandbox-runs:
+    name: openneko-sandbox-runs-data-${suffix}
+  openneko-sandbox-homes:
+    name: openneko-sandbox-homes-data-${suffix}
+  openneko-egress-control:
+    name: openneko-egress-control-data-${suffix}
+YAML
+trap 'compose down -v -t 1 >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
+compose up -d --no-build --wait --wait-timeout 60
+timeout 30 bash -c "until [ -S '$work/socket/sandbox.sock' ]; do sleep 0.2; done"
+
+(cd "$repo/apps/openneko" && OPENNEKO_TEST_SANDBOX_URL="unix://$work/socket/sandbox.sock" OPENNEKO_TEST_SANDBOX_KEY="$key" \
+  go test -count=1 -v -run 'TestScriptDataIn|TestScriptDataSandboxHoldsNoSecret|TestDeclaredQueriesInTheRealSandbox' ./internal/webfront)

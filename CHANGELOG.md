@@ -1,5 +1,125 @@
 # Changelog
 
+## 6.0.0 (unreleased): upgrade notes
+
+OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined process, and data leaves the install only through steps that an admin sees. The upgrade from 5.0.0 also removes Records, the plugins, the Library, OpenShell and the embedding container; [INSTALL.md, "Upgrade from a release before November 2026"](INSTALL.md#upgrade-from-a-release-before-november-2026) tells what happens to their data. Read "What to do when you upgrade" at the end of this section before you start.
+
+### Security
+
+#### Agent turns run confined
+
+* **Breaking:** each agent turn runs in its own `openneko agent-runner` process, which confines itself before agent code runs. The runner has no network, starts no other program, reads and writes only the files of its turn, and holds no model key and no sandbox key. `openneko serve` hands it each link to the key door and the sandbox.
+* On Linux, the runner uses Landlock and a seccomp filter. The lowest kernel is Linux 5.13, with `landlock` in the active security modules. In a container, the engine must allow the Landlock and seccomp calls: Docker 20.10.18, containerd 1.6.0 or Podman 4.2.0 or later.
+* On macOS, the runner uses a Seatbelt profile (`sandbox_init`). Seatbelt on macOS 15.8 does not stop a read of the arguments and environment of another process of the same account. For this reason, no OpenNeko process keeps a secret in its arguments or environment: `openneko start`, web, serve and the customer GraphJin get their secrets on stdin. A URL with a login, or with a key, token, signature or password in its query, counts as a secret whatever its variable name, and so does `OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL`.
+* On Windows, serve starts each runner in an app container of its own, with no capabilities, in a job object that refuses a second process. The runner has no network and reaches only the folders of its turn and two sockets of serve. It needs Windows 10 1809, Windows Server 2019 or later, and the Windows Firewall service (MpsSvc) running; without it, serve refuses agent turns. In 5.0.0, turns ran unconfined.
+* **Breaking:** no mode of `openneko` runs an agent turn without confinement: production, development, demo, test installs and the eval install all use the confined runner. `OPENNEKO_SERVE_CONFINE=off` is gone, and the `ax-harness` binary refuses a turn. On a system that cannot confine, serve refuses each agent turn with one line that names what is missing. On RHEL 8 (kernel 4.18, no Landlock), agent turns are off until the host runs a kernel with Landlock, and serve's network part runs unconfined as the same system user as web. `openneko doctor` names the cause. Below Landlock ABI 9, the network part can reach the session bus of a desktop login; `openneko doctor` names it.
+* Serve runs as two processes. The child `openneko serve-network` runs the files service, both GraphJins and the config check; it keeps its network but cannot read the config folder, the serve credentials or the agent runs. The network part confines itself on Linux and macOS. On Linux, the part that starts the runners keeps only the agent runs, its socket, the key door and the sandbox socket. In production mode, serve does not start without the credentials from `openneko serve-init`; in Docker, `openneko start` and `openneko upgrade` run it.
+* Each runner has limits: CPU time to the turn's deadline, 8 GiB of address space, 128 MiB for one file, 1024 open files and 256 threads, on Linux and macOS. A runner that cannot start a thread ends only its own turn, with one line. Serve ends the runner's process group at turn end, when web hangs up, and at the deadline.
+* `openneko release-check --serve-socket` prints `serve_confinement=` and `serve_network_confinement=`, and fails when serve or its network part runs unconfined. The status page shows "Agent confinement".
+
+#### The key door
+
+* **Breaking:** `openneko serve` holds no model key. `openneko web` keeps the model, fallback and embedding keys in its key door and gives serve a token for one call. The door adds the key and forwards the call only to that route's provider. It removes the key from every answer, also from streamed answers.
+* Model calls now leave from web. If a firewall lets only serve reach the model APIs, let web reach them too.
+* At start, serve removes every `*_API_KEY`, `HF_TOKEN`, `VERTEX_ACCESS_TOKEN`, cloud credential, database URL and `NEKO_SECRET_KEY` variable from its environment and logs a warning. `release-check --serve-socket` fails when serve started with one of them, or runs in development mode.
+* Each turn has a model-call ceiling (`max_model_calls`, at most 2000), and its token allows 4 calls more. When serve and the door count a different number of calls, web writes `agent:model_calls_mismatch` to the audit chain.
+
+#### Terminal egress
+
+* **Breaking:** sandbox commands reach no host by default. The sandbox network is internal. The `openneko-egress` proxy is the only way out, and it lets a run reach only the hosts on its organization's list. An admin keeps the list at Admin, Settings, Agent. The list is empty after the upgrade.
+* **Breaking:** the terminal, the script skills and workflow script steps run only when the sandbox reports a closed network. On `open` or `unknown`, the terminal is off, and the settings page and the status page say why. A sandbox from before 6.0.0 gives no egress report, so the terminal stays off until you update it.
+* The sandbox sets its own firewall at start, so run users reach only the egress proxy, also on a Docker network with a route out. It needs `NET_ADMIN` and `SETPCAP` at start and drops both after.
+* The proxy logs each request with the run, the organization, the host and the result. Each change of the list, the Terminal setting or the sandbox's egress state goes in the audit chain.
+* The list refuses a wildcard on a public suffix, such as `*.co.uk` or `*.github.io`. A saved list with such a wildcard reads as empty after the upgrade.
+* For a sandbox on another host whose egress you enforce yourself, set `OPENNEKO_SANDBOX_EGRESS_BY_OPERATOR=1` for web.
+
+#### Data that leaves the install
+
+* **Breaking:** OpenNeko checks the body of each pack action when the run proposes it and again before it runs. OpenNeko refuses a Slack or Gmail body that would make the receiver fetch a URL or that hides a link's real host. It reduces Resend HTML to text, tables and links before the approver sees it, and refuses Resend attachments. The approval card names each host that the action reaches.
+* An approval card reads its headline from the action's own payload: the recipients, else the hosts, else the channel. It flags a recipient outside the organization's email domains and a host that no earlier action reached. For mail it reads To, Cc, Bcc and Reply-To, also from a raw Gmail message. The model's own text shows below, marked as the agent's.
+* **Breaking:** a run sends no GraphQL mutation to GraphJin. A change to an API source goes through a pack action, which the approval rules cover. A run also no longer gets the GraphJin tools that change the schema or the config, or that connect to a host the caller names.
+* **Breaking:** `send_webhook` refuses private addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7), as well as loopback, link-local, multicast and unspecified ones.
+* **Breaking:** a saved source password goes only to the host, port, database and login that it was saved with. A password saved before 6.0.0 has none of these, and each source that uses it is refused until an admin saves the password again. The Admin page lists each such password with a link.
+* `web_fetch` runs in `openneko web` and logs each URL with the organization and the run. It refuses shared (100.64.0.0/10) and NAT64 addresses.
+* `import_openapi_spec` fetches nothing by itself. It shows the admin the exact URL, and fetches only when the admin presses Import.
+* **Breaking:** the Parallel web search pack (0.2.0) asks for approval of each search, unless an admin chooses auto. The approval line says that the search text goes to Parallel.
+* An answer tool that names WebRTC is refused, the same as one that calls `fetch`.
+
+#### Workflows act as their owner
+
+* **Breaking:** a workflow belongs to the user whose run saved it. Its runs, watchers, data triggers, schedules, API calls and webhooks act with that user's access. In 5.0.0, a workflow saved outside a bot chat had no owner and ran as `service`, with admin access.
+* A workflow with no owner runs only when a pack installed it or an admin adopted it for the team. Any other workflow from 5.0.0 with no owner does not run after the upgrade, and its API and webhook callers get `409 workflow_not_runnable`.
+* **Breaking:** an admin approves one version of a workflow for API and webhook runs. When the workflow, its owner's skills or a team skill that one of its script steps runs changes, its API and webhook runs wait with `409 workflow_not_runnable` until an admin approves the new version at Admin, Settings, Workflow API. A workflow that has API access at the upgrade takes its current version as approved.
+
+#### Team items and rules are proposals
+
+* **Breaking:** a run no longer changes team memory, team skills, skill lessons or approval rules at once. A change from an admin's chat run is a proposal, and an admin confirms or rejects it at Settings, Approval rules, which shows each changed line. Only an admin's chat run proposes such a change, and the skill-learning job proposes lessons. A member's run still writes the member's own memories and skills at once. A memory that a person asks the agent to keep for themselves goes to that person's own memories at once, admins included; only a memory saved for the team is a proposal. The save result says where the memory went.
+* No run changes a rule that a pack installed.
+* **Breaking:** the risk threshold of an auto-approve rule uses the risk level of the action's definition, not the model's estimate. An action with no risk level goes to approval under a rule with a threshold.
+* **Breaking:** only the person who asked or an admin decides a request that no rule covers. In 5.0.0, any member could approve it, also from Slack or Telegram.
+
+#### Slack and Telegram answers
+
+* An admin chooses, at Admin, Settings, Channels, where OpenNeko answers in a Slack channel or a Telegram group: in the thread, privately to the person who asked, or in the thread only in listed channels and privately elsewhere. A private answer leaves a note with no data in the thread. Workflow outputs to a channel and Slack pack actions follow the same rule.
+* An organization that exists at the upgrade keeps answers in the thread. A new install starts with "in the thread only in listed channels", with an empty list.
+* Slack and Telegram replies go out with link previews off, so neither service fetches a URL that an answer names.
+
+#### The web app
+
+* `openneko web` sends a Content-Security-Policy on every response. The app loads its parts only from the install, and the answer map also loads tiles from `https://tiles.openfreemap.org`.
+* An image from another host shows as a link that names the host. A link to another host opens in a new tab with no referrer.
+* **Breaking:** while no sign-in provider is set up, every request acts as the first admin, so `openneko web` listens on 127.0.0.1 only and a Docker install publishes the web port on 127.0.0.1. Set up sign-in on `http://localhost:3000`, then start OpenNeko again to use the configured address.
+
+### Installs
+
+* Each release holds native archives for Linux, macOS and Windows, on amd64 and arm64. `install-native.sh` installs on Linux and macOS, and `install-native.ps1` on Windows, for one user with no admin rights. The Homebrew cask installs the macOS archive. `openneko upgrade` downloads the release for the host on all three systems.
+* The Docker stack runs on Linux and macOS. On Windows, use the native install.
+* **Breaking:** `openneko server-install` (Linux, systemd) runs web and serve as one system account, `openneko`, and each agent turn runs in the confined runner. The options `--control-user`, `--agent-user`, `--group` and `--one-user` are gone. An install that a 6.0.0 pre-release made with the accounts `openneko-agent` and `openneko-shared` moves to `openneko` when you upgrade it with `install-native.sh --upgrade`. The upgrade leaves the old accounts in place and prints the commands that remove them.
+* `server-install` on a running install stops both services before it sets the owners of the data folders, and starts them again after. It follows no link below the install's folders, deletes the folders of past agent turns, and a backup no longer holds them.
+* In Docker, web and serve read the database URL, the sandbox key and the embedding key from Docker secret files. Set the keys in the environment of `openneko start` or `openneko upgrade`, not in `compose.override.yml`.
+* `openneko start` and `openneko upgrade` ignore the entries of an old `compose.override.yml` for services that 6.0.0 does not run (`worker`, `librarian`, `embedding`, `neko-backup`, `neko-reaper`, OpenShell, Records and the old GraphJin services). They print one warning line and leave the file as it is. They also warn when the override gives the sandbox a route out.
+* The upgrade removes the untagged images of the OpenNeko repositories, such as the librarian image that 5.0.0 pulled by digest.
+* Each release publishes the sandbox image `ghcr.io/open-neko/neko-sandbox`, for amd64 and arm64. The recipe files name the image of the release and have no `build:` line; `openneko start` and `openneko upgrade` set `OPENNEKO_VERSION` for them.
+* **Breaking:** the sandbox image holds no compiler, pip, npm or git, and no Python document libraries (pypdf, python-docx, python-pptx, openpyxl, lxml, Pillow, XlsxWriter). A command cannot install a package at run time. A script skill that your organization wrote and that uses one of these fails; change it to use the bundled `xlsx`, `docx`, `pptx` and `pdf` skills or the Python standard library.
+* **Breaking:** sandbox runs share no place to write. A command's `TMPDIR`, `TEMP` and `TMP` point into the run's own home. A tool that writes to `/tmp` by a fixed path fails, and so does Python `multiprocessing`.
+* **Breaking:** the sandbox does not start without `OPENNEKO_SANDBOX_KEY`, and on TCP it needs a key of at least 32 characters. Make one with `openssl rand -hex 32`.
+* **Breaking:** serve's config check socket moves to its own folder: `check/check.sock` in the data folder of a native install, and `/run/openneko/check/check.sock` in Docker.
+* The web admin socket needs the token in `web-admin.sock.token` beside it. A script that calls the socket must send `Authorization: Bearer <token>`.
+* `openneko backup` and `openneko restore` stop before any change when `pg_dump` or `pg_restore` is older than the database server, and name both versions.
+* The install scripts and `openneko upgrade` download over https only.
+* On Windows, OpenNeko keeps its folders, keys and backups readable only by your account and SYSTEM, and refuses a data or config folder on a FAT or exFAT volume.
+
+### What users will notice
+
+* An approval card leads with who or what the action reaches, from the action itself, and flags what is unusual.
+* An image from another host in an answer shows as a link.
+* Team memory, team skill and rule changes from a chat wait for an admin. Skill learning no longer changes team skills by itself: each lesson waits for an admin too.
+* A web search through the Parallel pack asks for approval, unless an admin chose auto.
+* In a Slack channel or a Telegram group, an answer can come as a private message, with a note in the thread.
+* Each agent run gets a read-only copy of the library uploads of its person, at `library/uploads/<user>/<hash>/<name>` under the org folder, as in 4.9.1. A workflow run gets its owner's uploads. A run gets at most 100 MB, and 25 MB for one file; web logs each file that it leaves out. No run gets another member's uploads.
+* When a workflow script step fails, the run still ends, but its error names the step and the reason. The run page, the bot chat and the done event show it, and an API run reports the error code `script_step_failed`. The agent says in its reply that the step failed, and it does not reuse an output from before the failure.
+* On a Linux host with no Landlock, and on a Windows older than 10 1809 or Server 2019, agent questions are refused. Data reads and the rest of the app work.
+* A path in `file_read`, `file_edit` or `file_write` may start with `$RUN_DIR` or `$ARTIFACT_DIR`, as in a terminal command. The prompt names the run folder as an absolute path. Both the file tools and the terminal still start in the organisation folder.
+* A skill path still works after `cd "$RUN_DIR"`. The terminal and the file tools get `$SKILLS_DIR`, the run's skills folder, and the prompt gives that folder as an absolute path. A workflow step that names `skills/<name>/` names `$SKILLS_DIR/<name>/` in the prompt. A loaded skill guide names its own folder as an absolute path. The sandbox image must come from this release: an older one refuses `SKILLS_DIR`.
+* A skill script can make any number of data queries in a run, with any number of rows. One answer can be at most 64 MiB (5.0.0: 4 MiB, 10,000 rows, 50 queries and 15 minutes in each run). The turn and workflow time limits end a run that does not stop.
+
+### What to do when you upgrade
+
+Do these steps in order. Steps 1 to 5 come before the upgrade.
+
+1. Take a backup with `openneko backup`, and keep the backup key off the host.
+2. Check that the host can confine agent turns. On Linux, `uname -r` must show 5.13 or later, and `cat /sys/kernel/security/lsm` must hold `landlock`. On Windows, `cmd /c ver` must show build 17763 or later. Agent turns are off on RHEL 8. After the upgrade, `openneko doctor` shows the same check.
+3. Find the script skills of your organization that import pypdf, openpyxl, python-docx or python-pptx, call git, npm or pip, write to `/tmp` by a fixed path or use `multiprocessing`. Change them before the upgrade, or expect them to fail.
+4. Choose the hosts that sandbox commands must reach, and where Slack and Telegram answers go.
+5. Remove each `*_API_KEY` variable from an override of `openneko-serve`, and move the sandbox and embedding keys from `compose.override.yml` to the environment of `openneko upgrade`. Let web reach the model APIs.
+6. Run `openneko upgrade`. If you run the sandbox recipe, take the new recipe and start it again with `pull` and `up -d` ([recipes/sandbox/README.md](recipes/sandbox/README.md)).
+7. Run `openneko release-check --serve-socket` and `openneko release-check --sandbox`. Both must pass, and the second must print `sandbox_egress=closed`.
+8. At Admin, Settings, Workflow API, assign an owner to each workflow that lists no owner. Its API key and webhook keep working with no change for the caller.
+9. Add the sandbox hosts at Admin, Settings, Agent, and set the answer place at Admin, Settings, Channels.
+10. Save again each source password that the Admin page lists, with its host, port, database and login.
+11. If the Parallel pack is installed, answer its prompt at Settings, Approval rules.
+12. Ask one question in the app, and check that the answer comes back.
+
 ## [5.0.0](https://github.com/open-neko/openneko/compare/v4.9.2...v5.0.0) (2026-10-24)
 
 

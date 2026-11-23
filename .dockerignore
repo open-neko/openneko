@@ -59,7 +59,6 @@ apps/*/test
 **/*.test.ts
 **/*.test.tsx
 **/vitest.config.ts
-**/vitest.e2e.config.ts
 
 # Don't recursively COPY ourselves. entrypoint.sh is needed by the
 # Dockerfile's COPY step, so it stays in the build context.

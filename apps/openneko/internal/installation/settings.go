@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/open-neko/neko/apps/openneko/internal/instance"
+	"github.com/open-neko/neko/apps/openneko/internal/ownonly"
 )
 
 const (
@@ -29,9 +30,13 @@ type Settings struct {
 	Mode           string `json:"mode"`
 	WebPort        int    `json:"web_port"`
 	WebBindAddress string `json:"web_bind_address"`
-	OpenShellPort  int    `json:"openshell_port"`
-	DockerSubnet   string `json:"docker_subnet,omitempty"`
+	Runtime        string `json:"runtime,omitempty"`
+	WebDir         string `json:"web_dir,omitempty"`
 }
+
+const RuntimeNative = "native"
+
+func (s Settings) Native() bool { return s.Runtime == RuntimeNative }
 
 func Path(configDir string) string {
 	return filepath.Join(configDir, Filename)
@@ -80,6 +85,10 @@ func Save(configDir string, settings Settings) error {
 		_ = tmp.Close()
 		return err
 	}
+	if err := ownonly.Set(tmpPath); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if _, err := tmp.Write(raw); err != nil {
 		_ = tmp.Close()
 		return err
@@ -106,27 +115,21 @@ func (s Settings) Validate() error {
 	default:
 		return fmt.Errorf("mode must be prod, dev, or demo")
 	}
+	switch s.Runtime {
+	case "", "docker":
+	case RuntimeNative:
+		if s.Mode != "prod" {
+			return fmt.Errorf("the native runtime runs prod mode only")
+		}
+	default:
+		return fmt.Errorf("runtime must be docker or native")
+	}
 	if err := validatePort("web port", s.WebPort); err != nil {
 		return err
-	}
-	if err := validatePort("OpenShell port", s.OpenShellPort); err != nil {
-		return err
-	}
-	if s.WebPort == s.OpenShellPort {
-		return fmt.Errorf("web port and OpenShell port must be different")
 	}
 	address, err := netip.ParseAddr(strings.TrimSpace(s.WebBindAddress))
 	if err != nil || !address.Is4() {
 		return fmt.Errorf("web bind address must be an IPv4 address")
-	}
-	if s.Instance != "" && s.DockerSubnet == "" {
-		return fmt.Errorf("named installations require an isolated Docker subnet")
-	}
-	if s.DockerSubnet != "" {
-		prefix, err := netip.ParsePrefix(s.DockerSubnet)
-		if err != nil || !prefix.Addr().Is4() || prefix.Bits() != 24 || prefix != prefix.Masked() {
-			return fmt.Errorf("Docker subnet must be a canonical IPv4 /24")
-		}
 	}
 	return nil
 }
@@ -145,10 +148,6 @@ func ApplyEnvironment(settings Settings, overwrite bool) error {
 	values := map[string]string{
 		"OPENNEKO_PORT":             strconv.Itoa(settings.WebPort),
 		"OPENNEKO_WEB_BIND_ADDRESS": settings.WebBindAddress,
-		"OPENSHELL_PORT":            strconv.Itoa(settings.OpenShellPort),
-	}
-	if settings.DockerSubnet != "" {
-		values["OPENNEKO_DOCKER_SUBNET"] = settings.DockerSubnet
 	}
 	for key, value := range values {
 		if !overwrite && strings.TrimSpace(os.Getenv(key)) != "" {

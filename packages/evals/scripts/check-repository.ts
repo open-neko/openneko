@@ -53,7 +53,6 @@ for (const configPath of configPaths) {
   }
   for (const variant of loaded.config.variants) {
     if (variant.data_path === "graphjin-direct") coveredSemantics.add("DATA-DIRECT");
-    if (variant.data_path === "graphjin-agent") coveredSemantics.add("DATA-DELEGATED");
     if (variant.data_path === "planner-host-execute") {
       coveredSemantics.add("DATA-PLANNER-EXECUTE");
     }
@@ -160,7 +159,7 @@ const jobsSource = await readFile(
 );
 assertExactInventory(
   "worker queue",
-  quotedValues(between(jobsSource, "export const QUEUE = {", "} as const")),
+  quotedValues(between(jobsSource, "export const MOVED_QUEUES = [", "] as const")),
   inventory.worker_queues,
 );
 
