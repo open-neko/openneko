@@ -75,7 +75,7 @@ func TestKernelTasksIsAtLeastWhatProcShows(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("the kernel does not apply RLIMIT_NPROC to root")
 	}
-	seen, err := accountTasks(os.Getuid())
+	before, err := accountTasks(os.Getuid())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +83,11 @@ func TestKernelTasksIsAtLeastWhatProcShows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	after, err := accountTasks(os.Getuid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := min(before, after)
 	if got+8 < seen {
 		t.Fatalf("the kernel's count %d is below the %d tasks /proc shows", got, seen)
 	}
