@@ -19,11 +19,11 @@ import (
 
 // TestWorkflowStepSkillPathResolvesFromTheRunFolder runs a workflow whose step
 // names a skill by its path from the organisation folder. The model takes the
-// path from the prompt and reads the guide in the terminal after a cd to the
-// run folder, as agents do.
+// path from the prompt and runs the skill's script after a cd to the run
+// folder, as agents do. OPENNEKO_TEST_SANDBOX_URL runs it against the image.
 func TestWorkflowStepSkillPathResolvesFromTheRunFolder(t *testing.T) {
 	box := startRecipeSandbox(t, false)
-	a, _, wf := workflowTurnFront(t, `[{"id":"s1","description":"Follow skills/stock-check/SKILL.md"}]`)
+	a, _, wf := workflowTurnFront(t, `[{"id":"s1","description":"Use skills/stock-check/ for the count"}]`)
 	ws, err := turnWorkspace("org", wfTurnThread, wfTurnWorkRun)
 	if err != nil {
 		t.Fatal(err)
@@ -31,15 +31,20 @@ func TestWorkflowStepSkillPathResolvesFromTheRunFolder(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(ws.SkillsRoot, "stock-check"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	guide := "---\nname: stock-check\ndescription: Checks stock\n---\nGUIDE-BODY-7731\n"
-	if err := os.WriteFile(filepath.Join(ws.SkillsRoot, "stock-check", "SKILL.md"), []byte(guide), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(ws.SkillsRoot, "stock-check", "scripts"), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"SKILL.md": "---\nname: stock-check\ndescription: Checks stock\n---\nGUIDE-BODY-7731\n",
+		"scripts/x.py": "print('SCRIPT-RAN-' + str(5520 + 1))\n"} {
+		if err := os.WriteFile(filepath.Join(ws.SkillsRoot, "stock-check", name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("OPENNEKO_SANDBOX_URL", box.URL)
 	t.Setenv("OPENNEKO_SANDBOX_KEY", box.Key)
 	t.Setenv(OperatorEgressEnv, "1")
 
-	stepPath := regexp.MustCompile(`1\. Follow ([^ \\"]+/SKILL\.md)`)
+	stepPath := regexp.MustCompile(`1\. Use ([^ \\"]+)/ for`)
 	var mu sync.Mutex
 	var bodies []string
 	reply := func(body string) string {
@@ -54,8 +59,9 @@ func TestWorkflowStepSkillPathResolvesFromTheRunFolder(t *testing.T) {
 			if m := stepPath.FindStringSubmatch(bodies[0]); m != nil {
 				path = m[1]
 			}
-			command := `cd \"$RUN_DIR\" && cat \"` + path + `\" && test -f \"$SKILLS_DIR/stock-check/SKILL.md\" && echo SKILLS-DIR-OK`
-			return `{"javascriptCode":"const ran = await terminal({command:'` + command + `'}); final('Report', {ran});"}`
+			script := `cd \"$RUN_DIR\" && python3 \"` + path + `/scripts/x.py\"`
+			guide := `cat \"$SKILLS_DIR/stock-check/SKILL.md\"`
+			return `{"javascriptCode":"const ran = await terminal({command:'` + script + `'}); const guide = await terminal({command:'` + guide + `'}); final('Report', {ran, guide});"}`
 		}
 		return "The guide was read."
 	}
@@ -102,11 +108,11 @@ func TestWorkflowStepSkillPathResolvesFromTheRunFolder(t *testing.T) {
 		t.Fatalf("the model saw %d calls; result %+v\nevents %s", len(seen), res, strings.Join(log.all(), "\n"))
 	}
 	after := strings.Join(seen[2:], "\n")
-	if !strings.Contains(after, "GUIDE-BODY-7731") || !strings.Contains(after, "SKILLS-DIR-OK") {
-		at := max(0, strings.Index(after, "exit_code"))
+	if !strings.Contains(after, "SCRIPT-RAN-5521") || !strings.Contains(after, "GUIDE-BODY-7731") {
+		at := max(0, strings.Index(after, `\"ran\"`))
 		t.Fatalf("the terminal did not read the guide by the prompt's path: %s", after[at:min(len(after), at+400)])
 	}
-	if m := stepPath.FindStringSubmatch(seen[0]); m == nil || m[1] != "$SKILLS_DIR/stock-check/SKILL.md" {
+	if m := stepPath.FindStringSubmatch(seen[0]); m == nil || m[1] != "$SKILLS_DIR/stock-check" {
 		t.Fatalf("the step names the skill as %v", m)
 	}
 	if !regexp.MustCompile(`The skills folder is ` + regexp.QuoteMeta(agentRunsRoot()) + `/[^ ]+/skills\.`).MatchString(seen[0]) {
