@@ -110,3 +110,40 @@ func TestFileToolsAndTheTerminalShareTheRunFolders(t *testing.T) {
 		t.Fatalf("the terminal did not find the file in $RUN_DIR: %+v %v", result, err)
 	}
 }
+
+func TestFileToolsAndTheTerminalReadSkillsDir(t *testing.T) {
+	workspace := t.TempDir()
+	runDir, skills := filepath.Join(workspace, "runs", "r1"), filepath.Join(workspace, "skills")
+	for _, dir := range []string{runDir, filepath.Join(skills, "stock-check")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(skills, "stock-check", "SKILL.md"), []byte("guide text\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	environ := []string{"RUN_DIR=" + runDir, "SKILLS_DIR=" + skills}
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	f.SetEnviron(environ)
+	raw, _ := json.Marshal(map[string]string{"path": "${SKILLS_DIR}/stock-check/SKILL.md"})
+	if out, err := f.Capabilities()[0].Call(context.Background(), raw); err != nil || !strings.Contains(string(out), "guide text") {
+		t.Fatalf("file_read of ${SKILLS_DIR}/stock-check/SKILL.md: %s %v", out, err)
+	}
+	if runtime.GOOS == "windows" {
+		t.Log("no POSIX shell on Windows; the terminal half runs on Linux and macOS")
+		return
+	}
+	shell, err := NewShell(workspace, shExecutor{dir: workspace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell.SetEnviron(environ)
+	result, err := runShell(t, shell, context.Background(), `{"command":"cd \"$RUN_DIR\" && cat \"$SKILLS_DIR/stock-check/SKILL.md\""}`)
+	if err != nil || result.ExitCode != 0 || !strings.Contains(result.Output, "guide text") {
+		t.Fatalf("the terminal did not get SKILLS_DIR: %+v %v", result, err)
+	}
+}

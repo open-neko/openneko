@@ -420,6 +420,7 @@ export class AxBackend implements AgentBackend {
     if (workspace?.skillsRoot) {
       env.OPENNEKO_HARNESS_SKILLS_READ = "1";
       env.OPENNEKO_MCP_SKILLS_ROOT = opts.mcpBridgeEnv?.OPENNEKO_MCP_SKILLS_ROOT ?? workspace.skillsRoot;
+      env.SKILLS_DIR = env.OPENNEKO_MCP_SKILLS_ROOT;
     }
     if (opts.networkHosts?.length) env.OPENNEKO_HARNESS_WEB_HOSTS = opts.networkHosts.join(",");
     else delete env.OPENNEKO_HARNESS_WEB_HOSTS;

@@ -167,9 +167,9 @@ CommonJS (`.cjs`), because `import` does not read `NODE_PATH`.
   runs folder is mode 0711, so a run cannot list it. The sandbox shares no
   folder with OpenNeko.
 - A command's environment holds only `PATH`, `HOME`, `TMPDIR`, `TEMP`, `TMP`, `LANG`,
-  `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`.
-  `PATH` and `NODE_PATH` come from the service's own environment.
-  `SKILL_DIR` and the three after it are paths in the run's folder. With a
+  `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR`, `SKILLS_DIR` and
+  `PYTHONPATH`. `PATH` and `NODE_PATH` come from the service's own environment.
+  `SKILL_DIR` and the four after it are paths in the run's folder. With a
   proxy set, it also holds `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`,
   `https_proxy` and `NODE_USE_ENV_PROXY=1` (see [Egress](#egress)).
 - When a command ends, the sandbox kills every process of the run's user.

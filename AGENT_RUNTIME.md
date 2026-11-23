@@ -89,7 +89,7 @@ harness.
 |---|---|---|---|
 | `openneko web` | `neko`, 1001 (or `openneko` on a server install) | the `neko` database login, `secrets.json`, the in-process tool handlers and the key door | the stack's network, for the model APIs |
 | `openneko serve` | `neko`, 1001 (or `openneko` on a server install) | a door token for each call that runs, never a model key; the files service; the `neko_files_<database>` login and the derived token key; the customer GraphJin and its config | the stack's network, for the customer's data sources |
-| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own internal network, with no route out; it shares one volume with web and serve, `openneko-sandbox-socket`, which holds only its socket |
+| Sandbox service | root, to give each run its own user | **no secrets**; a command gets only `PATH`, `HOME`, `TMPDIR`, `LANG`, `NODE_PATH`, `SKILL_DIR`, `RUN_DIR`, `ARTIFACT_DIR`, `SKILLS_DIR` and `PYTHONPATH` (`recipes/sandbox/sandbox.go`) | only its own internal network, with no route out; it shares one volume with web and serve, `openneko-sandbox-socket`, which holds only its socket |
 | Egress proxy | `openneko-sandbox egress`, no capabilities, read-only root | **no secrets**; it asks the sandbox for a run's list over a root-only socket | the sandbox network and a network with a route out |
 
 Model keys stay in `openneko web`. Serve gets a door token that is valid

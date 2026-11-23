@@ -108,24 +108,36 @@ func TestEveryPromptCopyHoldsTheFailedStepRule(t *testing.T) {
 	}
 }
 
-func TestEveryPromptCopyNamesTheRunFolder(t *testing.T) {
-	ws := agentWorkspace{RunRoot: "/w/runs/r-1", ArtifactRoot: "/w/runs/r-1/artifacts"}
-	if chat := buildWorkPrompt(workPromptInput{Workspace: ws}); !strings.Contains(chat, "- Run folder ($RUN_DIR): /w/runs/r-1\n- Artifacts for this run ($ARTIFACT_DIR): /w/runs/r-1/artifacts\n") {
-		t.Error("the chat prompt does not name the run folder")
+func TestEveryPromptCopyNamesTheRunAndSkillsFolders(t *testing.T) {
+	ws := agentWorkspace{SkillsRoot: "/w/skills", RunRoot: "/w/runs/r-1", ArtifactRoot: "/w/runs/r-1/artifacts"}
+	if chat := buildWorkPrompt(workPromptInput{Workspace: ws}); !strings.Contains(chat, "- Skills ($SKILLS_DIR): /w/skills\n") ||
+		!strings.Contains(chat, "- Run folder ($RUN_DIR): /w/runs/r-1\n- Artifacts for this run ($ARTIFACT_DIR): /w/runs/r-1/artifacts\n") {
+		t.Error("the chat prompt does not name the run and skills folders")
 	}
-	if flow := buildWorkflowPrompt(workflowPromptInput{Workspace: ws}); !strings.Contains(flow, "The run folder is /w/runs/r-1.\nA path in a file tool or a terminal command may start with $RUN_DIR") {
-		t.Error("the workflow prompt does not name the run folder")
+	if chat := buildWorkPrompt(workPromptInput{Backend: "ax", Workspace: ws}); !strings.Contains(chat, "live under\n$SKILLS_DIR/<name>/;") {
+		t.Error("the chat prompt gives the skill folders a relative path")
+	}
+	if flow := buildWorkflowPrompt(workflowPromptInput{Workspace: ws}); !strings.Contains(flow, "The run folder is /w/runs/r-1. The skills folder is /w/skills.\nA path in a file tool or a terminal command may start with $RUN_DIR") {
+		t.Error("the workflow prompt does not name the run and skills folders")
 	}
 	for path, want := range map[string]string{
-		"../../../../packages/llm/src/work/prompt.ts":             "- Run folder ($RUN_DIR): ${workspace.runRoot}\n",
-		"../../../../packages/llm/src/workflows/runner-prompt.ts": "The run folder is ${workspace.runRoot}.\n",
+		"../../../../packages/llm/src/work/prompt.ts":             "- Skills ($SKILLS_DIR): ${workspace.skillsRoot}\n",
+		"../../../../packages/llm/src/workflows/runner-prompt.ts": "The run folder is ${workspace.runRoot}. The skills folder is ${workspace.skillsRoot}.\n",
 	} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(string(raw), want) {
-			t.Errorf("%s does not name the run folder", path)
+			t.Errorf("%s does not name the run and skills folders", path)
 		}
+	}
+}
+
+func TestWorkflowStepsNameSkillFoldersBySkillsDir(t *testing.T) {
+	steps := jsArray(mustJS(t, []byte(`[{"description":"Follow skills/stock-check/SKILL.md"},{"description":"Run ./skills/xlsx/run.py; keep myskills/x and https://h/skills/y"}]`)))
+	flow := buildWorkflowPrompt(workflowPromptInput{Steps: steps, Workspace: agentWorkspace{SkillsRoot: "/w/skills"}})
+	if !strings.Contains(flow, "  1. Follow $SKILLS_DIR/stock-check/SKILL.md\n  2. Run $SKILLS_DIR/xlsx/run.py; keep myskills/x and https://h/skills/y\n") {
+		t.Errorf("steps:\n%s", flow[:min(len(flow), 600)])
 	}
 }

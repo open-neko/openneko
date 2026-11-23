@@ -45,7 +45,7 @@ type Executor interface {
 
 // RunPathVars name the run's folders, which skills and
 // workflow scripts read. They hold paths, never secrets.
-var RunPathVars = []string{"RUN_DIR", "ARTIFACT_DIR", "PYTHONPATH"}
+var RunPathVars = []string{"RUN_DIR", "ARTIFACT_DIR", "SKILLS_DIR", "PYTHONPATH"}
 
 func NewShell(dir string, executor Executor) (*Shell, error) {
 	if !filepath.IsAbs(dir) {

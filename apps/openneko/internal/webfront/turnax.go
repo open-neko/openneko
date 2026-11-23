@@ -360,6 +360,7 @@ func axEnviron(cfg *llm.AxBackendConfig, o axTurnOptions, cwd string, limits age
 		if o.Workspace.SkillsRoot != "" {
 			add("OPENNEKO_HARNESS_SKILLS_READ", "1")
 			add("OPENNEKO_MCP_SKILLS_ROOT", o.Workspace.SkillsRoot)
+			add("SKILLS_DIR", o.Workspace.SkillsRoot)
 		}
 		add("RUN_DIR", o.Workspace.RunRoot)
 		add("ARTIFACT_DIR", o.Workspace.ArtifactRoot)

@@ -498,7 +498,7 @@ are listed under it; load the one that fits with discover({ skills: ["<name>"] }
 before you start. For work no listed guide covers, search with
 discover({ skills: ["<the task, in a few words>"] }). Follow a loaded guide over
 your own approach. Each guide and its supporting files live under
-skills/<name>/; read or edit them with your file tools. ${libraries}
+$SKILLS_DIR/<name>/; read or edit them with your file tools. ${libraries}
 
 ${creationGuidance}
 </skills>`;
@@ -522,7 +522,7 @@ function buildWorkspaceSection(
   return `<workspace>
 Your cwd is ${workspace.orgRoot}. Shared directories:
 
-- Skills: ${workspace.skillsRoot}
+- Skills ($SKILLS_DIR): ${workspace.skillsRoot}
 - Memory: ${workspace.memoryRoot}
 - Knowledge: ${workspace.knowledgeRoot}
 - Uploads for this thread: ${workspace.threadUploadsRoot}

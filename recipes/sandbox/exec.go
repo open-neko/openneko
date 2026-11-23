@@ -29,7 +29,7 @@ type command struct {
 	Credential     *syscall.Credential
 }
 
-var runPathVars = []string{"RUN_DIR", "ARTIFACT_DIR", "PYTHONPATH"}
+var runPathVars = []string{"RUN_DIR", "ARTIFACT_DIR", "SKILLS_DIR", "PYTHONPATH"}
 
 // runCommand kills the command's process group when it ends, times out or ctx ends;
 // background children would otherwise outlive the command.

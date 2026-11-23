@@ -337,6 +337,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -745,6 +746,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -938,6 +940,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -1089,6 +1092,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -1245,6 +1249,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -1389,6 +1394,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -1544,6 +1550,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -1718,6 +1725,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -1757,6 +1765,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -1937,6 +1946,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -2084,6 +2094,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"
@@ -2213,6 +2224,7 @@
       "OPENNEKO_HARNESS_WORKSPACE_DIR=/srv/neko/org",
       "OPENNEKO_MCP_ORG_ID=org-1",
       "OPENNEKO_MCP_SKILLS_ROOT=/srv/neko/org/skills",
+      "SKILLS_DIR=/srv/neko/org/skills",
       "OPENNEKO_MCP_THREAD_ID=thread-1",
       "PYTHONPATH=/srv/neko/org/runs/run-1/bin",
       "RUN_DIR=/srv/neko/org/runs/run-1"

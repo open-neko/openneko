@@ -55,17 +55,17 @@ func OpenFiles(dir string) (*Files, error) {
 func (f *Files) Close() error { return f.root.Close() }
 
 // SetEnviron gives the file tools the run's folders, so a path may start with
-// $RUN_DIR or $ARTIFACT_DIR as it may in the terminal.
+// $RUN_DIR, $ARTIFACT_DIR or $SKILLS_DIR as it may in the terminal.
 func (f *Files) SetEnviron(environ []string) {
 	f.vars = map[string]string{}
-	for _, name := range []string{"RUN_DIR", "ARTIFACT_DIR"} {
+	for _, name := range []string{"RUN_DIR", "ARTIFACT_DIR", "SKILLS_DIR"} {
 		if value := envValue(environ, name); value != "" {
 			f.vars[name] = value
 		}
 	}
 }
 
-var leadingRunVar = regexp.MustCompile(`^\$(?:\{(RUN_DIR|ARTIFACT_DIR)\}|(RUN_DIR|ARTIFACT_DIR)\b)`)
+var leadingRunVar = regexp.MustCompile(`^\$(?:\{(RUN_DIR|ARTIFACT_DIR|SKILLS_DIR)\}|(RUN_DIR|ARTIFACT_DIR|SKILLS_DIR)\b)`)
 
 func (f *Files) expand(path string) (string, bool) {
 	match := leadingRunVar.FindStringSubmatchIndex(path)
@@ -143,11 +143,12 @@ func (f *Files) Skills() ([]agent.Skill, error) {
 			if !ok {
 				return "", fmt.Errorf("skill %s has no frontmatter", name)
 			}
+			dir := filepath.ToSlash(filepath.Join(f.dir, name))
 			body = withSkillDir(body, filepath.Join(f.dir, name))
 			if len(body) > maxSkillContent {
-				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read the rest with file_read at skills/" + name + "/SKILL.md]"
+				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read the rest with file_read at " + dir + "/SKILL.md]"
 			}
-			return body, nil
+			return "This guide and its files are in " + dir + "/\n\n" + body, nil
 		}})
 	}
 	return skills, nil
@@ -208,7 +209,7 @@ func validPath(path string) bool {
 }
 
 // local accepts a workspace-relative path, or an absolute path inside the
-// workspace, also one that starts with $RUN_DIR or $ARTIFACT_DIR.
+// workspace, also one that starts with $RUN_DIR, $ARTIFACT_DIR or $SKILLS_DIR.
 func (f *Files) local(path string) (string, bool) {
 	path, ok := f.expand(path)
 	if !ok {

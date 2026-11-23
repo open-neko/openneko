@@ -233,7 +233,7 @@ The `harness` package reads these variables from the turn's environment:
 
 `terminal` sends each command to the sandbox service. The harness never runs
 a command itself. The request carries the command, the workspace, the
-skill folder and only `RUN_DIR`, `ARTIFACT_DIR` and `PYTHONPATH`. No broker
+skill folder and only `RUN_DIR`, `ARTIFACT_DIR`, `SKILLS_DIR` and `PYTHONPATH`. No broker
 binding and no model credential leave the harness. The sandbox runs
 `/bin/sh -c` in the workspace and kills the command's process group on a
 timeout or a cancel. A non-zero exit is a normal result with `exit_code` and

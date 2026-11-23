@@ -329,6 +329,7 @@ func TestSandboxRefusesPathsOutsideTheRun(t *testing.T) {
 		{Dir: "../.."},
 		{SkillDir: "/etc"},
 		{Env: map[string]string{"ARTIFACT_DIR": "/etc"}},
+		{Env: map[string]string{"SKILLS_DIR": "../.."}},
 		{Env: map[string]string{"RUN_DIR": "runs/../../.."}},
 		{Env: map[string]string{"PYTHONPATH": "lib:/usr/lib/evil"}},
 		{Env: map[string]string{"OPENAI_API_KEY": "leak"}},
@@ -348,16 +349,16 @@ func TestSandboxMapsRunPathsIntoTheRun(t *testing.T) {
 	server, socket := startSandbox(t, os.Geteuid() == 0)
 	client := newClient(socket)
 	answer, err := client.send(context.Background(), execBody{
-		Command:  `echo "$ARTIFACT_DIR|$PYTHONPATH|$SKILL_DIR"; pwd`,
+		Command:  `echo "$ARTIFACT_DIR|$PYTHONPATH|$SKILL_DIR|$SKILLS_DIR"; pwd`,
 		Dir:      "runs/r1",
 		SkillDir: "skills/xlsx",
-		Env:      map[string]string{"ARTIFACT_DIR": "runs/r1/artifacts", "PYTHONPATH": "lib:skills/xlsx"},
+		Env:      map[string]string{"ARTIFACT_DIR": "runs/r1/artifacts", "PYTHONPATH": "lib:skills/xlsx", "SKILLS_DIR": "skills"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(server.Workspaces, client.run)
-	want := fmt.Sprintf("%s/runs/r1/artifacts|%s/lib:%s/skills/xlsx|%s/skills/xlsx\n%s/runs/r1\n", dir, dir, dir, dir, dir)
+	want := fmt.Sprintf("%s/runs/r1/artifacts|%s/lib:%s/skills/xlsx|%s/skills/xlsx|%s/skills\n%s/runs/r1\n", dir, dir, dir, dir, dir, dir)
 	if answer.Output != want {
 		t.Fatalf("output = %q, want %q", answer.Output, want)
 	}

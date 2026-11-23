@@ -100,6 +100,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 * When a workflow script step fails, the run still ends, but its error names the step and the reason. The run page, the bot chat and the done event show it, and an API run reports the error code `script_step_failed`. The agent says in its reply that the step failed, and it does not reuse an output from before the failure.
 * On a Linux host with no Landlock, and on a Windows older than 10 1809 or Server 2019, agent questions are refused. Data reads and the rest of the app work.
 * A path in `file_read`, `file_edit` or `file_write` may start with `$RUN_DIR` or `$ARTIFACT_DIR`, as in a terminal command. The prompt names the run folder as an absolute path. Both the file tools and the terminal still start in the organisation folder.
+* A skill path still works after `cd "$RUN_DIR"`. The terminal and the file tools get `$SKILLS_DIR`, the run's skills folder, and the prompt gives that folder as an absolute path. A workflow step that names `skills/<name>/` names `$SKILLS_DIR/<name>/` in the prompt. A loaded skill guide names its own folder as an absolute path. The sandbox image must come from this release: an older one refuses `SKILLS_DIR`.
 * A skill script can make any number of data queries in a run, with any number of rows. One answer can be at most 64 MiB (5.0.0: 4 MiB, 10,000 rows, 50 queries and 15 minutes in each run). The turn and workflow time limits end a run that does not stop.
 
 ### What to do when you upgrade

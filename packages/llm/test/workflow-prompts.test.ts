@@ -72,7 +72,16 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(first.indexOf("<long_term_memory>")).toBeGreaterThan(first.indexOf("<files>"));
     expect(splitStablePrompt(first).stable).toBe(stable.trimEnd());
     expect(splitStablePrompt(second).stable).toBe(stable.trimEnd());
-    expect(splitStablePrompt(second).turn).toMatch(/^<files>\nThe run folder is \/tmp\/org\/runs\/r2\.\n[\s\S]*\nSave every report or file you make under \/tmp\/org\/runs\/r2\/artifacts/);
+    expect(splitStablePrompt(second).turn).toMatch(/^<files>\nThe run folder is \/tmp\/org\/runs\/r2\. The skills folder is \/tmp\/org\/skills\.\n[\s\S]*\nSave every report or file you make under \/tmp\/org\/runs\/r2\/artifacts/);
+  });
+
+  it("names a skill folder in a step by $SKILLS_DIR", () => {
+    const prompt = buildWorkflowRunnerPrompt({
+      ...base,
+      mcpTools: true,
+      workflow: { ...base.workflow, steps: [{ id: "s1", description: "Follow skills/stock-check/SKILL.md; keep myskills/x" }] },
+    });
+    expect(prompt).toContain("  1. Follow $SKILLS_DIR/stock-check/SKILL.md; keep myskills/x\n");
   });
 
   it("uses MCP tool names when mcpTools=true", () => {

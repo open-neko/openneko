@@ -81,6 +81,13 @@ function buildNativeDelegationBlock(backend: AgentBackendId): string {
   return backend === "ax" ? AX_DELEGATION : "";
 }
 
+const RELATIVE_SKILL_PATH = /(^|[\t\n\f\r "'`(\[<])(?:\.\/)?skills\/([a-z0-9])/g;
+
+/** Same as withSkillsDir() in workflowprompt.go. */
+export function withSkillsDir(text: string, staged: boolean): string {
+  return staged ? text.replace(RELATIVE_SKILL_PATH, (_, before: string, first: string) => `${before}$SKILLS_DIR/${first}`) : text;
+}
+
 export function buildWorkflowRunnerPrompt(
   input: BuildWorkflowRunnerPromptInput,
 ): string {
@@ -101,11 +108,12 @@ export function buildWorkflowRunnerPrompt(
   });
 
   const stepsBlock = workflow.steps
-    .map((step, index) =>
-      step.script
-        ? `  ${index + 1}. ${step.description} (script step: already ran; see <step_results>)`
-        : `  ${index + 1}. ${step.description}`,
-    )
+    .map((step, index) => {
+      const text = withSkillsDir(`${step.description}`, Boolean(workspace.skillsRoot));
+      return step.script
+        ? `  ${index + 1}. ${text} (script step: already ran; see <step_results>)`
+        : `  ${index + 1}. ${text}`;
+    })
     .join("\n");
 
   const overlay = workflow.systemPromptOverlay.trim();
@@ -190,9 +198,10 @@ ${VALUE_ESTIMATE_INSTRUCTIONS}`}
 ${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}
 
 <files>
-The run folder is ${workspace.runRoot}.
+The run folder is ${workspace.runRoot}. The skills folder is ${workspace.skillsRoot}.
 A path in a file tool or a terminal command may start with $RUN_DIR for
-the run folder or $ARTIFACT_DIR for the artifact folder.
+the run folder, $ARTIFACT_DIR for the artifact folder or $SKILLS_DIR for the
+skills folder.
 
 Save every report or file you make under ${workspace.artifactRoot}. Files
 saved there become downloads for the operator. Files saved anywhere else are

@@ -64,8 +64,8 @@
       },
       "scriptData": true
     },
-    "bytes": 56241,
-    "sha256": "3ed879d10631d8362d48b33e25ff1066a164106b2c00653f9a648b5332621836"
+    "bytes": 56260,
+    "sha256": "b4783217ee8fb2dff16f03cc30eac5da8fb8fdbbcff6e6e8a8fb36fb2b36db05"
   },
   {
     "name": "telegram member",
@@ -111,8 +111,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 28234,
-    "sha256": "7a0f4b3c9fcb74ce62f3cee5c73db51b9716cfb0c58172b15c4bc6ecef79591b"
+    "bytes": 28253,
+    "sha256": "e77f6324d3539179ee7e3580ec78bb8704490c47c0b003b41055f92f568a57ed"
   },
   {
     "name": "slack eval without cards",
@@ -161,8 +161,8 @@
       },
       "scriptData": true
     },
-    "bytes": 22587,
-    "sha256": "94c459381fa625d1d04572848680bd855f8c727e3a15d87449d343191cb0cfa5"
+    "bytes": 22606,
+    "sha256": "771b2cc9edc183f21a1575d46d81f9e2579ef74b25437426ad4b61d75bc1a90c"
   },
   {
     "name": "no tools",
@@ -208,8 +208,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 47577,
-    "sha256": "548d23bcd0b34457285412dd1a48fbe68da66bf961d0c67a762de0873efd1e97"
+    "bytes": 47596,
+    "sha256": "e2983f5ba953d1aa76516f35732a1e3623a5d8c9e5e5d0d2dfb7efc6b615ca32"
   },
   {
     "name": "skill list catalog",
@@ -264,8 +264,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 36619,
-    "sha256": "469662bc0d5046beca00b864cf89ffa1075831ee2318e307e60bd7fd1264af4d"
+    "bytes": 36633,
+    "sha256": "e7079689d9dd8e91b6398f5fa05e2a0b308bd6fa16e8d91f0cdd8698d0a4e7b8"
   },
   {
     "name": "skill list catalog empty",
@@ -311,8 +311,8 @@
       "bot": null,
       "scriptData": true
     },
-    "bytes": 36379,
-    "sha256": "342ffbb91a1ca0efd1c501cf03b0781df31b8ce04802ac1483257de63cd61235"
+    "bytes": 36393,
+    "sha256": "4b50736bda28aeca0fdf3be6a8f92034493cc27ff1ba65f0963aa32a0b555feb"
   },
   {
     "name": "no sandbox, so no script data",
@@ -358,7 +358,7 @@
       "bot": null,
       "scriptData": false
     },
-    "bytes": 54441,
-    "sha256": "c40160ad2c97f5ccd0278661c05ac840c6e67a013a7b8a6e8c6cdd64e63cbde1"
+    "bytes": 54460,
+    "sha256": "7159991620b3830499ac3caa2215e945c8902c86f7b660e772d7174938dd3e07"
   }
 ]

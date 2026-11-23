@@ -1,6 +1,7 @@
 package webfront
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -34,10 +35,20 @@ func jsProp(v any, key string) any {
 	return jsUndefined{}
 }
 
+var relativeSkillPath = regexp.MustCompile(`(^|[\t\n\f\r "'\x60(\[<])(?:\./)?skills/([a-z0-9])`)
+
+// The stage path differs per run; $SKILLS_DIR keeps the steps in the cached prefix.
+func withSkillsDir(text string, staged bool) string {
+	if !staged {
+		return text
+	}
+	return relativeSkillPath.ReplaceAllString(text, "${1}$$SKILLS_DIR/${2}")
+}
+
 func buildWorkflowPrompt(in workflowPromptInput) string {
 	lines := make([]string, len(in.Steps))
 	for i, step := range in.Steps {
-		lines[i] = "  " + strconv.Itoa(i+1) + ". " + jsTemplate(jsProp(step, "description"))
+		lines[i] = "  " + strconv.Itoa(i+1) + ". " + withSkillsDir(jsTemplate(jsProp(step, "description")), in.Workspace.SkillsRoot != "")
 		if jsTruthy(jsGet(step, "script")) {
 			lines[i] += " (script step: already ran; see <step_results>)"
 		}
@@ -73,6 +84,7 @@ func buildWorkflowPrompt(in workflowPromptInput) string {
 		"value", value,
 		"mode", pick(in.Mode == "headless", section("workflow_headless"), section("workflow_live")),
 		"runRoot", in.Workspace.RunRoot,
+		"skillsRoot", in.Workspace.SkillsRoot,
 		"artifactRoot", in.Workspace.ArtifactRoot,
 		"memory", memorySection(true, in.FilesEnabled, in.MemoryContext))
 }

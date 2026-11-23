@@ -283,7 +283,8 @@ func TestSkillsReadFrontmatterAndBody(t *testing.T) {
 		catalog[0].Content != "" || catalog[0].Load == nil {
 		t.Fatalf("catalog=%+v err=%v", catalog, err)
 	}
-	if body, err := catalog[0].Load(); err != nil || body != "Long instructions remain in the file." {
+	header := "This guide and its files are in " + filepath.ToSlash(filepath.Join(root, "daily-lead-union")) + "/\n\n"
+	if body, err := catalog[0].Load(); err != nil || body != header+"Long instructions remain in the file." {
 		t.Fatalf("body=%q err=%v", body, err)
 	}
 }
@@ -511,7 +512,31 @@ func TestSkillTextNamesItsFolder(t *testing.T) {
 	if err != nil || len(catalog) != 1 {
 		t.Fatalf("catalog=%+v err=%v", catalog, err)
 	}
-	if body, err := catalog[0].Load(); err != nil || body != want {
+	if body, err := catalog[0].Load(); err != nil || body != "This guide and its files are in "+filepath.ToSlash(skill)+"/\n\n"+want {
 		t.Fatalf("body=%q err=%v", body, err)
+	}
+}
+
+func TestATruncatedGuideGivesItsAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "big"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	text := "---\nname: big\ndescription: Big\n---\n" + strings.Repeat("line of the guide\n", maxSkillContent/16)
+	if err := os.WriteFile(filepath.Join(root, "big", "SKILL.md"), []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	catalog, err := f.Skills()
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("catalog=%+v err=%v", catalog, err)
+	}
+	body, err := catalog[0].Load()
+	if want := "read the rest with file_read at " + filepath.ToSlash(filepath.Join(root, "big", "SKILL.md")) + "]"; err != nil || !strings.HasSuffix(body, want) {
+		t.Fatalf("body ends %q err=%v", body[max(0, len(body)-200):], err)
 	}
 }
