@@ -1,0 +1,8 @@
+schema_version: openneko.eval.suite/v1
+id: workflow-slow-ship
+version: 1.0.0
+description: The slow-ship workflow of the demo server, run six times in one install.
+cases:
+  - { ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml }
+  - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }
+  - { ref: ../datasets/openneko-backend/workflows/cases/w-slow-ship.yaml }

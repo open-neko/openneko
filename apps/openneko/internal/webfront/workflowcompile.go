@@ -59,7 +59,7 @@ const compileRules = `Return only JSON of this shape:
 {"answer_calls": ["c3"], "anchor_call": "c1 or empty", "query": "one query that holds the query of each answer call, with each changing date replaced by a $variable", "variables": [{"name": "start", "value": "the literal the variable replaces", "base": "today | anchor", "align": "day | week | month | quarter | year", "offset": -1, "unit": "day | week | month | quarter | year", "format": "date | timestamp"}]}
 
 Rules:
-- answer_calls are the successful calls whose results together answer the goal. When there are several, write one query with each call's roots under its own alias, in the same order. Return {} when the answer needed a value that no single call returned, such as a sum the agent worked out from rows.
+- answer_calls are the successful calls whose results together answer the goal. When there are several, write one query with each call's roots under its own alias, in the same order. An empty list is a result: it answers that nothing matches, and a count of zero read from it needs no other call. Return {} only when the answer needed a value that the agent worked out from many rows, such as a sum or an average of a list.
 - A variable's value is the start of the align period of its base, moved by offset units. today is the date the run started. anchor is the date that anchor_call returned, such as the newest order date.
 - anchor_call is the successful call that found the date the run counted back from. Leave it empty when the run counted from today.
 - Replace only the dates that change from one run to the next. Keep every other part of the query as it is. Write a variable as $name and do not declare it.
@@ -561,7 +561,7 @@ func (a *API) compileWorkflowRun(ctx context.Context, o workflowTurnOptions, ans
 	}
 	p, ok := parseCompileProposal(raw)
 	if !ok {
-		log.Printf("[workflow-compile] org=%s workflow=%s not compiled: the model step proposed no query", o.Workflow.OrgID, o.Workflow.ID)
+		log.Printf("[workflow-compile] org=%s workflow=%s not compiled: the model step proposed no query: %s", o.Workflow.OrgID, o.Workflow.ID, jsSlice(raw, 600))
 		return nil
 	}
 	c, err := verifyCompiled(ctx, p, calls, workflowToday(o.Workflow.CronTimezone, startedAt), call)
