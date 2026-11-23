@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,8 +36,6 @@ type runningServe struct {
 	exited               <-chan struct{}
 	logs                 *lockedBuffer
 }
-
-var listenLine = regexp.MustCompile(`openneko serve listening on (\S+)`)
 
 func freeTCP(t *testing.T) string {
 	t.Helper()
