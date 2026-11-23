@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/confine"
 	"github.com/open-neko/neko/apps/openneko/internal/files"
 )
+
+var listenLine = regexp.MustCompile(`openneko serve listening on (\S+)`)
 
 // TestConfinedNetworkPartServesAWholeFile starts the release binary's
 // serve-network under its confinement and reads a 64 KiB file through
