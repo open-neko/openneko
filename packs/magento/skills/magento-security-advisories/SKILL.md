@@ -2,12 +2,6 @@
 name: magento-security-advisories
 description: Check the installed Magento or Adobe Commerce patch level against Adobe security bulletins and report critical or otherwise applicable vulnerabilities. Use for scheduled security checks and questions about Magento CVEs.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [magento, adobe-commerce, security, cve, patching]
-    category: commerce
-    requires_toolsets: [terminal]
-    related_skills: [magento-diagnose-platform-health]
 ---
 
 # Check Magento security advisories
@@ -34,9 +28,12 @@ database.
    the connected pack status or approved Magento health evidence. If it cannot
    be verified, report the result as `unknown`.
 2. Fetch the Adobe bulletin index and inspect new or changed Magento bulletins.
-   Use Python 3's standard-library HTTPS client from the terminal. This is an
-   external read-only request. If the request fails, or you have no
-   terminal, report that live advisory data was unavailable.
+   Use the `web_fetch` tool. The scheduled workflow gets this tool for the
+   Adobe hosts. In a chat run without `web_fetch`, use Python 3's
+   standard-library HTTPS client from the terminal. The terminal reaches the
+   Adobe hosts only when an administrator lists them at Admin, Settings,
+   Agent. This is an external read-only request. If the request fails, or you
+   have neither tool, report that live advisory data was unavailable.
 3. Compare the installed version with every applicable affected-version range.
    Give priority to bulletins marked critical or exploited in the wild.
 4. Report `affected`, `patched`, `unsupported`, or `unknown`. Include the

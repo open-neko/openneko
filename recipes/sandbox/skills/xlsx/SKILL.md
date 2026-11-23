@@ -6,12 +6,6 @@ version: 1.0.0
 author: OpenNeko
 license: Apache-2.0
 platforms: [linux, macos]
-metadata:
-  hermes:
-    tags: [spreadsheet, excel, xlsx, formulas]
-    category: documents
-    requires_toolsets: [terminal]
-    related_skills: [docx, pdf]
 ---
 
 # Excel workbooks

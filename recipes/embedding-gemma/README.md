@@ -24,7 +24,7 @@ NEKO_EMBEDDING_URL: http://embedding-gemma:5003/v1
 NEKO_EMBEDDING_MODEL: google/embeddinggemma-2
 ```
 
-Use a host name that the web and worker containers can reach. The service
+Use a host name that `openneko web` can reach. The service
 accepts any API key. Set `NEKO_EMBEDDING_DIMENSIONS` to 128, 256 or 512 for
 shorter vectors.
 

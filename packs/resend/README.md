@@ -31,6 +31,11 @@ runs inside OpenNeko.
   50 per list, and exactly one body: a template, or a subject with HTML and/or
   text. GraphJin refuses any other field before calling Resend.
 - **Pinned host.** The source calls `https://api.resend.com` only.
+- **Plain HTML.** OpenNeko reduces the HTML to text, headings, lists, tables,
+  and `http`, `https`, and `mailto` links before the approver sees it. It
+  removes images, styles, and the document head. When link text does not name
+  the link's host, OpenNeko adds the host after the link.
+- **No attachments.** OpenNeko refuses an email that has `attachments`.
 
 ## Coverage
 
@@ -43,5 +48,6 @@ runs inside OpenNeko.
 
 The plugin rendered Markdown into a house HTML layout in code. The
 `resend-email` skill now carries that layout as a reference, and the agent
-writes the HTML. Logo, brand color, and footer live in each workflow's
-"Email layout" block instead of plugin settings.
+writes the HTML. The footer lives in each workflow's "Email layout" block
+instead of plugin settings. The layout holds structure only, because OpenNeko
+removes styles and images before it sends the email.

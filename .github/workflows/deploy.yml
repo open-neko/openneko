@@ -36,6 +36,11 @@ jobs:
             tag=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | jq -r .tag_name)
           elif [[ "$UPSTREAM_TITLE" =~ ^post-release\ smoke\ \((v[0-9]+\.[0-9]+\.[0-9]+)\)$ ]]; then
             tag="${BASH_REMATCH[1]}"
+          elif [ "$UPSTREAM_TITLE" = "post-release smoke (main)" ]; then
+            # A manual release recovery runs from main, so its smoke names the
+            # branch. A passing smoke has promoted the release it tested to
+            # Latest, so Latest is that release.
+            tag=$(curl -fsSL https://api.github.com/repos/open-neko/openneko/releases/latest | jq -r .tag_name)
           else
             echo "::error::post-release smoke did not identify an exact stable tag: $UPSTREAM_TITLE"
             exit 1
@@ -48,7 +53,11 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          if ! ssh-keyscan -T 15 -H "${{ secrets.SSH_HOST }}" > /tmp/host-keys || [ ! -s /tmp/host-keys ]; then
+            echo "::error::No SSH host key from SSH_HOST. Check that it is the VM's address and not a proxied DNS name, and that port 22 is open."
+            exit 1
+          fi
+          cat /tmp/host-keys >> ~/.ssh/known_hosts
 
       # Keep the host CLI and service images on the same smoked release.
       - name: Refresh supervisor and deploy the released stack
@@ -108,7 +117,15 @@ jobs:
             # between releases needs.
             OPENNEKO_VERSION="$DEPLOY_IMAGE_TAG" OPENNEKO_PORT=80 \
               openneko upgrade --mode demo --version "$DEPLOY_IMAGE_TAG" --no-prune
+            # GraphJin and subscriptions start inside serve a few seconds
+            # after the upgrade returns, so wait for the stack to serve.
+            serving=false
+            for attempt in $(seq 30); do
+              if OPENNEKO_PORT=80 openneko status >/dev/null 2>&1; then serving=true; break; fi
+              sleep 4
+            done
             OPENNEKO_PORT=80 openneko status
+            [ "$serving" = true ]
 
             WEB=$(docker ps -q \
               --filter label=com.docker.compose.project=openneko-demo \

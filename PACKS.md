@@ -78,7 +78,7 @@ Copy a working `pack.yaml` and edit these sections:
 | --- | --- |
 | `apiVersion`, `kind` | `openneko.app/v1` and `SolutionPack` |
 | `metadata` | Stable lowercase-slug `id`, display `name`, semantic `version`, lowercase-slug `publisher` and `category` |
-| `compatibility` | OpenNeko and GraphJin versions, supported application editions/versions, and database engines/versions |
+| `compatibility` | GraphJin versions, supported application editions/versions, and database engines/versions. `compatibility.openneko` is optional; OpenNeko does not check it |
 | `inputs` | Named settings with a type: `string`, `url`, `integer`, `enum`, `timezone`, or `boolean`; defaults and required values as appropriate |
 | `secrets` | Secret keys, purpose, and whether required; never credential values |
 | `oauth` | Connection scope, provider label, setup/help copy, OAuth endpoints, input and secret references, account identity fields, and consent scopes |

@@ -22,7 +22,8 @@ type policyTargetSpec struct {
 	emailDomain bool
 }
 
-var builtinTargetSpecs = map[string]policyTargetSpec{"send_webhook": {fields: []string{"url"}}}
+var builtinTargetSpecs = map[string]policyTargetSpec{"send_webhook": {fields: []string{"url"}},
+	graphjinAPIMutationKind: {fields: []string{"operation"}}}
 
 func parseTargetSpec(v any) *policyTargetSpec {
 	fields, ok := jsGet(v, "fields").([]any)
@@ -270,14 +271,15 @@ func decisionFromMode(p *jsObj, name string, riskLevel *string) *jsObj {
 // with no adapter and no pack definition has none, so a rule's
 // auto-approve threshold never covers it.
 var builtinRiskLevels = map[string]string{
-	"code_draft_patch":    "low",
-	"code_create_issue":   "medium",
-	"send_webhook":        "high",
-	"channel_admin":       "high",
-	"data_source_admin":   "high",
-	"group_admin":         "high",
-	"source_config_admin": "high",
-	"user_admin":          "high",
+	"code_draft_patch":      "low",
+	"code_create_issue":     "medium",
+	"send_webhook":          "high",
+	graphjinAPIMutationKind: "high",
+	"channel_admin":         "high",
+	"data_source_admin":     "high",
+	"group_admin":           "high",
+	"source_config_admin":   "high",
+	"user_admin":            "high",
 }
 
 func (a *API) actionRiskLevel(ctx context.Context, orgID, kind string) (*string, error) {
@@ -371,7 +373,11 @@ func (r *runTools) createActionRequest(ctx context.Context, in *jsObj) (any, err
 			return nil, errors.New("source_config_admin: " + denied)
 		}
 	}
-	if runID != "" {
+	if kind == graphjinAPIMutationKind && runID != "" {
+		if err := a.runHoldsDataSource(ctx, orgID, &runID); err != nil {
+			return nil, err
+		}
+	} else if runID != "" {
 		granted := scope == "external"
 		if !granted {
 			if err := a.DB.QueryRow(ctx, `select exists (select 1 from pack_action_definition where org_id = $1 and kind = $2)`,

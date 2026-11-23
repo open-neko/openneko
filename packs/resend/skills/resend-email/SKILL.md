@@ -2,11 +2,6 @@
 name: resend-email
 description: Send operational email through the Resend pack (resend.email) and design an email with the operator in plain language before a workflow sends it. Use when the operator asks to email someone, to set up an email alert or report, to change how an email looks, or to check whether an email arrived.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [resend, email]
-    category: communication
-    requires_toolsets: [graphjin, pack-actions]
 ---
 
 # Operational email with Resend
@@ -43,6 +38,12 @@ for approval and is not an email field.
   both.
 - Do not set an idempotency key. OpenNeko sends the action request id as
   Resend's `Idempotency-Key`, so a retry cannot send twice.
+- Do not add `attachments`. OpenNeko refuses an email that has them.
+- OpenNeko keeps only text, headings, lists, tables, and `http`, `https`, and
+  `mailto` links in `html`. It removes images, styles, and the document head
+  before the approver sees the email.
+- Name the link's host in each link text. If the text does not name it,
+  OpenNeko adds the host after the link.
 
 ## Pick one body
 
@@ -83,22 +84,21 @@ then save the design in the workflow.
    four concrete options. Ask only what the request leaves open: layout (a
    table, a short list, one summary line), which columns and their order, the
    sort order, what goes first, what to do on an empty result, and a subject
-   pattern that carries a number. Ask for the logo URL, brand color, and footer
-   line the first time; the house layout uses them.
+   pattern that carries a number. Ask for the footer line the first time; the
+   house layout uses it.
 3. **Show a preview** in the chat with the real data. Ask if it is right.
 4. **Offer a test send** to the operator's own address.
 5. **Save the design in the workflow.** In the step that sends the email,
    write an "Email layout" block: recipients, the subject pattern, the content
-   skeleton with columns and sort order, the empty-result rule, and the logo,
-   brand color, and footer. Each run fills the skeleton with new data.
+   skeleton with columns and sort order, the empty-result rule, and the
+   footer. Each run fills the skeleton with new data.
 
 ```
 Email layout
 - To: ops@acme.com; cc: buyer@acme.com
 - Subject: "Low stock: {count} SKUs below reorder point"
 - If no SKU is below its reorder point: send no email.
-- House layout: logo https://acme.com/logo.png, color #1f6feb,
-  footer "Sent by OpenNeko for Acme Operations."
+- House layout: footer "Sent by OpenNeko for Acme Operations."
 - Content: one sentence with how many SKUs, and how many are at zero.
   Table: SKU | Product | On hand | Reorder point | Days of cover.
   Sort: on hand ascending. Show at most 25 rows; say how many more.

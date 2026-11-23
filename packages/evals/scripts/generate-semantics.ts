@@ -49,14 +49,14 @@ for (const path of await yamlFiles(evalRoot)) {
   }
 }
 const ownerBySection: Record<number, string[]> = {
-  1: ["packages/llm/src/agent-backend.ts", "apps/worker/src"],
+  1: ["packages/llm/src/agent-backend.ts", "apps/openneko/internal/webfront"],
   2: ["packages/llm/src/graphjin", "packages/llm/src/work"],
-  3: ["packages/llm/src", "apps/worker/src/jobs"],
+  3: ["packages/llm/src", "apps/openneko/internal/jobs"],
   4: ["packages/llm/src/work"],
-  5: ["packages/llm/src/workflows", "apps/worker/src/jobs"],
+  5: ["packages/llm/src/workflows", "apps/openneko/internal/jobs"],
   6: ["apps/openneko/internal/webfront"],
   8: ["packages/llm/src/work"],
-  9: ["apps/worker/src", "apps/openneko/internal"],
+  9: ["apps/openneko/internal"],
 };
 const categoryBySection: Record<number, string> = {
   1: "runtime-backend",
@@ -64,7 +64,7 @@ const categoryBySection: Record<number, string> = {
   3: "product-output",
   4: "work-context",
   5: "workflow-automation",
-  6: "channels-plugins",
+  6: "channels-admin",
   8: "security-governance",
   9: "operability-recovery",
 };

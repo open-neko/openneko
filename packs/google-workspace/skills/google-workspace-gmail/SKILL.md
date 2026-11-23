@@ -2,12 +2,6 @@
 name: google-workspace-gmail
 description: Read Gmail and request approved changes to drafts, messages, and labels through the Google Workspace pack.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [google-workspace, gmail, email]
-    category: productivity
-    requires_toolsets: [graphjin, pack-actions]
-    related_skills: [google-workspace-read]
 ---
 
 # Use Gmail
@@ -22,6 +16,10 @@ Use the `google_workspace.gmail` action for changes. Supported operations are
 base64url-encoded RFC 2822 message in `raw`. Keep `To`, `Cc`, `Bcc`, `Subject`,
 and the body in that message. To reply in a thread, also supply `threadId` and
 the correct reply headers.
+
+The message can hold only text and HTML parts. OpenNeko refuses an attachment,
+an HTML part that loads an image or other content from a URL, and link text
+that hides the link's host.
 
 Resolve label names to label IDs before modifying a message. Show recipients,
 subject, message purpose, label changes, and target IDs in the approval intent.

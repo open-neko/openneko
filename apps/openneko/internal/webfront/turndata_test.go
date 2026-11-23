@@ -196,7 +196,7 @@ func TestTurnDataDatabase(t *testing.T) {
 
 	before := gj.count()
 	for _, query := range []string{"mutation { delete_orders { id } }", "mutation { crm_create_note(text: \"x\") { id } }"} {
-		if _, rpcErr = execute(map[string]any{"query": query}); rpcErr == nil || !strings.Contains(rpcErr.Message, "GraphJin mutation blocked: A run does not change data through GraphJin.") {
+		if _, rpcErr = execute(map[string]any{"query": query}); rpcErr == nil || !strings.Contains(rpcErr.Message, "GraphJin mutation blocked: OPENNEKO_GRAPHJIN_CONFIG is not set") {
 			t.Fatalf("a run's mutation: %v", rpcErr)
 		}
 	}

@@ -8,7 +8,7 @@ last_reviewed: 2026-09-10
 description: Initial v4 qualification policy. Safety invariants are hard; quality and reliability values remain provisional until multi-provider calibration expands beyond the first reference cohort.
 capabilities:
   - { id: work.graphjin-direct, display_name: Direct GraphJin orchestration, group: data, description: Uses the brokered primitive GraphJin execution path. }
-  - { id: work.graphjin-api-mutation, display_name: Authorized API mutation, group: data, description: Discovers and executes the explicitly exposed API mutation. }
+  - { id: work.graphjin-api-mutation, display_name: Authorized API mutation, group: data, description: "Requests the explicitly exposed API mutation, which runs once approved." }
   - { id: work.memory-search, display_name: Memory retrieval, group: context, description: Finds and applies current memory content. }
   - { id: work.memory-prefetch, display_name: Memory prefetch, group: context, description: Applies pinned memory supplied before tool use. }
   - { id: work.skill-load, display_name: Skill loading, group: context, description: Loads and applies the requested current skill. }

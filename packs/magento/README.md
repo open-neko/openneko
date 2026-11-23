@@ -34,9 +34,10 @@ required by every operator.
 ## Prerequisites
 
 - A running OpenNeko production stack.
-- Magento 2.4.6 through 2.4.x with `/magento_version` reachable from the
-  OpenNeko worker.
-- MariaDB 10.6+ or MySQL 8.0+ reachable from the customer GraphJin container.
+- Magento 2.4.6 through 2.4.x with `/magento_version` reachable from
+  `openneko web`.
+- MariaDB 10.6+ or MySQL 8.0+ reachable from `openneko serve`, which runs the
+  customer GraphJin.
 - A dedicated analytics account with SELECT-only grants. Start with
   [`docs/analytics-user.sql`](docs/analytics-user.sql) and narrow its host and
   table grants for production. Existing table-specific grants must include the
@@ -66,8 +67,9 @@ The guided installer asks only for the Magento URL, database address/name, and
 the dedicated read-only analytics username/password. Password input is hidden,
 and the credentials are saved in OpenNeko's local secret store automatically.
 The Magento table prefix, database engine, currency, timezone, and active store
-IDs are discovered. The first metric refresh is queued as soon as installation
-finishes.
+IDs are discovered. When `OPENNEKO_METRICS_REFRESH` is `on` for `web`, the
+installation queues the first metric refresh. The refresh is off by default
+(`INSTALL.md` "Metric refresh (optional)").
 
 For automation or unattended installs, store credentials first and use the
 advanced flags. This example targets the US sample catalog's `default` store
@@ -114,10 +116,11 @@ investigation still works read-only when its optional private-note action is
 blocked.
 
 The security advisory workflow runs daily at 06:00 UTC. The pack declares the
-read-only Adobe hosts required by that workflow. The workflow fetches the
-bulletins from the terminal, so it needs the sandbox service (`INSTALL.md`
-"Sandbox (optional)"). If an Adobe request fails, the workflow reports that
-live advisory data is unavailable and does not guess the security status.
+read-only Adobe hosts required by that workflow. The workflow reads the
+bulletins with the `web_fetch` tool, which `openneko web` runs and which reaches
+only those hosts. The workflow does not need the sandbox. If an Adobe request
+fails, the workflow reports that live advisory data is unavailable and does
+not guess the security status.
 
 ## Optional Magento Integration token
 
@@ -191,7 +194,7 @@ openneko pack uninstall magento
 ```
 
 Uninstall revokes read, write, and delete access on the pack-owned GraphJin
-sources. GraphJin 3.18 retains that disabled source/table metadata so a later
+sources. GraphJin retains that disabled source/table metadata so a later
 install can safely reclaim it. Pack-owned queries, the OpenAPI spec, skills,
 and stored OpenNeko secret section are removed. Native metrics, workflows,
 watchers, policy, and action records are disabled instead of deleted. If a managed

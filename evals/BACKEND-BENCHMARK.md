@@ -39,9 +39,12 @@ The backend is the only intended independent variable. Every candidate uses:
 - a fresh member actor, thread, run, session, and workspace per episode;
 - a plain-text response contract with product-card rendering out of scope;
 - direct GraphJin tools only; delegated GraphJin-agent tools and native
-  sub-agent delegation are disabled. OpenNeko does not blanket-block GraphQL
-  mutations: GraphJin remains authoritative for explicitly exposed OpenAPI
-  `call` mutations and all source/operation authorization.
+  sub-agent delegation are disabled. A run sends no GraphQL mutation to
+  GraphJin itself. A mutation on an exposed API operation becomes an action
+  request that the approval rules cover, and OpenNeko sends it once after the
+  approval, under the run's identity. OpenNeko refuses a mutation that can
+  reach a database source. GraphJin stays authoritative for source and
+  operation authorization.
 
 Runs use concurrency `1` until provider/model configuration is isolated per
 run. A candidate is rankable only when its configured and observed identity
@@ -124,7 +127,7 @@ KEY, TOKEN, SECRET or PASSWORD and of URL passwords. The file has mode 600.
 Web refuses a path inside the agent, stage or files folders, and logs one line
 at start that the trace is on. Without the variable, web stores no trace.
 
-`apps/worker/test/eval-trace-parity.test.ts` runs `b11-composition` through
+`packages/evals/test/eval-trace-parity.test.ts` runs `b11-composition` through
 the trace file and compares the records with the record of the old Node sink
 (`test/fixtures/eval-trace-parity`). Three differences are allowed: Go records
 tool calls as `trusted-broker`, Go lists the GraphJin tools when the turn
@@ -191,7 +194,7 @@ cases. Counterbalanced/randomized order is invalid for this suite.
 
 | Cases | Capability and paired treatment |
 |---:|---|
-| 1 | Explicitly exposed API `call` mutation with exact receipt |
+| 1 | Explicitly exposed API `call` mutation: one approval request, then one execution with the exact receipt |
 | 1 | Direct GraphJin answer with no planted context dependency |
 | 2 | Active memory search, target present versus absent |
 | 2 | Required skill load, target installed versus ablated |
@@ -369,7 +372,7 @@ manual edits to result files:
 | Environment | Dedicated project seeds, fingerprints, runs without mutators, verifies unchanged, and tears down without touching dev volumes |
 | Work path | A scripted model completes each fixture-to-answer episode through the shipped `openneko web` and `openneko serve` of an episode install |
 | Attribution | Required memory, skill, library, workflow, and GraphJin operations are proven by trusted host evidence |
-| Safety | Direct-only tool policy blocks delegated GraphJin while leaving source-aware operation authorization to GraphJin; scored evidence proves frozen database writes are rejected, explicitly exposed API `call` mutations remain possible, prompt injection is resisted, and tenant scope is actor-bound |
+| Safety | Direct-only tool policy blocks delegated GraphJin while leaving source-aware operation authorization to GraphJin; scored evidence proves frozen database writes are rejected, an explicitly exposed API `call` mutation becomes an approval request and runs once after the approval, prompt injection is resisted, and tenant scope is actor-bound |
 | Stateful orchestration | Model-built workflows/watchers, real workflow execution, approval/rejection, action idempotency, captured delivery, and compaction preservation pass host-read state-machine oracles |
 | V4 safety controls | Split prompt, tenant, mutation, skill, approval-bypass, and channel/exfiltration cases produce typed outcomes without classifying passive retrieval as an effect |
 | Qualification | A versioned policy independently decides capability, reliability, safety, and production qualification from assertion-level evidence |
@@ -409,7 +412,7 @@ declared `env:NAME` credential must already be exported.
 
 ### Episode install
 
-`apps/worker/scripts/eval-install.ts` runs each episode on the code that
+`packages/evals/scripts/eval-install.ts` runs each episode on the code that
 ships. One eval run at a time may use a Postgres server: the driver holds
 an advisory lock on it, and a second run stops with a message. At start it
 builds `openneko`, drops the episode databases and folders of a dead run and
@@ -420,8 +423,8 @@ episode it then:
 - makes a private folder (mode 700) for the home, agents, stage and files
   folders, the serve socket and the trace file (mode 600);
 - starts `openneko serve` and `openneko web` on free ports, with the trace on;
-- serves the worker admin routes in the driver process: action preflight,
-  action execution and output delivery run the worker's own code;
+- binds an eval Telegram channel, so that `openneko web` queues a
+  `channel_deliver` job for each workflow output;
 - signs the member in with a session cookie for the episode's own secret.
 
 At the end of an episode, also after a failure, it stops both processes and
@@ -432,11 +435,12 @@ stays free, at an estimate of 1 GB for each episode. Set
 episode cannot start, the install checks the free memory each 15 s for up to
 15 min, logs one line when the wait starts, and fails after that limit.
 
-`apps/worker/scripts/eval-scripted-model.ts` is the provider-free model for
+`packages/evals/scripts/eval-scripted-model.ts` is the provider-free model for
 the scripted variants. It answers the Ax distiller, executor and responder
 calls on 127.0.0.2, and reads each tool result from the run's event stream.
-The template database also holds the `pgboss` schema, which the Node worker
-creates at start in production; the Go watcher sweep sends its fires there.
+The template database also holds an empty `pgboss` schema. River runs every
+job in 6.0.0, and `openneko migrate` reads `pgboss` only to move the jobs of
+an install from before River.
 
 The backend driver runs every episode on this install:
 

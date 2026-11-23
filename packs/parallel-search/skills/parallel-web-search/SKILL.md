@@ -2,11 +2,6 @@
 name: parallel-web-search
 description: Search the open web with the Parallel pack (parallel_search.web_search) for external context such as competitor news, market signals, and company facts, and thread the results into a briefing. Use when the agent needs facts that are not in the organization's own data.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [parallel, web-search, research]
-    category: research
-    requires_toolsets: [pack-actions]
 ---
 
 # Parallel web search

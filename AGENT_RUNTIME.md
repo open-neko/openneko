@@ -9,8 +9,9 @@ pieces run it, and each holds only what its job needs:
   builds;
 - **`openneko serve`**, which runs the Ax harness for each agent turn and every
   other model call, the inference and embedding gateways, and the agent's file
-  tools (when `OPENNEKO_SERVE_SOCKET` is not set, `openneko web` runs the Ax
-  harness in-process);
+  tools. Serve runs each agent turn in a confined runner process. When
+  `OPENNEKO_SERVE_SOCKET` is not set, `openneko web` refuses agent turns and
+  runs host and embedding calls in-process;
 - the optional **sandbox service** ([recipes/sandbox](recipes/sandbox/README.md)),
   which runs terminal commands, script skills and workflow script steps.
 
@@ -49,8 +50,8 @@ workflows, metric refreshes, and setup builds in Go:
    person's own skills.
 2. `openneko web` resolves the org's model route and fallback route, gives
    their API keys to the [key door](#the-key-door) for this turn, and sends
-   the turn to `openneko serve` over the Unix socket `OPENNEKO_SERVE_SOCKET`
-   (or runs the Ax harness in-process when no socket is set). The turn
+   the turn to `openneko serve` over the Unix socket `OPENNEKO_SERVE_SOCKET`.
+   With no socket, web refuses the turn. The turn
    carries a door token and door URLs in place of the keys and the provider
    URLs. Serve sends each model call of the turn through the door. The
    agent's MCP tools (GraphJin, memory, files,
@@ -339,6 +340,20 @@ operations only. Then it passes the call to GraphJin: it finds the
 org's data source, signs the run's GraphJin token with the user's group
 roles, refuses the internal GraphJin, applies the config's write guard
 and calls GraphJin's MCP or GraphQL route.
+
+A run sends no mutation to GraphJin itself, raw or saved. `openneko web`
+reads the GraphJin config (`OPENNEKO_GRAPHJIN_CONFIG`). When every database
+source is `read_only` and the mutation's one root field is an operation of
+an API source, the call becomes a `graphjin.api_mutation` action request.
+The approval card shows the source, the operation, the method and path
+from the OpenAPI file, and the body. The approval rules cover it like any
+other external action. After the approval, the action job checks the
+mutation again and sends it once with the identity of the run that asked
+for it; a saved query that changed after the approval does not run. Any
+other mutation is refused, and so is every mutation when the config does
+not prove the database sources read-only
+(`apps/openneko/internal/webfront/graphjinapimutation.go`). The tools that
+change GraphJin's schema, config or workflows stay closed to a run.
 
 ## Two zones
 

@@ -2,12 +2,6 @@
 name: magento-check-inventory
 description: Investigate Magento low stock, stockouts, source quantities, reservations, and suspected MSI availability discrepancies, then prepare a replenishment handoff. Use for SKU or source availability questions, stock-threshold watcher findings, and inventory constraints; do not use for sales-only product rankings.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [magento, inventory, msi, stock, reservations, replenishment]
-    category: commerce
-    requires_toolsets: [graphjin]
-    related_skills: [magento-triage-fulfillment, magento-investigate-order, magento-review-performance]
 ---
 
 # Check Magento inventory

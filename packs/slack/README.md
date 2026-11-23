@@ -34,6 +34,13 @@ The action accepts channel and user ids only, so policies match the real
 destination. The plugin resolved names inside the action; the skill now looks
 them up with the reads first.
 
+OpenNeko checks each message when the run proposes it and again before it
+runs. It refuses an image block, an image or icon URL, and a URL in `blocks` or
+`attachments`, except the URL of a button or a link. It refuses link text that
+hides the link's host. It sets `unfurl_links` and `unfurl_media` to false. A
+post to a shared channel follows the answer rule at Admin, Settings, Channels.
+OpenNeko refuses a post to a channel where that rule keeps answers private.
+
 Slack reports errors as `ok: false` with HTTP 200. The pack runtime judges an
 action by its HTTP status, so such a call is recorded as succeeded; the skill
 tells the agent to check `response.ok`.

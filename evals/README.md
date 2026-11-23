@@ -5,7 +5,7 @@
 > PR-safe result verifier, CLI (including the `oracles` ground-truth
 > extraction command), semantic registry, a 40-case authored AdventureWorks
 > corpus (`adventureworks-40q`), the direct GraphJin path,
-> optional OTLP tracing in worker and web execution, persisted production
+> optional OTLP tracing of the GraphJin servers in `openneko serve`, persisted production
 > summaries, latency/token/cost aggregates, the first executable watcher/action
 > lifecycle pack, and backend eval v4 assertion attribution, typed security
 > outcomes, independent qualification policy, explicit runtime limits, and dual
@@ -110,7 +110,7 @@ reset a watcher, which no product path does.
 An eval install keeps its episode folders and its `openneko` build under the
 temporary folder, in names keyed to the Postgres host and port. At start it
 deletes the leftovers of its own server only, so two eval runs on two servers
-(the provider eval and the worker tests, for example) leave each other alone.
+leave each other alone.
 A manual workflow run acts as the service, and no route lets the operator stop
 it. So the backend driver gives each workflow case a turn time 90 s shorter
 than the case timeout, no continuations, and a tool-call limit one above the
@@ -146,8 +146,8 @@ briefing routes went; the adapter still calls it in Node.
 
 Only `openneko serve` exports traces: the metadata-only spans of its GraphJin
 servers (default service name `openneko-graphjin`), when an OTLP endpoint is
-set. `openneko web` runs the agent turns and exports no traces, so a run's
-GraphJin calls do not join a run trace. INSTALL.md, "Traces", says what each
+set. The agent turns export no traces, so a run's GraphJin calls do not join a
+run trace. INSTALL.md, "Traces", says what each
 span holds.
 
 ```sh
@@ -370,7 +370,7 @@ evals/
   baselines/
   results/
 packages/evals/
-apps/worker/scripts/openneko-eval.ts
+packages/evals/scripts/openneko-eval.ts
 ```
 
 AdventureWorks v1 should port the existing 20 metric questions, ground-truth
@@ -911,13 +911,14 @@ Additional requirements:
 
 The shared contract, backend usage normalization, delegated GraphJin usage,
 metric and `/work` instrumentation, persisted client summaries, aggregate eval
-measurements, and optional Node OTLP trace export are implemented. Remaining
+measurements, and optional OTLP export of the GraphJin spans of `openneko serve`
+are implemented. Remaining
 work is deliberately visible:
 
 - instrument onboarding, workflow, channel, records, and admin paths to the
   same depth as metric refresh and `/work`;
 - propagate W3C trace context through queues, sandbox/broker, MCP, and GraphJin
-  HTTP rather than correlating only within the worker process;
+  HTTP rather than correlating only within one process;
 - add a common cross-product summary table and dedicated UI views beyond the
   existing work-event and processing-job API representations;
 - add OTel metric instruments and collector dashboards after stable cardinality
@@ -955,7 +956,7 @@ work is deliberately visible:
 
 - add `packages/evals` config loader, planner, capability validator, runner,
   checkpoint store, scorer registry, comparison engine, and report generator;
-- implement the CLI commands in `apps/worker/scripts/openneko-eval.ts`;
+- implement the CLI commands in `packages/evals/scripts/openneko-eval.ts`;
 - add dataset-pack lifecycle and safe secret references;
 - emit lossless eval artifacts from the same observation stream;
 - add atomic attempt/episode journals, run locking, compatible auto-resume,

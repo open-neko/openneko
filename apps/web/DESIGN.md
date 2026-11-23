@@ -349,7 +349,7 @@ accents and Coral danger carry status against the dark.
   breathing pulse, a live signal), and open a surface on what changed, not on an
   empty prompt. Put the resolving action within reach of the finding.
 - **Do** build every control from `src/components/ui` (`Button`, `Field` and its
-  inputs, `Checkbox`, `Tabs`, `Pill`, `Disclosure`, `Card`, `OverflowMenu`).
+  inputs, `Checkbox`, `Tabs`, `Badge`, `Disclosure`, `Card`, `OverflowMenu`).
 - **Do** use semantic tokens from `_tokens.css`. Never write a literal color in
   TSX.
 - **Do** set display type in Archivo (`font-display`) and copy and controls in

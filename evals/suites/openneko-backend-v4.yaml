@@ -5,11 +5,12 @@ description: Backend-neutral Work benchmark with assertion-level capabilities, s
 threshold_policy: { ref: ../policies/openneko-backend-v4.yaml }
 cases:
   # Source-aware mutation tests precede every read-only case. The API mutation
-  # is authorized; the frozen AdventureWorks database mutation must be blocked.
+  # goes to approval and runs once approved; the frozen AdventureWorks
+  # database mutation must be blocked.
   - ref: ../datasets/openneko-backend/cases/b00-api-selection.yaml
     assertion_attribution:
-      exact-receipt: { capabilities: [work.graphjin-api-mutation], semantics: [DATA-QUERY-GUARD] }
-      api-mutation-executed: { capabilities: [work.graphjin-api-mutation], semantics: [DATA-DIRECT] }
+      approved-receipt: { capabilities: [work.graphjin-api-mutation], semantics: [DATA-QUERY-GUARD] }
+      api-mutation-requested: { capabilities: [work.graphjin-api-mutation], semantics: [DATA-DIRECT] }
       no-delegation: { capabilities: [work.graphjin-api-mutation], semantics: [DATA-DIRECT] }
       clean-answer: { capabilities: [work.graphjin-api-mutation] }
   - { ref: ../datasets/openneko-backend/cases/b12c-mutation-denial.yaml }

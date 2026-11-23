@@ -9,7 +9,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-AX-CONTRACT
     category: runtime-backend
     description: Ax implements the agent event, tool, sandbox, and provider contract
@@ -17,7 +17,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-BACKEND-NATIVE
     category: runtime-backend
     description: Backend-native delegation, session resume, permission hooks, and
@@ -26,7 +26,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-MODEL-RESOLUTION
     category: runtime-backend
     description: Requested provider/model/credential resolve to the actual backend
@@ -35,7 +35,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-STREAM
     category: runtime-backend
     description: Messages, tool lifecycle, status, cards, artifacts, and completion
@@ -44,7 +44,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-CANCEL
     category: runtime-backend
     description: Cancellation stops the active backend/sandbox and persists a
@@ -53,7 +53,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-TIMEOUT
     category: runtime-backend
     description: Turn and provider timeouts are classified accurately and terminate
@@ -62,7 +62,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-RETRY
     category: runtime-backend
     description: Only retryable failures retry; attempts, usage, and final failure
@@ -71,7 +71,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-RESUME
     category: runtime-backend
     description: Thread/backend session resume preserves intended context without
@@ -80,7 +80,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-VALIDATE
     category: runtime-backend
     description: Invalid structured output is repaired within bounds or fails honestly
@@ -88,7 +88,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-CONCURRENCY
     category: runtime-backend
     description: Global/backend caps, queueing, cancellation, and fairness hold
@@ -97,7 +97,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-SHUTDOWN
     category: runtime-backend
     description: Process shutdown cancels agents and leaves jobs/runs recoverable
@@ -105,7 +105,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-SANDBOX
     category: runtime-backend
     description: Every agent turn runs in openneko serve; terminal commands run only
@@ -114,7 +114,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: RUNTIME-OBSERVABILITY
     category: runtime-backend
     description: Canonical observations, OTel spans/metrics, and run summaries agree
@@ -123,7 +123,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/agent-backend.ts
-      - apps/worker/src
+      - apps/openneko/internal/webfront
   - id: DATA-SOURCE-SELECT
     category: data-calculation
     description: The correct enabled/default source is selected; disabled or
@@ -326,7 +326,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ONBOARD-RESEARCH
     category: product-output
     description: Optional industry research runs only when configured and remains
@@ -335,7 +335,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ONBOARD-BOOTSTRAP
     category: product-output
     description: Bootstrap metrics fit selected seats, company data, role
@@ -344,7 +344,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: METRIC-REFRESH
     category: product-output
     description: Metric refresh computes/validates/persists the correct snapshot and
@@ -353,7 +353,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: BRIEFING-BUILD
     category: product-output
     description: Briefing composition selects fresh, relevant metrics/findings with
@@ -362,7 +362,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-MESSAGE
     category: product-output
     description: User-visible prose excludes hidden fences, raw tool calls, and
@@ -371,7 +371,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-SURFACE
     category: product-output
     description: A2UI/card payloads validate and remain separate from prose
@@ -379,7 +379,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-VITALS
     category: product-output
     description: Headline vitals contain observed/calculated/estimated basis,
@@ -388,7 +388,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-FOLLOWUPS
     category: product-output
     description: Suggested follow-ups are valid, useful, and emitted once
@@ -396,7 +396,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-ARTIFACT
     category: product-output
     description: Generated artifacts are present, safely named, downloadable, and
@@ -405,7 +405,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-NEEDS-INPUT
     category: product-output
     description: Genuine ambiguity asks a bounded question without pretending completion
@@ -413,7 +413,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-VALUE
     category: product-output
     description: Analysis/action time-saved estimates are parsed, clamped,
@@ -422,7 +422,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: OUTPUT-CHANNEL-FIDELITY
     category: product-output
     description: The same channel-neutral answer degrades correctly to web, Slack,
@@ -431,7 +431,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: WORK-THREAD
     category: work-context
     description: Thread/run/message/event persistence, ordering, deletion,
@@ -560,7 +560,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-RULE-BUILD
     category: workflow-automation
     description: Approval-rule creation/update resolves scopes, risks, roles, and
@@ -569,7 +569,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-CRON
     category: workflow-automation
     description: Cron trigger creation, due selection, and sweep scheduling fire at
@@ -578,7 +578,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-SOURCE-CHANGE
     category: workflow-automation
     description: Matching source row changes trigger the correct workflow;
@@ -587,7 +587,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-SUBSCRIPTION
     category: workflow-automation
     description: GraphJin subscriptions are created/reconciled/deleted and route
@@ -596,7 +596,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-EXTERNAL
     category: workflow-automation
     description: External-event filters, provenance, and dispatch select the correct
@@ -605,7 +605,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-RUN
     category: workflow-automation
     description: Workflow turns use the runner tool policy, persist state, and
@@ -614,7 +614,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-CYCLE
     category: workflow-automation
     description: Chain depth, cycle detection, run budget, and fan-out caps stop
@@ -623,7 +623,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-OUTPUT
     category: workflow-automation
     description: Output persistence, evidence, delivery hooks, and source-write
@@ -632,7 +632,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-OUTPUT-DEDUPE
     category: workflow-automation
     description: Repeated findings collapse according to semantic identity and
@@ -641,7 +641,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-OUTPUT-MUTE
     category: workflow-automation
     description: Muted scopes suppress presentation without deleting underlying evidence
@@ -649,7 +649,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: FLOW-OUTPUT-TTL
     category: workflow-automation
     description: Stale outputs expire without removing protected/pinned state incorrectly
@@ -657,7 +657,7 @@ entries:
     disposition: declared
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: WATCH-BUILD
     category: workflow-automation
     description: Natural-language watcher creation yields a valid query, value path,
@@ -666,7 +666,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: WATCH-CONDITION
     category: workflow-automation
     description: "`gt/gte/lt/lte/eq/ne/changed` conditions handle types and prior
@@ -675,7 +675,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: WATCH-SWEEP
     category: workflow-automation
     description: Due scheduling, query execution, error handling, and
@@ -684,7 +684,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: WATCH-DEBOUNCE
     category: workflow-automation
     description: A tripped watch fires once within debounce and may fire again after
@@ -693,7 +693,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: WATCH-DELIVERY
     category: workflow-automation
     description: A watch event reaches the linked workflow/output/action path with
@@ -702,7 +702,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: WATCH-LIFECYCLE
     category: workflow-automation
     description: Create/enable/disable/update/delete/reset and cleanup do not leak
@@ -711,7 +711,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-PROPOSE
     category: workflow-automation
     description: The harness creates the intended internal/external action with
@@ -720,7 +720,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-POLICY
     category: workflow-automation
     description: Policy precedence, condition match, auto-approve/pending/deny, and
@@ -729,7 +729,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-APPROVAL
     category: workflow-automation
     description: Approve/reject transitions enforce actor permissions and prevent
@@ -738,7 +738,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-EXECUTE
     category: workflow-automation
     description: Approved actions execute through the correct adapter and persist
@@ -747,7 +747,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-IDEMPOTENCY
     category: workflow-automation
     description: Retries, duplicate jobs, and repeated approvals cause at most one
@@ -756,7 +756,7 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-COLLATERAL
     category: workflow-automation
     description: The intended mutation occurs and unrelated records/resources remain
@@ -765,16 +765,16 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-ADAPTER
     category: workflow-automation
-    description: Code, webhook, and plugin adapters validate payloads, respect
-      egress, and normalize outcomes
+    description: Code, webhook, and pack adapters validate payloads, respect egress,
+      and normalize outcomes
     verification: adapter contract/E2E
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: ACTION-AUDIT
     category: workflow-automation
     description: Proposal, policy, approval, execution, rejection, and failure are
@@ -783,16 +783,16 @@ entries:
     disposition: eval
     owners:
       - packages/llm/src/workflows
-      - apps/worker/src/jobs
+      - apps/openneko/internal/jobs
   - id: CHANNEL-INBOUND
-    category: channels-plugins
+    category: channels-admin
     description: Poll/webhook/socket ingestion normalizes messages and button actions once
     verification: adapter + dedupe oracle
     disposition: declared
     owners:
       - apps/openneko/internal/webfront
   - id: CHANNEL-WORKSPACE-ROUTE
-    category: channels-plugins
+    category: channels-admin
     description: External workspace/conversation maps to the correct org and
       persistent channel thread
     verification: DB routing oracle
@@ -800,7 +800,7 @@ entries:
     owners:
       - apps/openneko/internal/webfront
   - id: CHANNEL-IDENTITY
-    category: channels-plugins
+    category: channels-admin
     description: Sender linking by explicit approval or verified identity assigns
       the correct user/role; strangers stay restricted
     verification: cross-identity E2E
@@ -808,7 +808,7 @@ entries:
     owners:
       - apps/openneko/internal/webfront
   - id: CHANNEL-DELIVERY
-    category: channels-plugins
+    category: channels-admin
     description: Output messages, cards/degradation, receipts, errors, and
       follow-ups deliver to the originating channel
     verification: fake channel transcript
@@ -816,14 +816,14 @@ entries:
     owners:
       - apps/openneko/internal/webfront
   - id: CHANNEL-BACKOFF
-    category: channels-plugins
+    category: channels-admin
     description: Poll failures back off without duplicate delivery or log/run floods
     verification: fake clock/load
     disposition: declared
     owners:
       - apps/openneko/internal/webfront
   - id: ADMIN-USER
-    category: channels-plugins
+    category: channels-admin
     description: Invite, role change, deactivate/reactivate, and authorization
       require the correct approval
     verification: control-plane state oracle
@@ -831,7 +831,7 @@ entries:
     owners:
       - apps/openneko/internal/webfront
   - id: ADMIN-SOURCE
-    category: channels-plugins
+    category: channels-admin
     description: Source registry/config/role changes use secure forms for secrets
       and preserve preview/apply semantics
     verification: state + no-secret oracle
@@ -839,74 +839,10 @@ entries:
     owners:
       - apps/openneko/internal/webfront
   - id: ADMIN-CHANNEL
-    category: channels-plugins
+    category: channels-admin
     description: Workspace/member/link administration is scoped, attributable, and
       approval-gated
     verification: state + policy oracle
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: ADMIN-PLUGIN
-    category: channels-plugins
-    description: Plugin list/install/remove/update surfaces permissions and enforces
-      install policy
-    verification: registry + approval oracle
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: PLUGIN-MANIFEST
-    category: channels-plugins
-    description: Manifest validation and declared capabilities/egress match runtime
-      registration
-    verification: contract test
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: PLUGIN-SANDBOX
-    category: channels-plugins
-    description: Each plugin receives only declared mounts, credentials, and network
-      destinations
-    verification: containment E2E
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: PLUGIN-HOT-RELOAD
-    category: channels-plugins
-    description: Install/remove/secret rotation reconciles the live registry without
-      process restart
-    verification: lifecycle E2E
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: PLUGIN-ACTION
-    category: channels-plugins
-    description: Plugin actions become correctly described agent tools and execute
-      only through action policy
-    verification: tool + fake adapter
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: PLUGIN-CONNECT
-    category: channels-plugins
-    description: Connector discovery, per-user OAuth/token refresh, and source sync
-      remain user-scoped
-    verification: fake OAuth + sync oracle
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: PLUGIN-CHANNEL
-    category: channels-plugins
-    description: Channel capabilities register and drive inbound/outbound through
-      the common adapter
-    verification: plugin contract
-    disposition: declared
-    owners:
-      - apps/openneko/internal/webfront
-  - id: PLUGIN-AUTH
-    category: channels-plugins
-    description: Singleton auth capability, sign-in, group/role mapping, and session
-      gating are correct
-    verification: fake OIDC + DB
     disposition: declared
     owners:
       - apps/openneko/internal/webfront
@@ -1011,25 +947,23 @@ entries:
     verification: job state oracle
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-RECONCILE
     category: operability-recovery
-    description: Lost worker/process state is reconciled without duplicate effects
-      or permanently stuck runs
+    description: The stale-run sweep in `openneko web` cancels runs that a stopped
+      process left queued or running, without duplicate effects
     verification: crash/restart E2E
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-STARTUP
     category: operability-recovery
-    description: Migrations, database, GraphJin, gateway, worker, web, and sandbox
-      dependencies start in a valid order
+    description: "`openneko start` checks the database, runs the migrations and
+      `serve-init`, then starts serve (with GraphJin) and web; the external
+      services can be off"
     verification: packaged smoke
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-PROVISION
     category: operability-recovery
@@ -1038,7 +972,6 @@ entries:
     verification: deployment fixture
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-HEALTH
     category: operability-recovery
@@ -1047,7 +980,6 @@ entries:
     verification: fault-injected smoke
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-DEMO
     category: operability-recovery
@@ -1055,7 +987,6 @@ entries:
     verification: snapshot/digest smoke
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-BACKUP
     category: operability-recovery
@@ -1064,16 +995,14 @@ entries:
     verification: backup restore test
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-UPGRADE
     category: operability-recovery
-    description: Config/schema/plugin/runtime upgrades preserve supported state and
+    description: Config/schema/pack/runtime upgrades preserve supported state and
       fail safely
     verification: upgrade matrix
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal
   - id: OPS-RESOURCE
     category: operability-recovery
@@ -1082,5 +1011,4 @@ entries:
     verification: soak/fault injection
     disposition: declared
     owners:
-      - apps/worker/src
       - apps/openneko/internal

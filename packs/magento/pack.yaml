@@ -12,7 +12,6 @@ management:
   path: /admin/settings/packs/magento/operations
 
 compatibility:
-  openneko: ">=2.27.0 <3.0.0"
   graphjin:
     analytics: ">=3.18.42 <4.0.0"
     operator: ">=3.20.77 <4.0.0"

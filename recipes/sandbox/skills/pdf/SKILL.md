@@ -6,12 +6,6 @@ version: 1.0.0
 author: OpenNeko
 license: Apache-2.0
 platforms: [linux, macos]
-metadata:
-  hermes:
-    tags: [pdf, documents, forms, merge, ocr]
-    category: documents
-    requires_toolsets: [terminal]
-    related_skills: [docx, xlsx, pptx]
 ---
 
 # PDF files
@@ -46,8 +40,8 @@ start at 1. A page list is a number, a range or a list: `3`, `2-5`, `8-`,
 3. Add `--layout` for tables and forms. It keeps the columns in place with
    spaces, so figures stay under their headings.
 4. A page with no text layer is blank, or a scan or a picture. Run `ocr` on
-   it. OCR is slow (a few seconds per page), so give `--pages`. For a language
-   other than English, give `--lang`, for example `deu` or `eng+fra`.
+   it. OCR is slow (a few seconds per page), so give `--pages`. The sandbox
+   image holds the English OCR data (`eng`) only.
 5. Run `render` when you must see a page, for example a chart or a signature.
    It writes one PNG per page.
 

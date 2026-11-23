@@ -2,12 +2,6 @@
 name: magento-manage-catalog
 description: Prepare and execute governed Magento product, category, assignment, and price changes with clear approval requirements, limits, before images, reconciliation, and safe inverse drafts. Use when a user asks to create, edit, bulk update, move, assign, price, or delete catalog entities.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [magento, catalog, products, categories, pricing, change-set]
-    category: commerce
-    requires_toolsets: [graphjin, pack-actions]
-    related_skills: [magento-check-inventory, magento-run-promotions, magento-review-performance]
 ---
 
 # Manage the Magento catalog
@@ -28,8 +22,8 @@ attribute code. A complete single-product payload looks like:
 Read the current text first and preserve every part the operator did not ask
 to change. Once the store code, SKU, and before value are known, call
 `magento.manage_catalog` to create the governed request; the approval card is
-where the operator reviews it. Do not inspect MCP bridge or worker files to
-infer the payload shape.
+where the operator reviews it. Do not inspect OpenNeko program files to infer
+the payload shape.
 
 Show the before image, requested diff, approval requirement, limits, row count,
 and whether the operation is reversible. Unknown attributes and price, tax,
