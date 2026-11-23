@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os/exec"
 	"path"
@@ -278,7 +279,19 @@ func (s *Service) content(w http.ResponseWriter, r *http.Request) {
 	defer body.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", strconv.FormatInt(e.Size, 10))
-	_, _ = io.Copy(w, body)
+	n, err := copyPlain(w, body)
+	if err == nil && n != e.Size {
+		err = fmt.Errorf("sent %d of %d bytes", n, e.Size)
+	}
+	if err != nil {
+		log.Printf("[files] content of %s: %v", key, err)
+	}
+}
+
+// copyPlain hides ReadFrom and WriteTo, so net/http never uses sendfile or
+// splice: a confined network part may not be allowed either call.
+func copyPlain(w io.Writer, r io.Reader) (int64, error) {
+	return io.CopyBuffer(struct{ io.Writer }{w}, struct{ io.Reader }{r}, make([]byte, 32<<10))
 }
 
 func (s *Service) put(ctx context.Context, c caller, r *http.Request) (any, error) {
