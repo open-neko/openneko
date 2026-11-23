@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.0.0](https://github.com/open-neko/openneko/compare/v5.0.0...v6.0.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* the core is one Go executable, every agent turn runs in a confined runner, and the two-account server install is replaced. The upgrade steps are in CHANGELOG.md, "What to do when you upgrade".
+
+### Features
+
+* OpenNeko 6.0.0, one executable with a confined agent on Linux, macOS and Windows ([d5d8b77](https://github.com/open-neko/openneko/commit/d5d8b77ad18038be5e326b63625f4265993df3e8))
+
 ## 6.0.0 (unreleased): upgrade notes
 
 OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined process, and data leaves the install only through steps that an admin sees. The upgrade from 5.0.0 also removes Records, the plugins, the Library, OpenShell and the embedding container; [INSTALL.md, "Upgrade from a release before November 2026"](INSTALL.md#upgrade-from-a-release-before-november-2026) tells what happens to their data. Read "What to do when you upgrade" at the end of this section before you start.
