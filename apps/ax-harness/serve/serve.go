@@ -44,13 +44,15 @@ import (
 	"github.com/open-neko/openneko/apps/ax-harness/embedding"
 	"github.com/open-neko/openneko/apps/ax-harness/harness"
 	"github.com/open-neko/openneko/apps/ax-harness/inference"
+	"github.com/open-neko/openneko/apps/ax-harness/internal/mcp"
 	"github.com/open-neko/openneko/apps/ax-harness/keydoor"
 	"github.com/open-neko/openneko/apps/ax-harness/sandbox"
 )
 
 const (
-	maxFrameBytes = 32 << 20
-	defaultTurns  = 32
+	maxFrameBytes       = mcp.MaxHostBytes
+	maxRunnerFrameBytes = 32 << 20
+	defaultTurns        = 32
 )
 
 var keyEnvName = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,126}_API_KEY$`)
@@ -519,7 +521,7 @@ func (s *Server) secrets(modelKeyEnv string, keys map[string]string) func(string
 	}
 }
 
-func readLine(r *bufio.Reader) ([]byte, error) {
+func readLine(r *bufio.Reader, limit int) ([]byte, error) {
 	var line []byte
 	for {
 		chunk, isPrefix, err := r.ReadLine()
@@ -527,7 +529,7 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 			return nil, err
 		}
 		line = append(line, chunk...)
-		if len(line) > maxFrameBytes {
+		if len(line) > limit {
 			return nil, errors.New("frame too large")
 		}
 		if !isPrefix {
@@ -537,7 +539,7 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 }
 
 func readFrame(r *bufio.Reader) (Frame, error) {
-	line, err := readLine(r)
+	line, err := readLine(r, maxFrameBytes)
 	if err != nil {
 		return Frame{}, err
 	}

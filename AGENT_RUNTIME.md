@@ -1021,9 +1021,10 @@ its request; serve, or `openneko web` for a script step, runs the query through
 the run's GraphJin tools and runs the script again with the rows. The
 sandbox holds no key, token or socket for this. A script can also declare
 its queries in a `<script>.queries.json` file beside it; OpenNeko runs them
-before the script starts and passes the rows in as files. The steps, the
-file format and the limits are in `recipes/sandbox/README.md`, "Script
-data".
+before the script starts and passes the rows in as files. One answer can
+be at most 64 MiB. A run can make any number of queries; the turn and
+workflow time limits end it. The steps and the file format are in
+`recipes/sandbox/README.md`, "Script data".
 
 In the Compose overlay and in `compose.native.yml` the sandbox container:
 

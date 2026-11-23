@@ -97,6 +97,7 @@ OpenNeko 6.0.0 is one `openneko` program. Agent turns run only in a confined pro
 * A web search through the Parallel pack asks for approval, unless an admin chose auto.
 * In a Slack channel or a Telegram group, an answer can come as a private message, with a note in the thread.
 * On a Linux host with no Landlock, and on a Windows older than 10 1809 or Server 2019, agent questions are refused. Data reads and the rest of the app work.
+* A skill script can make any number of data queries in a run, with any number of rows. One answer can be at most 64 MiB (5.0.0: 4 MiB, 10,000 rows, 50 queries and 15 minutes in each run). The turn and workflow time limits end a run that does not stop.
 
 ### What to do when you upgrade
 

@@ -33,15 +33,25 @@ type DataQuery struct {
 // and returns the GraphQL data object.
 type DataBroker func(ctx context.Context, q DataQuery) (json.RawMessage, error)
 
-// DataLimits cap the script data of one run.
+// MaxDataBytes caps the answer of one script query, to protect web's
+// memory. The turn and workflow time limits stop a run that asks too often.
+const MaxDataBytes = 64 << 20
+
+// DataLimits cap the answer of one script query.
 type DataLimits struct {
-	MaxRows    int
-	MaxBytes   int
-	MaxQueries int
-	MaxTime    time.Duration
+	MaxBytes int
 }
 
-var DefaultDataLimits = DataLimits{MaxRows: 10_000, MaxBytes: 4 << 20, MaxQueries: 50, MaxTime: 15 * time.Minute}
+var DefaultDataLimits = DataLimits{MaxBytes: MaxDataBytes}
+
+// DataTooLarge is the error a script gets for an answer of n bytes over limit.
+func DataTooLarge(n, limit int) string {
+	size := fmt.Sprintf("%d bytes", limit)
+	if limit%(1<<20) == 0 {
+		size = fmt.Sprintf("%d MiB", limit>>20)
+	}
+	return fmt.Sprintf("the query returned %d bytes, more than the %s a script may read in one query; select fewer columns, aggregate in the query or add a limit", n, size)
+}
 
 // DataRecord is one script query of a run and its answer, as the eval
 // recorder keeps a data step.
@@ -72,7 +82,6 @@ type scriptData struct {
 	runRoot string
 	records map[string]DataRecord
 	order   int
-	spent   time.Duration
 }
 
 // SetData lets the scripts of the run in runRoot read data. A script that
@@ -86,7 +95,7 @@ func (c *Client) SetData(runRoot string, broker DataBroker, limits DataLimits) e
 	if _, err := c.relative(runRoot); err != nil || filepath.Clean(runRoot) == c.workspace {
 		return errors.New("script data needs a run folder inside the workspace")
 	}
-	if limits.MaxRows < 1 || limits.MaxBytes < 1 || limits.MaxQueries < 1 || limits.MaxTime <= 0 {
+	if limits.MaxBytes < 1 {
 		return errors.New("invalid script data limits")
 	}
 	d := &scriptData{broker: broker, limits: limits, runRoot: filepath.Clean(runRoot), records: map[string]DataRecord{}}
@@ -228,31 +237,21 @@ func countRows(data json.RawMessage) int {
 func (d *scriptData) run(ctx context.Context, key string, q DataQuery) (DataRecord, error) {
 	d.order++
 	r := DataRecord{Sequence: d.order, Key: key, Operation: "execute_graphql", Request: q}
-	qctx, cancel := context.WithTimeout(ctx, d.limits.MaxTime-d.spent)
 	started := time.Now()
-	data, err := d.broker(qctx, q)
-	expired := errors.Is(qctx.Err(), context.DeadlineExceeded)
-	cancel()
-	took := time.Since(started)
-	d.spent += took
-	r.DurationMs = took.Milliseconds()
+	data, err := d.broker(ctx, q)
+	r.DurationMs = time.Since(started).Milliseconds()
 	switch {
 	case ctx.Err() != nil:
 		return r, ctx.Err()
-	case err != nil && expired:
-		r.Error = "the script data time limit ran out during this query"
 	case err != nil:
 		r.Error = err.Error()
 	case !json.Valid(data) || !bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")):
 		r.Error = "the query returned no data object"
 	default:
 		r.Bytes, r.RowCount = len(data), countRows(data)
-		switch {
-		case r.Bytes > d.limits.MaxBytes:
-			r.Error = fmt.Sprintf("the query returned %d bytes, more than the %d bytes a script may read in one query; select fewer columns or add a limit", r.Bytes, d.limits.MaxBytes)
-		case r.RowCount > d.limits.MaxRows:
-			r.Error = fmt.Sprintf("the query returned %d rows, more than the %d rows a script may read in one query; aggregate in the query or add a limit", r.RowCount, d.limits.MaxRows)
-		default:
+		if r.Bytes > d.limits.MaxBytes {
+			r.Error = DataTooLarge(r.Bytes, d.limits.MaxBytes)
+		} else {
 			r.Data = data
 		}
 	}
@@ -264,16 +263,6 @@ func (d *scriptData) run(ctx context.Context, key string, q DataQuery) (DataReco
 	}
 	d.records[key] = r
 	return r, nil
-}
-
-func (d *scriptData) stopped() string {
-	if len(d.records) >= d.limits.MaxQueries {
-		return fmt.Sprintf("%sthe run reached its limit of %d data queries]", dataStopLabel, d.limits.MaxQueries)
-	}
-	if d.spent >= d.limits.MaxTime {
-		return fmt.Sprintf("%sthe run reached its script data time limit of %s]", dataStopLabel, d.limits.MaxTime)
-	}
-	return ""
 }
 
 func (c *Client) execWithData(ctx context.Context, body execBody) (localtool.ExecResult, error) {
@@ -304,10 +293,6 @@ func (c *Client) execWithData(ctx context.Context, body execBody) (localtool.Exe
 		}
 		slices.Sort(keys)
 		for _, key := range keys {
-			if note := d.stopped(); note != "" {
-				result.Output += note
-				return result, nil
-			}
 			if _, err := d.run(ctx, key, requests[key]); err != nil {
 				return localtool.ExecResult{}, err
 			}

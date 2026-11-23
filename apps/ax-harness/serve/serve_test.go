@@ -2,6 +2,7 @@ package serve
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -317,5 +318,18 @@ func TestKeyEnvNamesNamesEveryControlZoneSecret(t *testing.T) {
 	}
 	if got := strings.Join(KeyEnvNames(environ), ","); got != strings.Join(secrets, ",") {
 		t.Fatalf("KeyEnvNames = %s\nwant %s", got, strings.Join(secrets, ","))
+	}
+}
+
+func TestFramesFromWebCarryAScriptDataAnswerAndRunnerLinesStayCapped(t *testing.T) {
+	message := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"` + strings.Repeat("x", 100<<20) + `"}]}}`
+	line, _ := json.Marshal(Frame{Type: "mcp", Message: json.RawMessage(message)})
+	frame, err := readFrame(bufio.NewReaderSize(bytes.NewReader(append(line, '\n')), 64<<10))
+	if err != nil || frame.Type != "mcp" || len(frame.Message) != len(message) {
+		t.Fatalf("a 100 MiB frame from web: %v", err)
+	}
+	runnerLine := append(bytes.Repeat([]byte("x"), maxRunnerFrameBytes+1), '\n')
+	if _, err := readLine(bufio.NewReaderSize(bytes.NewReader(runnerLine), 64<<10), maxRunnerFrameBytes); err == nil || err.Error() != "frame too large" {
+		t.Fatalf("a runner line over 32 MiB: %v", err)
 	}
 }

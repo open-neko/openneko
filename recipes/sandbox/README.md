@@ -422,12 +422,12 @@ socket, and it needs no network for this. The host runs each query:
    that fails gives the script the error, and `query()` raises
    `NekoDataError`.
 
-The model sees only the output of the last run. Each run has these limits:
-10,000 rows and 4 MiB for one query, 50 queries, and 15 minutes of query
-time. A query over a limit gives the script an error. When the run reaches
-the query or time limit, OpenNeko stops and adds a line to the command's
-output. A script that runs again in the same run gets the same rows from
-the record.
+The model sees only the output of the last run. The answer to one query
+can be at most 64 MiB, which protects the memory of `openneko web`. A
+larger answer gives the script an error that names the 64 MiB cap. A run
+can make any number of queries, with any number of rows; the time limit of
+the turn or the workflow ends a run that does not stop. A script that runs
+again in the same run gets the same rows from the record.
 
 ### Declared queries
 
