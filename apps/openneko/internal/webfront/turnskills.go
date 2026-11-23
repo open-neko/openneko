@@ -29,12 +29,13 @@ type stagedSkillFile struct {
 // may not change; own skills saved in place; and team skills a member
 // changed, saved as a private copy (team name to copy name).
 type savedSkillEdits struct {
-	Proposed []string
-	Refused  []string
-	Unshown  []string
-	Own      []string
-	Copies   map[string]string
-	Skipped  []string
+	Proposed    []string
+	Refused     []string
+	Unshown     []string
+	Own         []string
+	Copies      map[string]string
+	Skipped     []string
+	NotFromTeam []string
 }
 
 func (s savedSkillEdits) copyList() []string {
@@ -60,6 +61,10 @@ func (s *savedSkillEdits) notices() []any {
 	for _, p := range s.Unshown {
 		out = append(out, jsObjOf("type", "notice", "code", "team_skill_unshown", "message",
 			unshownFile{p}.Error()+" OpenNeko did not propose the change to "+skillOf(p)+"."))
+	}
+	for _, n := range s.NotFromTeam {
+		out = append(out, jsObjOf("type", "notice", "code", "skill_edit_not_from_team", "message",
+			"OpenNeko did not save this run's change to the skill "+n+". The run changed a file that came from the built-in copy or from learned guidance, and your team's copy of that file is different. To change "+n+", edit it in Settings."))
 	}
 	return out
 }
@@ -313,6 +318,9 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 			}
 			log.Printf("[agent-run] run %s skill file %s skipped: the run got it from the image, not from the team skill", runID, p)
 			out.Skipped = append(out.Skipped, p)
+			if n := skillOf(p); !slices.Contains(out.NotFromTeam, n) {
+				out.NotFromTeam = append(out.NotFromTeam, n)
+			}
 			return true
 		}
 		changed = slices.DeleteFunc(slices.Clone(changed), func(f stagedSkillFile) bool { return notFromTeam(f.Path) })
@@ -437,6 +445,7 @@ func (a *API) saveSkillEdits(ctx context.Context, orgID, runID string, act runAc
 		}
 	}
 	slices.Sort(out.Skipped)
+	slices.Sort(out.NotFromTeam)
 	return out
 }
 
