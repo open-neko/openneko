@@ -2,12 +2,6 @@
 name: google-workspace-cross-app-research
 description: Combine evidence from Gmail, Drive, Calendar, Sheets, Docs, and Slides for one business question. Use when the answer spans more than one Google Workspace service or feeds another installed pack.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [google-workspace, cross-app, research, evidence]
-    category: productivity
-    requires_toolsets: [graphjin]
-    related_skills: [google-workspace-read]
 ---
 
 # Research across Google Workspace

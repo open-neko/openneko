@@ -2,12 +2,6 @@
 name: magento-review-performance
 description: Review Magento sales and operating performance using the pack's governed metrics. Use for daily or weekly briefings, revenue and order trends, store or product comparisons, and questions such as "how is the store doing?"; use a diagnostic Magento skill for a specific order, refund, fulfillment, inventory, cron, or indexer incident.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [magento, commerce, sales, revenue, metrics, briefing]
-    category: commerce
-    requires_toolsets: [graphjin]
-    related_skills: [magento-investigate-order, magento-triage-fulfillment, magento-investigate-refunds, magento-check-inventory, magento-diagnose-platform-health]
 ---
 
 # Review Magento performance

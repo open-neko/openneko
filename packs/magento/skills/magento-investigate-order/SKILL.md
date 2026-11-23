@@ -2,12 +2,6 @@
 name: magento-investigate-order
 description: Investigate one Magento order and reconstruct its order, invoice, shipment, credit-memo, and cancellation state for customer-service or operations questions. Use when an order ID or increment ID is supplied, an order appears stuck or inconsistent, or an operator wants to add a private internal note; do not use for aggregate fulfillment or sales reporting.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [magento, order, customer-service, invoice, shipment, credit-memo]
-    category: commerce
-    requires_toolsets: [graphjin]
-    related_skills: [magento-triage-fulfillment, magento-investigate-refunds, magento-review-performance]
 ---
 
 # Investigate a Magento order

@@ -2,12 +2,6 @@
 name: magento-run-promotions
 description: Design, preview, and govern Magento sales rules and coupon batches with discount, duration, count, and projected-exposure caps. Use when a user asks to create, edit, end, delete, or generate coupons for a promotion.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [magento, promotions, sales-rules, coupons, discounts, exposure]
-    category: commerce
-    requires_toolsets: [graphjin]
-    related_skills: [magento-manage-catalog, magento-review-performance]
 ---
 
 # Run Magento promotions

@@ -2,12 +2,6 @@
 name: magento-security-advisories
 description: Check the installed Magento or Adobe Commerce patch level against Adobe security bulletins and report critical or otherwise applicable vulnerabilities. Use for scheduled security checks and questions about Magento CVEs.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [magento, adobe-commerce, security, cve, patching]
-    category: commerce
-    requires_toolsets: [terminal]
-    related_skills: [magento-diagnose-platform-health]
 ---
 
 # Check Magento security advisories

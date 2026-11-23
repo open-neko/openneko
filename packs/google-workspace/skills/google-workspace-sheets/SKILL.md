@@ -2,12 +2,6 @@
 name: google-workspace-sheets
 description: Read Google Sheets and request approved value updates, appends, clears, and batch updates through the Google Workspace pack.
 license: Apache-2.0
-metadata:
-  hermes:
-    tags: [google-workspace, sheets, spreadsheets]
-    category: productivity
-    requires_toolsets: [graphjin, pack-actions]
-    related_skills: [google-workspace-read]
 ---
 
 # Use Google Sheets

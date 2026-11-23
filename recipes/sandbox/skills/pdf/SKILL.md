@@ -6,12 +6,6 @@ version: 1.0.0
 author: OpenNeko
 license: Apache-2.0
 platforms: [linux, macos]
-metadata:
-  hermes:
-    tags: [pdf, documents, forms, merge, ocr]
-    category: documents
-    requires_toolsets: [terminal]
-    related_skills: [docx, xlsx, pptx]
 ---
 
 # PDF files
