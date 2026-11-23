@@ -56,10 +56,10 @@ var workflowCompiler = llm.Program{
 }
 
 const compileRules = `Return only JSON of this shape:
-{"answer_call": "c3", "anchor_call": "c1 or empty", "query": "the query of answer_call with each changing date replaced by a $variable", "variables": [{"name": "start", "value": "the literal the variable replaces", "base": "today | anchor", "align": "day | week | month | quarter | year", "offset": -1, "unit": "day | week | month | quarter | year", "format": "date | timestamp"}]}
+{"answer_calls": ["c3"], "anchor_call": "c1 or empty", "query": "one query that holds the query of each answer call, with each changing date replaced by a $variable", "variables": [{"name": "start", "value": "the literal the variable replaces", "base": "today | anchor", "align": "day | week | month | quarter | year", "offset": -1, "unit": "day | week | month | quarter | year", "format": "date | timestamp"}]}
 
 Rules:
-- answer_call is the one successful call whose result answers the goal alone. Return {} when the answer needed the results of several calls.
+- answer_calls are the successful calls whose results together answer the goal. When there are several, write one query with each call's roots under its own alias, in the same order. Return {} when the answer needed a value that no single call returned, such as a sum the agent worked out from rows.
 - A variable's value is the start of the align period of its base, moved by offset units. today is the date the run started. anchor is the date that anchor_call returned, such as the newest order date.
 - anchor_call is the successful call that found the date the run counted back from. Leave it empty when the run counted from today.
 - Replace only the dates that change from one run to the next. Keep every other part of the query as it is. Write a variable as $name and do not declare it.
@@ -330,10 +330,11 @@ func compileInput(o workflowTurnOptions, answer string, calls []compileCall) str
 }
 
 type compileProposal struct {
-	AnswerCall string        `json:"answer_call"`
-	AnchorCall string        `json:"anchor_call"`
-	Query      string        `json:"query"`
-	Variables  []compiledVar `json:"variables"`
+	AnswerCalls []string      `json:"answer_calls"`
+	AnswerCall  string        `json:"answer_call"`
+	AnchorCall  string        `json:"anchor_call"`
+	Query       string        `json:"query"`
+	Variables   []compiledVar `json:"variables"`
 }
 
 func parseCompileProposal(raw string) (compileProposal, bool) {
@@ -342,7 +343,10 @@ func parseCompileProposal(raw string) (compileProposal, bool) {
 	if start < 0 || end <= start || json.Unmarshal([]byte(raw[start:end+1]), &p) != nil {
 		return p, false
 	}
-	return p, jsTrim(p.AnswerCall) != "" && jsTrim(p.Query) != ""
+	if len(p.AnswerCalls) == 0 && jsTrim(p.AnswerCall) != "" {
+		p.AnswerCalls = []string{p.AnswerCall}
+	}
+	return p, len(p.AnswerCalls) > 0 && jsTrim(p.Query) != ""
 }
 
 // verifyCompiled checks a proposal against the run it came from: each
@@ -357,9 +361,13 @@ func verifyCompiled(ctx context.Context, p compileProposal, calls []compileCall,
 		}
 		return compileCall{}, false
 	}
-	answer, ok := find(p.AnswerCall)
-	if !ok {
-		return compiledQuery{}, errors.New("answer_call names no successful call")
+	var answers []compileCall
+	for _, ref := range p.AnswerCalls {
+		c, ok := find(ref)
+		if !ok {
+			return compiledQuery{}, errors.New("answer call " + ref + " names no successful call")
+		}
+		answers = append(answers, c)
 	}
 	if graphqlOperationType(p.Query) != "query" {
 		return compiledQuery{}, errors.New("the compiled query is not a read")
@@ -396,11 +404,42 @@ func verifyCompiled(ctx context.Context, p compileProposal, calls []compileCall,
 		return compiledQuery{}, err
 	}
 	got, _ := compileData(text)
-	want, _ := compileData(answer.Result)
-	if !reflect.DeepEqual(got, want) {
+	if !holdsEveryRoot(got, answers) {
 		return compiledQuery{}, errors.New("the compiled query does not return the run's result")
 	}
 	return out, nil
+}
+
+// holdsEveryRoot is true when each root of each answer call's data comes
+// back, under any alias, in the compiled query's data.
+func holdsEveryRoot(got any, answers []compileCall) bool {
+	roots, ok := got.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, c := range answers {
+		want, ok := compileData(c.Result)
+		if !ok {
+			return false
+		}
+		wantRoots, ok := want.(map[string]any)
+		if !ok {
+			return false
+		}
+		for _, w := range wantRoots {
+			found := false
+			for _, g := range roots {
+				if reflect.DeepEqual(g, w) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func runCompiled(ctx context.Context, call compileDataCall, query string, vars map[string]any) (string, error) {
@@ -522,6 +561,7 @@ func (a *API) compileWorkflowRun(ctx context.Context, o workflowTurnOptions, ans
 	}
 	p, ok := parseCompileProposal(raw)
 	if !ok {
+		log.Printf("[workflow-compile] org=%s workflow=%s not compiled: the model step proposed no query", o.Workflow.OrgID, o.Workflow.ID)
 		return nil
 	}
 	c, err := verifyCompiled(ctx, p, calls, workflowToday(o.Workflow.CronTimezone, startedAt), call)

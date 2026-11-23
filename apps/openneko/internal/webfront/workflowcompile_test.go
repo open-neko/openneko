@@ -70,7 +70,7 @@ func TestVerifyCompiledKeepsAQueryThatGivesBackTheRunsResult(t *testing.T) {
 		{Ref: "c3", OK: true, Query: `{ salesorderheader(where: { orderdate: { gte: "2025-06-28T00:00:00" } }) { sum_subtotal } }`,
 			Result: `{"data":{"salesorderheader":{"sum_subtotal":51234.5}}}`},
 	}
-	p := compileProposal{AnswerCall: "c3", AnchorCall: "c1",
+	p := compileProposal{AnswerCalls: []string{"c3"}, AnchorCall: "c1",
 		Query:     `{ salesorderheader(where: { orderdate: { gte: $day } }) { sum_subtotal } }`,
 		Variables: []compiledVar{{Name: "day", Value: "2025-06-28T00:00:00", Base: "anchor", Align: "day", Offset: -1, Unit: "day", Format: "timestamp"}}}
 	call, seen := fakeCompileCall(map[string]string{`{"day":"2025-06-28T00:00:00"}`: `{"data":{"salesorderheader":{"sum_subtotal":51234.5}}}`})
@@ -105,18 +105,18 @@ func TestVerifyCompiledRejectsAProposalThatDoesNotHold(t *testing.T) {
 		want    string
 	}{
 		"the variable gives another date": {
-			compileProposal{AnswerCall: "c2", AnchorCall: "c1", Query: query,
+			compileProposal{AnswerCalls: []string{"c2"}, AnchorCall: "c1", Query: query,
 				Variables: []compiledVar{{Name: "day", Value: "2025-06-28", Base: "today", Offset: -1, Format: "date"}}},
 			nil, "gives 2026-11-20"},
 		"the rerun returns other data": {
-			compileProposal{AnswerCall: "c2", AnchorCall: "c1", Query: query, Variables: []compiledVar{good}},
+			compileProposal{AnswerCalls: []string{"c2"}, AnchorCall: "c1", Query: query, Variables: []compiledVar{good}},
 			map[string]string{`{"day":"2025-06-28"}`: `{"data":{"a":{"n":5}}}`}, "does not return the run's result"},
 		"the answer call failed": {
-			compileProposal{AnswerCall: "c9", Query: query}, nil, "answer_call"},
+			compileProposal{AnswerCalls: []string{"c9"}, Query: query}, nil, "answer call"},
 		"the query writes": {
-			compileProposal{AnswerCall: "c2", Query: `mutation { a(insert: {}) { n } }`}, nil, "not a read"},
+			compileProposal{AnswerCalls: []string{"c2"}, Query: `mutation { a(insert: {}) { n } }`}, nil, "not a read"},
 		"the variable is not in the query": {
-			compileProposal{AnswerCall: "c2", AnchorCall: "c1", Query: `{ a { n } }`, Variables: []compiledVar{good}}, nil, "not in the query"},
+			compileProposal{AnswerCalls: []string{"c2"}, AnchorCall: "c1", Query: `{ a { n } }`, Variables: []compiledVar{good}}, nil, "not in the query"},
 	}
 	for name, c := range cases {
 		call, _ := fakeCompileCall(c.answers)
@@ -199,5 +199,27 @@ func TestCompiledWorkflowContextRunsTheStoredQueryAndDropsItOnFailure(t *testing
 	seed(t, db, `insert into workflow_compiled_query (workflow_id, org_id, query, source_run_id, goal_hash) values ($1, 'org', '{ a { n } }', $2, 'old goal')`, wfID, runID)
 	if c, err := f.API.loadCompiledQuery(ctx, o.Workflow); err != nil || c != nil {
 		t.Fatalf("a query for another goal must be dropped: %v %v", c, err)
+	}
+}
+
+func TestVerifyCompiledJoinsSeveralAnswerCallsUnderAliases(t *testing.T) {
+	calls := []compileCall{
+		{Ref: "c1", OK: true, Result: `{"data":{"a":{"max_d":"2025-06-29"}}}`},
+		{Ref: "c2", OK: true, Result: `{"data":{"salesorderheader":{"count_salesorderid":0}}}`},
+		{Ref: "c3", OK: true, Result: `{"data":{"salesorderheader":[]}}`},
+	}
+	p := compileProposal{AnswerCalls: []string{"c2", "c3"}, AnchorCall: "c1",
+		Query:     `{ n: salesorderheader(where: { d: { lt: $cut } }) { count_salesorderid } oldest: salesorderheader(where: { d: { lt: $cut } }, limit: 3) { salesorderid } }`,
+		Variables: []compiledVar{{Name: "cut", Value: "2025-06-24", Base: "anchor", Offset: -5, Format: "date"}}}
+	call, _ := fakeCompileCall(map[string]string{`{"cut":"2025-06-24"}`: `{"data":{"n":{"count_salesorderid":0},"oldest":[]}}`})
+	if _, err := verifyCompiled(context.Background(), p, calls, time.Now(), call); err != nil {
+		t.Fatal(err)
+	}
+	call, _ = fakeCompileCall(map[string]string{`{"cut":"2025-06-24"}`: `{"data":{"n":{"count_salesorderid":0}}}`})
+	if _, err := verifyCompiled(context.Background(), p, calls, time.Now(), call); err == nil {
+		t.Fatal("a compiled query that drops one answer call's data must fail")
+	}
+	if p, ok := parseCompileProposal(`{"answer_call":"c2","query":"{ a { n } }"}`); !ok || len(p.AnswerCalls) != 1 {
+		t.Fatal("a single answer_call is still read")
 	}
 }
