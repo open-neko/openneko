@@ -75,7 +75,7 @@ type InventoryMap = Record<string, string[]>;
 type SemanticInventory = {
   schema_version: string;
   agent_events: InventoryMap;
-  worker_queues: InventoryMap;
+  job_queues: InventoryMap;
   observation_kinds: InventoryMap;
 };
 
@@ -88,7 +88,7 @@ if (inventory.schema_version !== "openneko.eval.semantic-inventory/v1") {
 const semanticIds = new Set(registry.entries.map((entry) => entry.id));
 for (const [kind, mapping] of Object.entries({
   agent_events: inventory.agent_events,
-  worker_queues: inventory.worker_queues,
+  job_queues: inventory.job_queues,
   observation_kinds: inventory.observation_kinds,
 })) {
   if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) {
@@ -158,9 +158,9 @@ const jobsSource = await readFile(
   "utf8",
 );
 assertExactInventory(
-  "worker queue",
+  "job queue",
   quotedValues(between(jobsSource, "export const MOVED_QUEUES = [", "] as const")),
-  inventory.worker_queues,
+  inventory.job_queues,
 );
 
 const observationSource = await readFile(
@@ -216,5 +216,5 @@ for (const manifestPath of resultManifests) {
 }
 
 process.stdout.write(
-  `eval repository valid: ${configPaths.length} configs, ${cases} selected case references, ${calls} planned calls, ${coveredSemantics.size}/${registry.entries.length} semantic IDs covered, ${Object.keys(inventory.agent_events).length} agent events, ${Object.keys(inventory.worker_queues).length} worker queues, ${Object.keys(inventory.observation_kinds).length} observation kinds mapped, ${resultManifests.length} checked-in results verified (${acceptedResults} accepted, ${rejectedResults} rejected)\n`,
+  `eval repository valid: ${configPaths.length} configs, ${cases} selected case references, ${calls} planned calls, ${coveredSemantics.size}/${registry.entries.length} semantic IDs covered, ${Object.keys(inventory.agent_events).length} agent events, ${Object.keys(inventory.job_queues).length} job queues, ${Object.keys(inventory.observation_kinds).length} observation kinds mapped, ${resultManifests.length} checked-in results verified (${acceptedResults} accepted, ${rejectedResults} rejected)\n`,
 );

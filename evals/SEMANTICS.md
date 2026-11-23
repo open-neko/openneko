@@ -24,9 +24,9 @@ Each machine-readable semantic will contain:
 - gate severity: hard safety, hard contract, quality ratchet, or advisory;
 - exclusions with a named alternative verification suite.
 
-The registry is checked against code-owned inventories. Adding a worker job,
-agent/control-plane tool, `AgentEvent`, fence, workflow/action status, records
-operation, plugin capability, or public feature requires either a semantic ID
+The registry is checked against code-owned inventories. Adding a job queue,
+agent/control-plane tool, `AgentEvent`, fence, workflow/action status, pack
+capability, or public feature requires either a semantic ID
 or an explicit mapping to an existing one.
 
 Tool use is evidence, not usually the outcome. Cases assert the resulting data,
@@ -150,10 +150,10 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `ACTION-EXECUTE` | Approved actions execute through the correct adapter and persist success/failure receipts | fake adapter + DB |
 | `ACTION-IDEMPOTENCY` | Retries, duplicate jobs, and repeated approvals cause at most one external effect | receipt/external fake |
 | `ACTION-COLLATERAL` | The intended mutation occurs and unrelated records/resources remain unchanged | post-state diff |
-| `ACTION-ADAPTER` | Code, webhook, and plugin adapters validate payloads, respect egress, and normalize outcomes | adapter contract/E2E |
+| `ACTION-ADAPTER` | Code, webhook, and pack adapters validate payloads, respect egress, and normalize outcomes | adapter contract/E2E |
 | `ACTION-AUDIT` | Proposal, policy, approval, execution, rejection, and failure are attributable and tamper-evident | audit-chain oracle |
 
-## 6. Channels, administration, and plugins
+## 6. Channels and administration
 
 | ID | Semantic outcome | Primary verification |
 |---|---|---|
@@ -165,18 +165,12 @@ All current `AgentEvent` variants map here or to runtime/action semantics:
 | `ADMIN-USER` | Invite, role change, deactivate/reactivate, and authorization require the correct approval | control-plane state oracle |
 | `ADMIN-SOURCE` | Source registry/config/role changes use secure forms for secrets and preserve preview/apply semantics | state + no-secret oracle |
 | `ADMIN-CHANNEL` | Workspace/member/link administration is scoped, attributable, and approval-gated | state + policy oracle |
-| `ADMIN-PLUGIN` | Plugin list/install/remove/update surfaces permissions and enforces install policy | registry + approval oracle |
-| `PLUGIN-MANIFEST` | Manifest validation and declared capabilities/egress match runtime registration | contract test |
-| `PLUGIN-SANDBOX` | Each plugin receives only declared mounts, credentials, and network destinations | containment E2E |
-| `PLUGIN-HOT-RELOAD` | Install/remove/secret rotation reconciles the live registry without process restart | lifecycle E2E |
-| `PLUGIN-ACTION` | Plugin actions become correctly described agent tools and execute only through action policy | tool + fake adapter |
-| `PLUGIN-CONNECT` | Connector discovery, per-user OAuth/token refresh, and source sync remain user-scoped | fake OAuth + sync oracle |
-| `PLUGIN-CHANNEL` | Channel capabilities register and drive inbound/outbound through the common adapter | plugin contract |
-| `PLUGIN-AUTH` | Singleton auth capability, sign-in, group/role mapping, and session gating are correct | fake OIDC + DB |
 
 ## 7. Records-engine semantics
 
 Records left the product in November 2026. Its `RECORDS-*` IDs are retired.
+The plugin system left in the same release. Its `PLUGIN-*` IDs and
+`ADMIN-PLUGIN` are retired. Packs and the sign-in in the core replace it.
 
 ## 8. Security and governance semantics
 
@@ -200,13 +194,13 @@ Records left the product in November 2026. Its `RECORDS-*` IDs are retired.
 | ID | Semantic outcome | Primary verification |
 |---|---|---|
 | `OPS-JOB-LIFECYCLE` | Queue, running, retrying, succeeded, failed, and cancelled states are monotonic and attributable | job state oracle |
-| `OPS-RECONCILE` | Lost worker/process state is reconciled without duplicate effects or permanently stuck runs | crash/restart E2E |
-| `OPS-STARTUP` | Migrations, database, GraphJin, gateway, worker, web, and sandbox dependencies start in a valid order | packaged smoke |
+| `OPS-RECONCILE` | The stale-run sweep in `openneko web` cancels runs that a stopped process left queued or running, without duplicate effects | crash/restart E2E |
+| `OPS-STARTUP` | `openneko start` checks the database, runs the migrations and `serve-init`, then starts serve (with GraphJin) and web; the external services can be off | packaged smoke |
 | `OPS-PROVISION` | Provider, model, source, sandbox, and credential configuration reaches every required process consistently | deployment fixture |
 | `OPS-HEALTH` | Status distinguishes healthy, degraded, transient, and terminal failures with actionable causes | fault-injected smoke |
 | `OPS-DEMO` | Demo seed, simulator, and scenarios are reproducible and resettable | snapshot/digest smoke |
 | `OPS-BACKUP` | Backup files verify in full before restore, and restore reports failures safely | backup restore test |
-| `OPS-UPGRADE` | Config/schema/plugin/runtime upgrades preserve supported state and fail safely | upgrade matrix |
+| `OPS-UPGRADE` | Config/schema/pack/runtime upgrades preserve supported state and fail safely | upgrade matrix |
 | `OPS-RESOURCE` | Disk, memory, network, provider quota, and sandbox limits degrade predictably and remain observable | soak/fault injection |
 
 Packaging, installer, release promotion, and deployment smoke remain platform
@@ -223,7 +217,7 @@ The machine registry will enumerate legal and illegal transitions for at least:
 - watcher and watch-event delivery;
 - source subscription and source-change receipt;
 - channel identity link;
-- plugin install/runtime state;
+- pack install state;
 - configuration change/promote/adopt/restore;
 - eval run, attempt, episode, shard, and baseline promotion.
 
@@ -231,22 +225,30 @@ Every transition suite includes idempotent replay, duplicate delivery, crash
 between write and acknowledgement, authorization failure, and audit/provenance
 assertions where applicable.
 
-The exact `AgentEvent`, worker queue, and observation-kind inventories are
+The exact `AgentEvent`, job queue, and observation-kind inventories are
 mapped to semantic owners in `evals/semantic-inventory.yaml`. Repository CI
 extracts those unions/constants from source and fails on any unmapped or stale
 item, so a new event, job, or telemetry operation cannot silently escape this
 registry.
 
-## 11. Worker-job ownership check
+## 11. Job-queue ownership check
 
-All current worker jobs map to the registry:
+`openneko web` runs every job queue on River. `MOVED_QUEUES` in
+`packages/db/src/jobs.ts` lists them, and `job_queues` in
+`evals/semantic-inventory.yaml` maps each one:
 
-| Worker jobs | Semantic owners |
+| Job queues | Semantic owners |
 |---|---|
-| `work-run` | `RUNTIME-*`, `WORK-*`, `OUTPUT-*` |
-| `business-profile-build`, `industry-insights-build`, `bootstrap-metrics-build`, `metric-refresh` | `ONBOARD-*`, `METRIC-REFRESH` |
-| `workflow_run_fire`, `workflow_api_sweep`, `workflow-scheduler`, `workflow_output_ttl_sweep` (River, in `openneko web`) | `FLOW-RUN`, `FLOW-CRON`, `FLOW-OUTPUT-TTL` |
-| `action-execute` | `ACTION-EXECUTE`, `ACTION-IDEMPOTENCY`, `ACTION-AUDIT` |
+| `work_run` | `RUNTIME-INGRESS`, `WORK-THREAD` |
+| `business_profile_build`, `industry_insights_build`, `bootstrap_metrics_build` | `ONBOARD-PROFILE`, `ONBOARD-RESEARCH`, `ONBOARD-BOOTSTRAP` |
+| `metric_refresh`, `metric_refresh_scheduled_sweep` | `METRIC-REFRESH` |
+| `workflow_run_fire`, `workflow_api_sweep`, `workflow_cron_sweep`, `workflow_output_ttl_sweep` | `FLOW-RUN`, `FLOW-CRON`, `FLOW-OUTPUT-TTL` |
+| `action_execute` | `ACTION-EXECUTE`, `ACTION-IDEMPOTENCY` |
+| `channel_deliver` | `CHANNEL-DELIVERY` |
+| `embedding_index`, `embedding_sweep` | `WORK-MEMORY-SEARCH`, `WORK-LIBRARY-SEARCH` |
+| `skill_learn` | `WORK-SKILLS` |
+| `bot_name_sweep` | `WORK-THREAD` |
+| `directory_sync` | `ADMIN-USER` |
 
 ## 12. Corpus growth rule
 

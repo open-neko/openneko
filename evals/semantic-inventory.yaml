@@ -26,7 +26,7 @@ agent_events:
   vitals: [OUTPUT-VITALS]
   skill_used: [WORK-SKILLS]
 
-worker_queues:
+job_queues:
   business_profile_build: [ONBOARD-PROFILE]
   industry_insights_build: [ONBOARD-RESEARCH]
   bootstrap_metrics_build: [ONBOARD-BOOTSTRAP]
@@ -43,7 +43,7 @@ worker_queues:
   embedding_index: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
   embedding_sweep: [WORK-MEMORY-SEARCH, WORK-LIBRARY-SEARCH]
   skill_learn: [WORK-SKILLS]
-  directory_sync: [ADMIN-USER, PLUGIN-AUTH]
+  directory_sync: [ADMIN-USER]
 
 observation_kinds:
   run.start: [RUNTIME-OBSERVABILITY]
