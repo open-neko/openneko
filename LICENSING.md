@@ -8,9 +8,6 @@ and hosted use, subject to its terms. It also requires preservation of required
 copyright, patent, trademark, attribution, license, and NOTICE materials in
 distributed copies and derivative works.
 
-The Apache License 2.0 does **not** grant rights to use the OpenNeko name, logo,
-or branding. Those marks are governed separately by [TRADEMARKS.md](TRADEMARKS.md).
-
 ## Copyright and attribution
 
 Original OpenNeko code authored by Amit Deshmukh is copyrighted by Amit
@@ -31,17 +28,10 @@ and attribution.
 If an individual file, package or dependency includes a different license
 notice, that notice controls that component.
 
-## Trademarks and hosted services
-
-"OpenNeko" and the OpenNeko logo are trademarks of Amit Deshmukh / OpenNeko.
-Apache 2.0 does not grant trademark rights.
+## Hosted services
 
 Hosted services, forks, and commercial offerings based on OpenNeko must comply
-with the Apache 2.0 license and NOTICE obligations. They must also follow the
-OpenNeko trademark policy and use their own branding unless they have written
-permission to use OpenNeko marks.
-
-See [TRADEMARKS.md](TRADEMARKS.md).
+with the Apache 2.0 license and NOTICE obligations.
 
 ## Contributing
 
@@ -52,5 +42,4 @@ if necessary. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Services
 
-Support, certification, partnership, and trademark permissions may be offered
-separately.
+Support, certification, and partnership may be offered separately.

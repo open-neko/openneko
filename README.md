@@ -83,7 +83,7 @@ Integrations ship as **solution packs**. A pack holds the sources, API specs, ac
 - **Any LLM provider.** The Ax agent runs with Anthropic, OpenAI, Google, Ollama and other compatible providers. You can change the provider without a change to the agent.
 - **A confined agent.** `openneko serve` runs each agent turn in a confined runner, apart from the control plane. The runner reaches data only through the per-run tool bridge of `openneko web`. Terminal commands run only in the optional sandbox service, which holds no secrets. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md).
 - **Optional services by URL.** An embedding service (search by meaning), a sandbox service (the terminal and the document skills) and a trace collector each connect by URL. OpenNeko works with each one off.
-- **Apache-2.0.** Read the source, self-host it, fork it, and build on it. The OpenNeko trademarks have separate rules. See [LICENSING.md](LICENSING.md) and [TRADEMARKS.md](TRADEMARKS.md).
+- **Apache-2.0.** Read the source, self-host it, fork it, and build on it. See [LICENSING.md](LICENSING.md).
 
 ## Evaluations
 
@@ -127,7 +127,7 @@ Pull requests are welcome. On your first PR, a bot asks you to sign the [Contrib
 
 ## License
 
-The OpenNeko source code uses the [Apache License 2.0](LICENSE). Third-party and modular components keep their own licenses. [TRADEMARKS.md](TRADEMARKS.md) covers the OpenNeko name and logo. [LICENSING.md](LICENSING.md) has the full model.
+The OpenNeko source code uses the [Apache License 2.0](LICENSE). Third-party and modular components keep their own licenses. [LICENSING.md](LICENSING.md) has the full model.
 
 ## Author
 
