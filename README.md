@@ -89,7 +89,7 @@ Integrations ship as **solution packs**. A pack holds the sources, API specs, ac
 
 OpenNeko tests the agent through the same runtime that runs in production. The suite covers skills, memories, file search, workflows, approved actions, channel delivery, compaction and GraphJin tools, against a frozen AdventureWorks snapshot.
 
-The results in [evals/results](evals/results) come from earlier releases, on an agent backend that OpenNeko no longer ships. A results table returns here when a run of the current Ax runtime is checked in.
+The [checked-in results](evals/README.md#checked-in-results) come from earlier releases, on an agent backend that OpenNeko no longer ships.
 
 [Method](evals/README.md) · [Benchmark contract](evals/BACKEND-BENCHMARK.md) · [Contribution guide](evals/CONTRIBUTING.md)
 
