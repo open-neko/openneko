@@ -77,4 +77,4 @@ Keep PRs focused — one change per PR makes review tractable. Include a short d
 
 Before your first pull request can be merged, you'll need to sign the OpenNeko [Contributor License Agreement](CLA.md). A bot prompts you automatically on your first PR — it's a single comment to sign.
 
-The CLA lets you keep the copyright in your contribution while granting the project the rights it needs to license OpenNeko under the [Apache License 2.0](LICENSE) and relicense if ever necessary. See [LICENSING.md](LICENSING.md) for how OpenNeko is licensed.
+The CLA lets you keep the copyright in your contribution while granting the project the rights it needs to license OpenNeko under the [Apache License 2.0](LICENSE) and relicense if ever necessary. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
