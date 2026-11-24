@@ -242,6 +242,11 @@ func restartUpgradedStack(ctx context.Context, sup *compose.Supervisor, project 
 	if err := runStartSteps(ctx, sup, project, files, mode, []string{"--pull", "never"}); err != nil {
 		return err
 	}
+	restoreBind, err := publishWebForSignIn(ctx, os.Stdout, sup, project, files, []string{"--pull", "never"})
+	if err != nil {
+		return err
+	}
+	defer restoreBind()
 	code, err := sup.Run(ctx, project, files, upgradeStackUpArgs(), os.Stdout, os.Stderr)
 	if err != nil {
 		return err
