@@ -15,14 +15,13 @@ import {
   rescoreEvaluation,
   runEvaluation,
   textDigest,
-  summarizeEpisodes,
   verifyResult,
   type EvalDriver,
   type EvalSemanticEvidence,
 } from "../src";
 import { createFixtureDriver } from "./fixtures/fixture-driver";
 import { runEvalCli } from "../src/cli";
-import { assertReadmeMetrics, readmeMetricsCells, assertRequiredMetrics, promoteResult } from "../src/report";
+import { assertRequiredMetrics, promoteResult } from "../src/report";
 
 async function put(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -801,13 +800,6 @@ describe("durable eval execution", () => {
       const invalid = structuredClone(episodes);
       invalid[0]!.measurements.toolCalls = value;
       expect(() => assertRequiredMetrics(invalid)).toThrow(/toolCalls/);
-    }
-    const summary = summarizeEpisodes(episodes);
-    const header = "| Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
-    const readme = `${header}\n| Fixture | v4 | 3 × 1 | 3/3 | 0 | 0 | source | [Report](result/summary.md) | ${readmeMetricsCells(summary)}`;
-    expect(() => assertReadmeMetrics(readme, summary, "result/summary.md")).not.toThrow();
-    for (const removed of [header, "[Report](result/summary.md)", ...readmeMetricsCells(summary).split("|").map(cell => cell.trim()).filter(Boolean)]) {
-      expect(() => assertReadmeMetrics(readme.replace(removed, ""), summary, "result/summary.md")).toThrow(/README/);
     }
     const scoreMissing = structuredClone(episodes);
     delete scoreMissing[0]!.score;

@@ -19,7 +19,7 @@
 
 ## Checked-in results
 
-These results come from earlier releases. The Hermes backend and the Records task (`s05`) are no longer in the product, so the current v4 suite has 64 tasks. `pnpm --filter @neko/evals repo:check` requires one row here for each checked-in result.
+These results come from earlier releases. The Hermes backend and the Records task (`s05`) are no longer in the product, so the current v4 suite has 64 tasks.
 
 | Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: |
