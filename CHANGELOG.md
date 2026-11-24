@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.0.2](https://github.com/open-neko/openneko/compare/v6.0.1...v6.0.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* app address for sign-in, upgrade fixes, README ([003c17b](https://github.com/open-neko/openneko/commit/003c17b005e6ed61069a3d64ed1767700886b708))
+* **cli:** apply the sign-in port rule on upgrade ([b7dfb63](https://github.com/open-neko/openneko/commit/b7dfb63afcf75f53afea2fcbfb0a355b7c4b1eac))
+* **cli:** back up a volume that a running service writes to ([375b183](https://github.com/open-neko/openneko/commit/375b1837d4790c2c4b96dae2e8e41aa6fab7973b))
+* **cli:** keep the sandbox and embedding keys between starts ([7118deb](https://github.com/open-neko/openneko/commit/7118deb06c151442a88d903b9971e873264b657c))
+* **web:** add OPENNEKO_APP_URL for sign-in behind an API proxy ([f76dbe5](https://github.com/open-neko/openneko/commit/f76dbe5eec16b5f492cca5d0cf9fce81cc8b8258))
+
 ## [6.0.1](https://github.com/open-neko/openneko/compare/v6.0.0...v6.0.1) (2026-11-23)
 
 
