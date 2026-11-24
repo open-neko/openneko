@@ -57,6 +57,8 @@ Integrations come from **solution packs**, installed after setup from **Admin â†
 
 `openneko web` decides for each request whether the sign-in cookies are `Secure`. The public URL saved under **Admin â†’ Settings** comes first, then `OPENNEKO_PUBLIC_URL`. When that URL is `https`, the cookies are `Secure`. In production mode, a request that came over https is `Secure` too: TLS on the port, or a TLS proxy that sends `X-Forwarded-Proto: https`. Only a plain-http request with no `https` public URL gets cookies that are not `Secure`, so SSO sign-in and pack OAuth work on `http://<LAN host>:3000`. When the public URL is `http` on a host other than loopback, `openneko web` logs one warning line at start. Put a TLS proxy in front and use an `https` public URL for any install that people reach over a network.
 
+Set `OPENNEKO_APP_URL` when people open the app at another address than the public URL. An example is an install whose API callers come through a company proxy while people use a VPN address. The sign-in links, the cookie `Secure` rule above, passkeys and device sign-in then use `OPENNEKO_APP_URL`. The workflow API examples, the webhook URLs, the channel webhooks and the pack OAuth callbacks keep the public URL. Scalekit sends people back to the sign-in callback, so register `<OPENNEKO_APP_URL>/api/auth/callback` in Scalekit. In Docker, set the variable for `openneko start` or in `compose.override.yml` under `web`.
+
 Until a sign-in provider is set up, every request acts as the first admin. For this reason, OpenNeko keeps the web port on the loopback address until then:
 
 - A native install listens on `127.0.0.1` and prints one line that says so. `openneko web --addr 0.0.0.0:3000` refuses to start.

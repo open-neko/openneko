@@ -582,11 +582,11 @@ func (a *API) beginSignIn(ctx context.Context, redirectURI, state, loginHint str
 	if id == scalekitPlugin {
 		return beginScalekitAuth(redirectURI, state, loginHint, values)
 	}
-	publicURL := a.publicURL(ctx)
-	if publicURL == "" {
+	appURL := a.appURL(ctx)
+	if appURL == "" {
 		return "", errors.New("OPENNEKO_PUBLIC_URL is not set — set OPENNEKO_PUBLIC_URL or save a public URL under Admin → Settings")
 	}
-	return beginMagicLinkAuth(ctx, a.signInClient(), a.now(), publicURL+"/api/auth/callback", state, loginHint, values)
+	return beginMagicLinkAuth(ctx, a.signInClient(), a.now(), appURL+"/api/auth/callback", state, loginHint, values)
 }
 
 func (a *API) completeSignInAuth(ctx context.Context, code, redirectURI, state string) (identity, error) {

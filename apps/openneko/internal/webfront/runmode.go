@@ -19,10 +19,10 @@ func Development() bool {
 	return strings.TrimSpace(os.Getenv("NODE_ENV")) == "development"
 }
 
-// secureCookie gives Secure unless a plain-http request meets a public URL that
+// secureCookie gives Secure unless a plain-http request meets an app URL that
 // is not https, because a browser drops a Secure cookie on plain http.
 func (a *API) secureCookie(r *http.Request) bool {
-	if strings.HasPrefix(a.publicURL(r.Context()), "https://") {
+	if strings.HasPrefix(a.appURL(r.Context()), "https://") {
 		return true
 	}
 	if a.Development {
@@ -35,11 +35,11 @@ func (a *API) secureCookie(r *http.Request) bool {
 	return strings.EqualFold(proto, "https")
 }
 
-// CookieWarning names a public URL that is http on a host other than loopback.
+// CookieWarning names an app URL that is http on a host other than loopback.
 func (a *API) CookieWarning(ctx context.Context) string {
-	u, err := url.Parse(a.publicURL(ctx))
+	u, err := url.Parse(a.appURL(ctx))
 	if err != nil || u.Scheme != "http" || isLoopbackHostname(u.Hostname()) {
 		return ""
 	}
-	return fmt.Sprintf("openneko web: warning: the public URL is http (%s), so cookies on plain-http requests are not Secure and can be read on the network; use https", u.Host)
+	return fmt.Sprintf("openneko web: warning: the app URL is http (%s), so cookies on plain-http requests are not Secure and can be read on the network; use https", u.Host)
 }

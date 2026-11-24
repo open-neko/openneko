@@ -204,6 +204,7 @@ services:
       # Base URL for emailed sign-in links and OAuth callbacks. Set it to the
       # URL people open when the web port is behind a proxy or another host.
       OPENNEKO_PUBLIC_URL: ${OPENNEKO_PUBLIC_URL:-http://localhost:${OPENNEKO_PORT:-3000}}
+      OPENNEKO_APP_URL: ${OPENNEKO_APP_URL:-}
       OPENNEKO_MAP_STYLE: ${OPENNEKO_MAP_STYLE:-}
       OPENNEKO_GRAPHJIN_URL: http://openneko-serve:8089
       OPENNEKO_GRAPHJIN_CONFIG: /config/graphjin/agentic.yml

@@ -29,6 +29,8 @@ type API struct {
 	Version string
 	// PublicURL overrides OPENNEKO_PUBLIC_URL; tests set it.
 	PublicURL string
+	// AppURL overrides OPENNEKO_APP_URL; tests set it.
+	AppURL string
 	// AuditWebhook overrides OPENNEKO_AUDIT_FAILURE_WEBHOOK_URL.
 	AuditWebhook string
 	// Development drops the request scheme from the Secure cookie rule.
@@ -575,6 +577,35 @@ func (a *API) publicURL(ctx context.Context) string {
 		return normalized
 	}
 	return ""
+}
+
+// appURL is the address people open the app at. OPENNEKO_APP_URL sets it when
+// that differs from the public URL that API callers, webhooks and OAuth
+// providers use; otherwise it is the public URL. Sign-in links, the cookie
+// Secure flag, passkeys and device sign-in follow it.
+func (a *API) appURL(ctx context.Context) string {
+	if u, ok := a.configuredAppURL(); ok {
+		return u
+	}
+	return a.publicURL(ctx)
+}
+
+func (a *API) appBaseURL(r *http.Request) string {
+	if u, ok := a.configuredAppURL(); ok {
+		return u
+	}
+	return a.publicBaseURL(r)
+}
+
+func (a *API) configuredAppURL() (string, bool) {
+	configured := a.AppURL
+	if configured == "" {
+		configured = os.Getenv("OPENNEKO_APP_URL")
+	}
+	if strings.TrimSpace(configured) == "" {
+		return "", false
+	}
+	return normalizePublicURL(configured)
 }
 
 func (a *API) publicBaseURL(r *http.Request) string {
