@@ -85,14 +85,6 @@ Integrations ship as **solution packs**. A pack holds the sources, API specs, ac
 - **Optional services by URL.** An embedding service (search by meaning), a sandbox service (the terminal and the document skills) and a trace collector each connect by URL. OpenNeko works with each one off.
 - **Apache-2.0.** Read the source, self-host it, fork it, and build on it.
 
-## Evaluations
-
-OpenNeko tests the agent through the same runtime that runs in production. The suite covers skills, memories, file search, workflows, approved actions, channel delivery, compaction and GraphJin tools, against a frozen AdventureWorks snapshot.
-
-The [checked-in results](evals/README.md#checked-in-results) come from earlier releases, on an agent backend that OpenNeko no longer ships.
-
-[Method](evals/README.md) · [Benchmark contract](evals/BACKEND-BENCHMARK.md) · [Contribution guide](evals/CONTRIBUTING.md)
-
 ## Stack modes
 
 `openneko start|setup|upgrade --mode prod|dev|demo` selects the Compose layers that the CLI deploys. Every mode has the same core: migrations, `openneko web` and `openneko serve`. In prod mode, OpenNeko's own database is your Postgres, by URL. Dev and demo modes run it in a container.
