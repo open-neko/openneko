@@ -10,9 +10,9 @@
 
 Ask a question about the business and get an answer from your own data. Turn a check you repeat into a workflow that runs on a schedule. When the fix needs a change in another system, OpenNeko drafts the action and waits for your approval. You choose the LLM provider, and you can change it at any time.
 
-[![OpenNeko at a container port: the port dashboard, the answer to "Which ships are delayed, and why?", and an action waiting for approval](.github/assets/readme-port.png)](https://fujairah.openneko.app)
+[![OpenNeko at a container port: the port dashboard, the answer to "Which ships are delayed, and why?", and an action waiting for approval](.github/assets/readme-port.png)](https://github.com/user-attachments/assets/9b547d7f-069d-420f-b6f3-812015a8e7a3)
 
-The port film shows OpenNeko inside a container port at Fujairah. [See the live demo](https://fujairah.openneko.app).
+Click the image to play the port film. It shows OpenNeko inside a container port at Fujairah. [See the live demo](https://fujairah.openneko.app).
 
 ## Quickstart
 
