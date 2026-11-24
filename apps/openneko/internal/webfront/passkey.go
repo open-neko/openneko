@@ -57,12 +57,12 @@ type passkeyRP struct {
 }
 
 func (a *API) passkeyRP(r *http.Request) passkeyRP {
-	u, err := url.Parse(a.publicBaseURL(r))
+	u, err := url.Parse(a.appBaseURL(r))
 	if err != nil {
 		return passkeyRP{}
 	}
 	rp := passkeyRP{id: strings.ToLower(u.Hostname())}
-	if a.configuredPublicURL() != "" {
+	if _, ok := a.configuredAppURL(); ok || a.configuredPublicURL() != "" {
 		rp.origin = originOf(u)
 	}
 	return rp

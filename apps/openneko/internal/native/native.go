@@ -196,6 +196,9 @@ func WebEnv(l Layout, o Options) map[string]string {
 	web["OPENNEKO_WEB_ADDR"] = o.WebAddr
 	web["OPENNEKO_WEB_DIR"] = o.WebDir
 	web["OPENNEKO_PUBLIC_URL"] = o.PublicURL
+	if v := strings.TrimSpace(os.Getenv("OPENNEKO_APP_URL")); v != "" {
+		web["OPENNEKO_APP_URL"] = v
+	}
 	web["OPENNEKO_SERVE_URL"] = "http://" + ServeAddr
 	web["OPENNEKO_GRAPHJIN_URL"] = "http://" + SubscriptionsAddr
 	web["OPENNEKO_WEB_ADMIN_SOCKET"] = l.WebAdmin()

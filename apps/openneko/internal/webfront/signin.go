@@ -137,7 +137,7 @@ func (a *API) deviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	formatted := formatUserCode(userCode)
-	verification := a.publicBaseURL(r) + "/device"
+	verification := a.appBaseURL(r) + "/device"
 	sendJSON(w, http.StatusOK, map[string]any{
 		"deviceCode":              deviceCode,
 		"userCode":                formatted,

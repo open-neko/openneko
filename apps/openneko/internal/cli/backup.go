@@ -528,10 +528,38 @@ func (s backupStack) dumpDatabase(ctx context.Context, w io.Writer) error {
 }
 
 func (s backupStack) archiveVolume(ctx context.Context, image, volume string, w io.Writer) error {
-	return dockerStream(ctx, nil, w, "run", "--rm", "--network", "none",
+	args := []string{"run", "--rm", "--network", "none",
 		"--user", "0:0", "--entrypoint", "tar",
-		"--mount", "type=volume,src="+volume+",dst=/source,readonly",
-		image, "--numeric-owner", "-C", "/source", "-cf", "-", ".")
+		"--mount", "type=volume,src=" + volume + ",dst=/source,readonly",
+		image, "--numeric-owner", "-C", "/source", "-cf", "-", "."}
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdout = w
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if tarOnlyChangedFiles(exitErr.ExitCode(), stderr.String()) {
+			return nil
+		}
+		return commandFailure("docker run", exitErr.ExitCode(), stderr.String())
+	}
+	return err
+}
+
+// tarOnlyChangedFiles reports a GNU tar exit that only warns about files a
+// running service changed while tar read them. The archive is complete.
+func tarOnlyChangedFiles(code int, stderr string) bool {
+	if code != 1 {
+		return false
+	}
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	for _, line := range lines {
+		if !strings.HasSuffix(strings.TrimSpace(line), "file changed as we read it") {
+			return false
+		}
+	}
+	return len(lines) > 0 && lines[0] != ""
 }
 
 func dockerOutput(ctx context.Context, args ...string) (string, error) {

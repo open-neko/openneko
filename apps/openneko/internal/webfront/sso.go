@@ -170,7 +170,7 @@ func appRedirect(w http.ResponseWriter, path string) {
 }
 
 func (a *API) redirectURI(r *http.Request) string {
-	return a.publicBaseURL(r) + "/api/auth/callback"
+	return a.appBaseURL(r) + "/api/auth/callback"
 }
 
 func (a *API) setCookie(w http.ResponseWriter, r *http.Request, name, value string, maxAge int) {

@@ -1,10 +1,8 @@
 import { readFile, readdir } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEvalPlan, loadEval, verifyResult } from "../src";
 import { parse } from "yaml";
-import { assertReadmeMetrics } from "../src/report";
-import { SummarySchema } from "../src/schemas";
 
 const workspace = fileURLToPath(new URL("../../../", import.meta.url));
 const configRoot = resolve(workspace, "evals/configs");
@@ -179,7 +177,6 @@ assertExactInventory(
   inventory.observation_kinds,
 );
 
-const readme = await readFile(resolve(workspace, "README.md"), "utf8");
 // These two previously published runs lack measurements required for new submissions.
 const historicalRuns = new Map([
   ["run-20260811t074134722z-8ae32696", "sha256:56da2f37c54fd46ee4ea3af52df42c1298668a7eb4a17c97fc4cec39a8aabe73"],
@@ -197,11 +194,6 @@ for (const manifestPath of resultManifests) {
   if (!markdown.includes("openneko.eval.report.facts.md/v2") && !historical) {
     throw new Error(`${resultDir} must include the required v2 report metrics`);
   }
-  const reportLink = relative(workspace, resolve(resultDir, "summary.md"));
-  if (!historical || readme.includes(reportLink)) assertReadmeMetrics(readme,
-    SummarySchema.parse(JSON.parse(await readFile(resolve(resultDir, "summary.json"), "utf8"))),
-    reportLink,
-  );
 
   if (!verification.gatesPassed) {
     if (manifest.accepted !== false) {

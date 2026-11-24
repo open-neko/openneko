@@ -293,3 +293,23 @@ func TestUpgradeHasSkipBackupFlag(t *testing.T) {
 		t.Fatal("upgrade is missing --skip-backup")
 	}
 }
+
+func TestTarOnlyChangedFiles(t *testing.T) {
+	cases := []struct {
+		code   int
+		stderr string
+		want   bool
+	}{
+		{1, "tar: .: file changed as we read it\n", true},
+		{1, "tar: .: file changed as we read it\ntar: ./a: file changed as we read it\n", true},
+		{1, "tar: ./a: Cannot open: Permission denied\n", false},
+		{1, "tar: .: file changed as we read it\ntar: ./a: Cannot open: Permission denied\n", false},
+		{1, "", false},
+		{2, "tar: .: file changed as we read it\n", false},
+	}
+	for _, c := range cases {
+		if got := tarOnlyChangedFiles(c.code, c.stderr); got != c.want {
+			t.Errorf("tarOnlyChangedFiles(%d, %q) = %v, want %v", c.code, c.stderr, got, c.want)
+		}
+	}
+}

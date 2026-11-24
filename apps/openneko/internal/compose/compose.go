@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -348,6 +349,95 @@ func ComposeEnv(env []string) []string {
 	return out
 }
 
+const optionalSecretsFile = ".optional-secrets.json"
+
+// composeEnv keeps the optional secrets between runs. A value in env is saved,
+// encrypted, in the runtime folder; an empty value removes the saved one; an
+// unset variable takes the saved value.
+func (s *Supervisor) composeEnv(env []string) []string {
+	dir, err := s.runtimeDir()
+	if err != nil {
+		return ComposeEnv(env)
+	}
+	path := filepath.Join(dir, optionalSecretsFile)
+	saved := readOptionalSecrets(path)
+	out := slices.Clip(env)
+	changed := false
+	for _, name := range optionalSecrets {
+		value, set := envValue(env, name)
+		switch {
+		case set && value != "":
+			if saved[name] != value {
+				saved[name] = value
+				changed = true
+			}
+		case set:
+			if _, ok := saved[name]; ok {
+				delete(saved, name)
+				changed = true
+			}
+		case saved[name] != "":
+			out = append(out, name+"="+saved[name])
+		}
+	}
+	if changed {
+		if err := writeOptionalSecrets(path, saved); err != nil && s.Notice != nil {
+			fmt.Fprintf(s.Notice, "warning: could not save %s: %v\n", path, err)
+		}
+	}
+	return ComposeEnv(out)
+}
+
+func envValue(env []string, name string) (string, bool) {
+	for i := len(env) - 1; i >= 0; i-- {
+		if value, ok := strings.CutPrefix(env[i], name+"="); ok {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func readOptionalSecrets(path string) map[string]string {
+	out := map[string]string{}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	var stored map[string]string
+	if json.Unmarshal(raw, &stored) != nil {
+		return out
+	}
+	for name, value := range stored {
+		if plain, err := config.MaybeDecryptValue("", value); err == nil && plain != "" {
+			out[name] = plain
+		}
+	}
+	return out
+}
+
+func writeOptionalSecrets(path string, values map[string]string) error {
+	stored := map[string]string{}
+	for name, value := range values {
+		enc, err := config.EncryptValue("", value)
+		if err != nil {
+			return err
+		}
+		stored[name] = enc
+	}
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // Run shells out to `docker compose -p <project> -f <files…> <args…>`,
 // forwarding I/O and signals. Returns the child's exit code. Pass
 // projectName as the empty string to let docker compose default to the
@@ -368,7 +458,7 @@ func (s *Supervisor) RunIO(ctx context.Context, projectName string, files, args 
 	}
 	dockerArgs = append(dockerArgs, args...)
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
-	cmd.Env = ComposeEnv(os.Environ())
+	cmd.Env = s.composeEnv(os.Environ())
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Stdin = stdin

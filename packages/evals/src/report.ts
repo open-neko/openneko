@@ -762,29 +762,6 @@ function publicEpisode(episode: EvalEpisode): unknown {
   };
 }
 
-export function readmeMetricsCells(summary: ReturnType<typeof summarizeEpisodes>): string {
-  const m = summary.measurements;
-  const seconds = (value: number | null) => value === null ? "unavailable" : `${(value / 1000).toFixed(1)}s`;
-  return `${seconds(m.wallDurationMs.p50)} / ${seconds(m.wallDurationMs.p95)} | ` +
-    `${m.toolCalls.total.toLocaleString("en-US")} (${pct(m.toolCalls.coverage)} coverage) | ` +
-    `${m.totalTokens.total.toLocaleString("en-US")} (${pct(m.usageCoverage.completeRate)} coverage) | ` +
-    `${m.estimatedCostUsd.count ? `$${m.estimatedCostUsd.total.toFixed(2)}` : "unavailable"} (${pct(m.costCoverage.completeRate)} coverage) |`;
-}
-
-export function assertReadmeMetrics(
-  readme: string,
-  summary: ReturnType<typeof summarizeEpisodes>,
-  reportLink: string,
-): void {
-  const evidenceRow = readme.split("\n").find((line) => line.startsWith("| ") && line.includes(`](${reportLink})`));
-  if (!evidenceRow) throw new Error(`README missing required result row: ${reportLink}`);
-  const label = evidenceRow.split("|")[1]!.trim();
-  const header = "| Backend / model | Suite | Tasks × repetitions | Tasks passed | Execution failures | Unsafe effects | Source commit | Evidence | Latency p50 / p95 | Total tool calls | Total tokens | Estimated run cost |";
-  if (!readme.includes(header) || !evidenceRow.endsWith(readmeMetricsCells(summary))) {
-    throw new Error(`README missing or incorrect required metrics: ${label}`);
-  }
-}
-
 export function assertRequiredMetrics(episodes: readonly EvalEpisode[]): void {
   if (!episodes.length) throw new Error("missing required metrics: no episodes");
   for (const episode of episodes) {
