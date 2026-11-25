@@ -35,7 +35,9 @@ func (a *API) modelDecide(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	res, err := a.hostCalls().Decide(r.Context(), act.OrgID, llm.Program{Signature: signature, Instruction: instruction}, inputs)
+	program := llm.Program{Instruction: instruction}
+	program.Signature = signature
+	res, err := a.hostCalls().Decide(r.Context(), act.OrgID, program, inputs)
 	if err != nil {
 		a.fail(w, r, err)
 		return
