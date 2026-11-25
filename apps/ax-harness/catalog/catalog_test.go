@@ -1,11 +1,7 @@
 package catalog
 
 import (
-	"bytes"
 	"math"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -95,34 +91,5 @@ func TestCostMatchesAxEstimator(t *testing.T) {
 		if want <= 0 || math.Abs(float64(got)-want*1_000_000) > 4 {
 			t.Fatalf("%s: cost=%d micros, Ax estimate=%f USD", c.model, got, want)
 		}
-	}
-}
-
-func pinnedAxVersion(t *testing.T) string {
-	t.Helper()
-	mod, err := os.ReadFile(filepath.Join("..", "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(mod), "\n") {
-		if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == axModule {
-			return fields[1]
-		}
-	}
-	t.Fatal("go.mod does not require the Ax module")
-	return ""
-}
-
-func TestHostSnapshotMatchesPinnedModule(t *testing.T) {
-	want, err := Export(pinnedAxVersion(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(filepath.Join("..", "..", "..", "packages", "llm", "src", "spend", "ax-model-catalog.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatal("packages/llm/src/spend/ax-model-catalog.json is stale; run `pnpm --filter @neko/llm catalog:ax`")
 	}
 }

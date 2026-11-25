@@ -12,7 +12,6 @@ calls in Go (`apps/openneko/internal/webfront`, `apps/openneko/internal/llm`).
   - `work/answer-expression` and `work/answer-tool-check`: the A2UI answer
     blocks.
   - `workflows/fences` and `workflows/fence-schemas`: the rule chat bubble.
-  - `model-tasks`, `model-routes` and `spend`: the Models and Spend settings.
   - `library/formats` and the types of `work` and
     `graphjin/pack-user-connections`.
 - **The evals.** The scripts and tests in `packages/evals` use it to seed an
@@ -31,15 +30,14 @@ copies.
 
 ## Fixtures that Go tests share
 
-- `test/fixtures/model-catalog.json`: the provider list and the default
-  models. `apps/openneko/internal/llm` and `test/model-catalog.test.ts` check
-  it.
-- `test/fixtures/host-calls.json`: the Ax route and the price for each host
-  call. `apps/openneko/internal/llm` and `test/host-calls-fixture.test.ts`
-  check it.
-- `src/spend/ax-model-catalog.json`: the model prices from the Ax harness.
-  `apps/ax-harness/catalog` fails when the file is stale. To make it again,
-  run `pnpm --filter @neko/llm catalog:ax`.
+- `test/fixtures/graphjin-persisted-config.yml`: a saved GraphJin config.
+  `apps/openneko/internal/gjhost` reads it.
+- `src/work/prompt.ts`: the chat prompt text.
+  `apps/openneko/internal/webfront` compares its prompt with it.
+
+The model catalog, the task routes, the prices and all spend code live in Go
+only (`apps/openneko/internal/llm`, `apps/openneko/internal/webfront`,
+`apps/ax-harness/catalog`).
 
 When you change one of these, change the Go code in the same commit.
 

@@ -35,11 +35,12 @@ func TestAdminModelsKeySealedAndMasked(t *testing.T) {
 	if dm["provider"] != "google-gemini" || dm["model"] != "gemini-3.8-flash" || dm["source"] != "default" {
 		t.Errorf("default model with no provider row: %v", dm)
 	}
-	if routes := got["routes"].([]any); len(routes) != 8 || routes[0].(map[string]any)["task"] != "default" || routes[0].(map[string]any)["modelId"] != nil {
+	if routes := got["routes"].([]any); len(routes) != 8 || routes[7].(map[string]any)["task"] != "decide" || routes[7].(map[string]any)["label"] != "Decisions" || routes[0].(map[string]any)["task"] != "default" || routes[0].(map[string]any)["modelId"] != nil {
 		t.Errorf("routes %v", routes)
 	}
 	catalog := got["catalog"].(map[string]any)
-	if len(catalog["providers"].([]any)) != 16 || catalog["defaults"].(map[string]any)["openai-compatible"] != "" {
+	if len(catalog["providers"].([]any)) != 19 || catalog["defaults"].(map[string]any)["openai-compatible"] != "" ||
+		catalog["defaults"].(map[string]any)["google-gemini-decisions"] != "gemini-decision-1" {
 		t.Errorf("catalog %v", catalog)
 	}
 
@@ -198,6 +199,51 @@ func TestAdminModelRoutes(t *testing.T) {
 	if err := db.QueryRow(t.Context(), `select string_agg(event, ',' order by seq) from audit_chain where org_id = 'org' and entity_kind = 'llm_model'`).Scan(&events); err != nil ||
 		events != "model:added,model:added,model:route_changed,model:route_changed,model:route_changed,model:removed" {
 		t.Errorf("audit events %q %v", events, err)
+	}
+}
+
+func TestAdminModelsDecisionModelServesOnlyDecisions(t *testing.T) {
+	f, _, db := signinFront(t, liveScalekit)
+	admin := sessionCookie("admin")
+	add := func(body string) map[string]any {
+		w := call(f, "POST", "/api/v1/admin/models", body, admin)
+		if w.Code != 201 {
+			t.Fatalf("create: %d %s", w.Code, w.Body.String())
+		}
+		return decode(t, w)["model"].(map[string]any)
+	}
+	decider := add(`{"name":"decider","provider":"google-gemini-decisions","secrets":{"apiKey":"k"}}`)
+	writer := add(`{"name":"writer","provider":"openai","model":"gpt-5","secrets":{"apiKey":"k"}}`)
+	if decider["decision"] != true || decider["model"] != "gemini-decision-1" || writer["decision"] != false {
+		t.Fatalf("decision flags: %v %v", decider, writer)
+	}
+	id, text := decider["id"].(string), writer["id"].(string)
+	refusal := "decider is a decision model. A decision model can serve only Decisions."
+	for _, body := range []string{
+		`{"task":"turn","modelId":"` + id + `"}`,
+		`{"task":"compact","modelId":"` + text + `","fallbackModelId":"` + id + `"}`,
+		`{"task":"default","fallbackModelId":"` + id + `"}`,
+	} {
+		w := call(f, "PUT", "/api/v1/admin/model-routes", body, admin)
+		if w.Code != 400 || decode(t, w)["error"] != refusal {
+			t.Errorf("%s: %d %s", body, w.Code, w.Body.String())
+		}
+	}
+	var rows int
+	if err := db.QueryRow(t.Context(), `select count(*) from llm_task_route where org_id = 'org'`).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("a refused route was saved: %d rows %v", rows, err)
+	}
+	w := call(f, "PUT", "/api/v1/admin/model-routes", `{"task":"decide","modelId":"`+id+`","fallbackModelId":"`+text+`"}`, admin)
+	if w.Code != 200 {
+		t.Fatalf("decide route: %d %s", w.Code, w.Body.String())
+	}
+
+	if w := call(f, "PUT", "/api/v1/admin/model-routes", `{"task":"turn","modelId":"`+text+`"}`, admin); w.Code != 200 {
+		t.Fatalf("turn route: %d %s", w.Code, w.Body.String())
+	}
+	w = call(f, "PUT", "/api/v1/admin/models/"+text, `{"name":"writer","provider":"openai-decisions","secrets":{"apiKey":"k"}}`, admin)
+	if w.Code != 400 || !strings.Contains(decode(t, w)["error"].(string), "the route of Agent turns uses it") {
+		t.Errorf("a routed text model became a decision model: %d %s", w.Code, w.Body.String())
 	}
 }
 

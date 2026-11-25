@@ -152,9 +152,7 @@ catalog cost replaces the reservation when the provider reports usage.
 | `priced_by` | `catalog` when every reported call had a catalog price, otherwise `unpriced`. |
 | `catalog_version` | The pinned Ax module version. |
 
-`go run ./cmd/ax-harness catalog` writes the same prices as JSON. OpenNeko
-checks the output in as `packages/llm/src/spend/ax-model-catalog.json`, and a
-test fails when that file differs from the pinned module.
+`go run ./cmd/ax-harness catalog` writes the same prices as JSON.
 
 ## Exit codes and signals
 
@@ -257,4 +255,6 @@ HTML returns as plain text. The cap is 10 MiB of body and 2,000,000 characters.
 
 Every tool is a JavaScript function in the Goja actor. One actor step can call
 many tools, loop over results and filter them, so extra tool calls add no model
-calls.
+calls. A call to the child agent is different: the step ends when the
+child returns, and the parent reads the result on its next model call. A turn
+with two child calls makes two more executor calls than a turn with none.

@@ -4,20 +4,7 @@
  * apps/web and apps/worker consume this package.
  */
 
-export * from "./config";
-export * from "./llm";
-export { generate, hostProgram, type GenerateResult, type HostProgram } from "./inference";
-export * from "./classifier";
-export * from "./usage-normalization";
 export * from "./agent-backend";
-export { makeAgentBackend } from "./agent-runtime";
-export {
-  resolveAgentBackend,
-  resolveAgentBackendId,
-  resolveAgentConcurrency,
-  type AgentConcurrency,
-} from "./agent-backend-resolver";
-export { cancelAllAgents, registerAgentCanceller } from "./agent-shutdown";
 export {
   DataSourceAuthorizationError,
   UpstreamProviderError,
@@ -26,12 +13,6 @@ export {
   detectUpstreamError,
 } from "./agent-error";
 export { AX_HARNESS_BINARY } from "./agent-runtime-contract";
-export {
-  ensureHostConfigProvisioned,
-  loadAgentModelKeys,
-  provisionHostConfig,
-  verifyAgentRuntimeReady,
-} from "./host-provision";
 export {
   prefetchKnowledgePack,
   prefetchKnowledgeForOrg,

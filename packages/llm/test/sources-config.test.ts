@@ -13,7 +13,6 @@ import {
   reconcileGraphjinWritePolicy,
   shouldReconcileDemoSourceAuthMode,
 } from "../src/graphjin/sources-config";
-import * as hostProvision from "../src/host-provision";
 
 const SOURCES_CONFIG = `# sources mode
 auth:
@@ -160,18 +159,6 @@ describe("atomicWriteFile", () => {
     await atomicWriteFile(target, "KEY=v\n", { mode: 0o600 });
     const info = await stat(target);
     expect(info.mode & 0o777).toBe(0o600);
-  });
-});
-
-// host-provision must keep re-exporting the canonical implementations.
-describe("host-provision re-exports", () => {
-  it("exposes the same functions as sources-config", () => {
-    expect(hostProvision.patchGraphjinSourcesJwtSecret).toBe(patchGraphjinSourcesJwtSecret);
-    expect(hostProvision.migrateGraphjinSystemSource).toBe(migrateGraphjinSystemSource);
-    expect(hostProvision.shouldReconcileDemoSourceAuthMode).toBe(
-      shouldReconcileDemoSourceAuthMode,
-    );
-    expect(hostProvision.SOURCES_SECRET_PLACEHOLDER).toBe(SOURCES_SECRET_PLACEHOLDER);
   });
 });
 

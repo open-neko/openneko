@@ -87,6 +87,28 @@ func ValidModelURL(base string) error {
 	return nil
 }
 
+// DecisionOnly reports whether Ax serves the route with typed inference
+// only: a decision model, which returns a choice and writes no text. The
+// answer comes from the features that Ax reports for the provider and the
+// model. It makes no network call.
+func DecisionOnly(route Route) (only bool) {
+	provider := route.ProviderName()
+	if provider == OpenAICompatible || route.Model == "" {
+		return false
+	}
+	defer func() {
+		if recover() != nil {
+			only = false
+		}
+	}()
+	client, ok := ax.NewAI(provider, ax.Object("api_key", "unused", "model", route.Model)).(ax.AxAIService)
+	if !ok {
+		return false
+	}
+	typed, _ := client.GetFeatures(route.Model)["requires_structured_output"].(bool)
+	return typed
+}
+
 type Retry struct {
 	MaxRetries int
 }
@@ -245,6 +267,30 @@ func CheckSignature(signature string) (err error) {
 		}
 	}()
 	ax.NewSignature(signature)
+	return nil
+}
+
+// CheckDecisionSignature accepts a signature that a decision model can
+// answer: each output is one required boolean, class or score.
+func CheckDecisionSignature(signature string) (err error) {
+	if err := CheckSignature(signature); err != nil {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("invalid program signature: %v", r)
+		}
+	}()
+	outputs := ax.NewSignature(signature).GetOutputFields()
+	if len(outputs) == 0 {
+		return errors.New("a decision needs at least one output")
+	}
+	for _, field := range outputs {
+		kind := field.Type.Name
+		if (kind != "boolean" && kind != "class" && kind != "score") || field.Type.IsArray || field.IsOptional {
+			return fmt.Errorf("decision output %q must be one required boolean, class or score", field.Name)
+		}
+	}
 	return nil
 }
 

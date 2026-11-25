@@ -5,7 +5,6 @@ import {
   validateRenderCardsInput,
 } from "../src/work/a2ui-contract";
 import { RENDER_CARDS_DESCRIPTION } from "../src/work/render-catalog";
-import { portableSchemaIssues } from "../src/tool-schema-portability";
 
 const quarters = {
   title: "Revenue over the last four quarters",
@@ -152,10 +151,6 @@ describe("render_cards contract", () => {
 
   it("rejects the previous message envelope", () => {
     expect(validateRenderCardsInput({ messages: [{ version: "v1.0", createSurface: "{}" }] }).success).toBe(false);
-  });
-
-  it("advertises a schema every provider can read in full", () => {
-    expect(portableSchemaIssues(RENDER_CARDS_INPUT_SCHEMA)).toEqual([]);
   });
 
   it("keeps the tool description short and free of protocol vocabulary", () => {

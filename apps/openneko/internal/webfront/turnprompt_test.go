@@ -97,7 +97,7 @@ func TestEveryPromptCopyHoldsTheFailedStepRule(t *testing.T) {
 	if !strings.Contains(buildWorkflowPrompt(workflowPromptInput{}), rule) {
 		t.Error("the workflow prompt lacks the rule")
 	}
-	for _, path := range []string{"../../../../packages/llm/src/work/prompt.ts", "../../../../packages/llm/src/workflows/runner-prompt.ts"} {
+	for _, path := range []string{"../../../../packages/llm/src/work/prompt.ts"} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -121,8 +121,7 @@ func TestEveryPromptCopyNamesTheRunAndSkillsFolders(t *testing.T) {
 		t.Error("the workflow prompt does not name the run and skills folders")
 	}
 	for path, want := range map[string]string{
-		"../../../../packages/llm/src/work/prompt.ts":             "- Skills ($SKILLS_DIR): ${workspace.skillsRoot}\n",
-		"../../../../packages/llm/src/workflows/runner-prompt.ts": "The run folder is ${workspace.runRoot}. The skills folder is ${workspace.skillsRoot}.\n",
+		"../../../../packages/llm/src/work/prompt.ts": "- Skills ($SKILLS_DIR): ${workspace.skillsRoot}\n",
 	} {
 		raw, err := os.ReadFile(path)
 		if err != nil {

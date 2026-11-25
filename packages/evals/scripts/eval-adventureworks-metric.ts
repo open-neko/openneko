@@ -18,11 +18,7 @@ import {
 import { ensureTestOrg, seedDataSource, seedProvider, uniqueOrgId } from "@neko/db/test-helpers";
 import { db, pool as metadataPool, processing_job } from "@neko/db";
 import { enqueueMetricRefresh } from "@neko/db/jobs";
-import {
-  classifyQuestion,
-  type AgentTokenUsage,
-  type QuestionClassificationDiagnostics,
-} from "@neko/llm";
+import type { AgentTokenUsage } from "@neko/llm";
 import { maybeEncryptSecret } from "@neko/llm/secrets";
 import pg from "pg";
 import { EvalInstallHost, type EvalEpisode, type EvalInstallHostOptions } from "./eval-install";
@@ -68,12 +64,14 @@ export type MetricCardInput = {
   chartHint: string;
 };
 
+export type MetricClassification = { durationMs: number; usage: AgentTokenUsage };
+
 export type MetricClassifier = (
   question: string,
   role: string,
   orgId: string,
-  options: Parameters<typeof classifyQuestion>[3],
-) => ReturnType<typeof classifyQuestion>;
+  options: { onDiagnostics?: (diagnostics: MetricClassification) => void },
+) => Promise<{ slug: string; title: string; why: string; chartHint: string }>;
 
 export type AdventureWorksMetricDriverOptions = {
   host?: EvalInstallHostOptions;
@@ -153,10 +151,11 @@ export function validateMetricResult(r: MetricResult): string | null {
 export function metricUsageMeasurements(input: {
   variant: EvalVariant;
   catalog: PricingCatalog | undefined;
-  classifier: AgentTokenUsage;
+  classifier?: AgentTokenUsage;
   ledger: MetricLedgerRow[];
 }): Record<string, unknown> {
-  const { classifier, ledger } = input;
+  const { ledger } = input;
+  const classifier: AgentTokenUsage = input.classifier ?? { coverage: "complete", totalTokens: 0, billedCostUsd: 0 };
   const reasons: string[] = [];
   const classifierEstimate = estimateUsageCost({
     usage: classifier,
@@ -306,7 +305,7 @@ export function createAdventureWorksMetricDriver(
   context: { loaded: LoadedEval; plan: EvalPlan },
   options: AdventureWorksMetricDriverOptions = {},
 ): EvalDriver {
-  const classify: MetricClassifier = options.classify ?? classifyQuestion;
+  const classify = options.classify;
   let host: EvalInstallHost | undefined;
   let pool: pg.Pool | undefined;
   const datasetId = context.loaded.cases[0]?.dataset ?? "adventureworks";
@@ -360,7 +359,7 @@ export function createAdventureWorksMetricDriver(
       id: "adventureworks.metric",
       version: "2.0.0",
       definition: {
-        classification: "natural question to card metadata via production classifier",
+        classification: "card metadata from the question text",
         numeric: "relative error against host SQL",
         baseline: "baselineValue (else the first chart target) relative error against host SQL",
         timeWindow: "exact grain/start/end",
@@ -514,23 +513,14 @@ export function createAdventureWorksMetricDriver(
       try {
         episode.activate();
         const orgId = await seedOrg(slot.variant, episode, metricOrgId);
-        let classificationDiagnostics: QuestionClassificationDiagnostics | undefined;
-        const classified = await classify(question, role, orgId, {
-          observer,
-          operationId: `${operationId}:classification`,
-          parentOperationId: operationId,
-          observationAttributes: {
-            "openneko.run.kind": "eval",
-            "openneko.model.scope": "classification",
-            "gen_ai.provider.name": slot.variant.outer_model.provider,
-            "gen_ai.request.model": slot.variant.outer_model.model,
-            "openneko.eval.case.id": slot.caseId,
-            "openneko.eval.variant.id": slot.variantId,
-          },
-          onDiagnostics(value) {
-            classificationDiagnostics = value;
-          },
-        });
+        let classificationDiagnostics: MetricClassification | undefined;
+        const classified = classify
+          ? await classify(question, role, orgId, {
+              onDiagnostics(value) {
+                classificationDiagnostics = value;
+              },
+            })
+          : { slug: "", title: "", why: "", chartHint: "" };
         const card: MetricCardInput = {
           question,
           role,
@@ -550,10 +540,14 @@ export function createAdventureWorksMetricDriver(
           ...metricUsageMeasurements({
             variant: slot.variant,
             catalog: context.loaded.pricing,
-            classifier: classificationDiagnostics?.usage ?? {
-              coverage: "unavailable",
-              missingReasons: ["classification usage unavailable"],
-            },
+            ...(classify
+              ? {
+                  classifier: classificationDiagnostics?.usage ?? {
+                    coverage: "unavailable" as const,
+                    missingReasons: ["classification usage unavailable"],
+                  },
+                }
+              : {}),
             ledger: job.ledger,
           }),
         };
@@ -674,7 +668,7 @@ export function createAdventureWorksMetricDriver(
         scorerId: "adventureworks.metric",
         scorerVersion: "2.0.0",
         scorerDefinition: {
-          classification: "natural question to card metadata via production classifier",
+          classification: "card metadata from the question text",
           numeric: "relative error against host SQL",
           baseline: "baselineValue (else the first chart target) relative error against host SQL",
           timeWindow: "exact grain/start/end",

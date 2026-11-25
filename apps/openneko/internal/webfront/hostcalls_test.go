@@ -481,13 +481,13 @@ func TestHostGenerateSpend(t *testing.T) {
 		('org', 'main', 'openai-compatible', 'qwen3', '{"url":"https://models.example.test/v1"}', '{"apiKey":"main-key"}', true, null, null),
 		('org', 'spare', 'groq', 'llama', '{}', '{"apiKey":"spare-key"}', true, 2, 10)`)
 	seed(t, db, `insert into llm_task_route (org_id, task, model_id, fallback_model_id)
-		select 'org', 'classify', (select id from llm_model where name = 'main'), (select id from llm_model where name = 'spare')`)
+		select 'org', 'bot_names', (select id from llm_model where name = 'main'), (select id from llm_model where name = 'spare')`)
 	seed(t, db, `update spend_limit set org_hourly_micros = 1000, warn_percent = 50 where org_id = 'org' and workflow_id is null`)
 
 	g.fb = true
 	g.reply = map[string]any{"answer": "42"}
 	g.usage = inference.Usage{Requests: 1, Reported: 1, InputTokens: 100, OutputTokens: 50, TotalTokens: 150, Coverage: "complete"}
-	result, err := f.API.hostCalls().Generate(t.Context(), "org", "classify", llm.Program{Signature: "q:string -> answer:string", Instruction: "Answer."}, map[string]any{"q": "?"})
+	result, err := f.API.hostCalls().Generate(t.Context(), "org", "bot_names", llm.Program{Signature: "q:string -> answer:string", Instruction: "Answer."}, map[string]any{"q": "?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,7 @@ func TestHostGenerateSpend(t *testing.T) {
 		from spend_ledger where org_id = 'org'`).Scan(&provider, &model, &micros, &tokens, &priced, &source, &version, &task, &src); err != nil {
 		t.Fatal(err)
 	}
-	if provider != "groq" || model != "llama" || micros != 700 || tokens != 150 || priced != "estimated" || source != "model_record" || version != "model_record" || task != "classify" || src != "system" {
+	if provider != "groq" || model != "llama" || micros != 700 || tokens != 150 || priced != "estimated" || source != "model_record" || version != "model_record" || task != "bot_names" || src != "system" {
 		t.Errorf("ledger %s %s %d %d %s %s %s %s %s", provider, model, micros, tokens, priced, source, version, task, src)
 	}
 	var kind, details string

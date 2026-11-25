@@ -15,7 +15,6 @@ import {
   createWorkRun,
   createWorkThread,
 } from "../../src/work/store";
-import { enableWorkflowApiAccess, updateWorkflowApiLimits } from "../../src/workflows/api-access";
 
 const reachable = await dbReachable();
 const describeIfDb = reachable ? describe : describe.skip;
@@ -121,43 +120,6 @@ describeIfDb("workflow store", () => {
         batch: null,
       });
       expect(removed.workflow.outputContract).toBeNull();
-    });
-  });
-
-  it("updates API limits for a workflow whose access is already enabled", async () => {
-    await withTestOrg(async (orgId) => {
-      const { workflow } = await saveWorkflow({
-        orgId,
-        name: "API limit patch",
-        steps: [{ id: "inspect", description: "Inspect the supplied record" }],
-      });
-      const actor = { userId: null, role: "admin" as const };
-
-      // A workflow without access takes the limits on a fresh, disabled row.
-      const disabled = await updateWorkflowApiLimits({
-        orgId,
-        workflowId: workflow.id,
-        actor,
-        limits: { maxTokensPerRun: 2_000_000 },
-      });
-      expect(disabled).toMatchObject({ enabled: false, limits: { maxTokensPerRun: 2_000_000 } });
-
-      await enableWorkflowApiAccess({ orgId, workflowId: workflow.id, actor });
-      const patched = await updateWorkflowApiLimits({
-        orgId,
-        workflowId: workflow.id,
-        actor,
-        limits: { maxTokensPerRun: 3_000_000, maxRuntimeSeconds: 1_800 },
-      });
-      expect(patched).toMatchObject({
-        enabled: true,
-        limits: { maxTokensPerRun: 3_000_000, maxRuntimeSeconds: 1_800 },
-      });
-      const row = await pool().query(
-        "select enabled, token_verifier is not null as has_token from workflow_api_access where workflow_id = $1",
-        [workflow.id],
-      );
-      expect(row.rows[0]).toEqual({ enabled: true, has_token: true });
     });
   });
 

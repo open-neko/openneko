@@ -271,14 +271,3 @@ func TestTurnMemorySemanticSearch(t *testing.T) {
 		t.Fatalf("with embedding down the search falls back to keywords: %v", got)
 	}
 }
-
-func TestCompactorProgramMatchesNode(t *testing.T) {
-	raw, err := os.ReadFile("../../../../packages/llm/src/work/compact-transcript.ts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := string(raw)
-	if !strings.Contains(src, "`"+compactorProgram.Signature+"`") || !strings.Contains(src, "`"+compactorProgram.Instruction+"`") {
-		t.Fatal("the compactor program differs from packages/llm/src/work/compact-transcript.ts")
-	}
-}

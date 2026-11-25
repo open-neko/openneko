@@ -7,9 +7,6 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./agent-runtime": "./src/agent-runtime.ts",
-    "./config": "./src/config.ts",
-    "./provider-runtime": "./src/provider-runtime.ts",
     "./library/formats": "./src/library/formats.ts",
     "./library/store": "./src/library/store.ts",
     "./secrets": "./src/secrets.ts",
@@ -23,21 +20,16 @@
     "./graphjin/sources-config": "./src/graphjin/sources-config.ts",
     "./graphjin/pack-user-connections": "./src/graphjin/pack-user-connections.ts",
     "./graphjin/client": "./src/graphjin/client.ts",
-    "./graphjin/config-file-view": "./src/graphjin/config-file-view.ts",
     "./graphjin/file-source-assets": "./src/graphjin/file-source-assets.ts",
     "./graphjin/openapi-assets": "./src/graphjin/openapi-assets.ts",
     "./graphjin/openapi-spec": "./src/graphjin/openapi-spec.ts",
     "./graphjin/persist-source-config": "./src/graphjin/persist-source-config.ts",
     "./graphjin/source-check": "./src/graphjin/source-check.ts",
-    "./spend": "./src/spend/index.ts",
-    "./model-tasks": "./src/model-tasks.ts",
-    "./model-routes": "./src/model-routes.ts",
     "./files": "./src/files/client.ts"
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest",
-    "catalog:ax": "cd ../../apps/ax-harness && go run ./cmd/ax-harness catalog > ../../packages/llm/src/spend/ax-model-catalog.json.tmp && mv ../../packages/llm/src/spend/ax-model-catalog.json.tmp ../../packages/llm/src/spend/ax-model-catalog.json"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
