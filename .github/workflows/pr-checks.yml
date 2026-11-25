@@ -143,7 +143,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: apps/openneko/go.mod
-          cache-dependency-path: apps/openneko/go.sum
+          cache: false
+      - uses: ./.github/actions/go-cache
 
       - name: Migrate visual-test database
         working-directory: apps/openneko
@@ -240,7 +241,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26.10"
-          cache-dependency-path: apps/openneko/go.sum
+          cache: false
+      - uses: ./.github/actions/go-cache
 
       - name: Install
         run: AX_SKIP_SKILL_INSTALL=1 pnpm install --frozen-lockfile

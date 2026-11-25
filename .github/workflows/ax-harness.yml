@@ -8,13 +8,19 @@ on:
       - "packages/**"
       - "apps/web/**"
       - ".github/workflows/ax-harness.yml"
+      - ".github/actions/go-cache/**"
   pull_request:
     paths:
       - "apps/ax-harness/**"
       - "packages/**"
       - "apps/web/**"
       - ".github/workflows/ax-harness.yml"
+      - ".github/actions/go-cache/**"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -27,7 +33,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: apps/ax-harness/go.mod
-          cache-dependency-path: apps/ax-harness/go.sum
+          cache: false
+      - uses: ./.github/actions/go-cache
 
       - name: gofmt
         run: |

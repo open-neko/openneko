@@ -1,0 +1,49 @@
+name: Go build cache
+description: >-
+  Restores the Go build and module caches that main saved last. With save, a push
+  to main saves them again and deletes the older copies, so each name keeps one entry.
+inputs:
+  name:
+    description: The cache name within one runner OS and architecture.
+    default: shared
+  save:
+    description: Set to "true" in the last step of the one job that saves this name.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - id: cache
+      shell: bash
+      run: |
+        echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+        echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "prefix=go-${RUNNER_OS}-${RUNNER_ARCH}-${{ inputs.name }}-" >> "$GITHUB_OUTPUT"
+
+    - if: inputs.save != 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ${{ steps.cache.outputs.build }}
+          ${{ steps.cache.outputs.mod }}
+        key: ${{ steps.cache.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: ${{ steps.cache.outputs.prefix }}
+
+    - if: inputs.save == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          ${{ steps.cache.outputs.build }}
+          ${{ steps.cache.outputs.mod }}
+        key: ${{ steps.cache.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+
+    - if: inputs.save == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PREFIX: ${{ steps.cache.outputs.prefix }}
+        KEEP: ${{ steps.cache.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+      run: |
+        gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key "$PREFIX" --limit 100 --json id,key \
+          --jq ".[] | select(.key != \"$KEEP\") | .id" | while read -r id; do
+          gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || true
+        done

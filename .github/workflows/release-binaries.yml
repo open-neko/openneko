@@ -29,9 +29,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      # Four concurrent builders keeps release throughput reasonable while
-      # bounding pressure on GHCR and the Actions cache service.
-      max-parallel: 4
+      # All ten builders run at once; the registry cache keeps the GHCR pushes small.
+      max-parallel: 10
       matrix:
         include:
           - image: neko-web
@@ -117,10 +116,12 @@ jobs:
           target: ${{ matrix.target }}
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/open-neko/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ steps.archkey.outputs.value }}
-          # Cache service outages must not invalidate an image already pushed
+          # The layer cache lives in GHCR: every release tag can read it, and it
+          # stays out of the Actions cache that the Go checks need.
+          cache-from: type=registry,ref=ghcr.io/open-neko/${{ matrix.image }}:buildcache-${{ steps.archkey.outputs.value }}
+          # Cache push failures must not invalidate an image already pushed
           # successfully to GHCR.
-          cache-to: type=gha,scope=${{ matrix.image }}-${{ steps.archkey.outputs.value }},mode=max,ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/open-neko/${{ matrix.image }}:buildcache-${{ steps.archkey.outputs.value }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
       - name: Enforce compressed image-size budget
         env:
@@ -258,7 +259,20 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26.10"
-          cache-dependency-path: apps/openneko/go.sum
+          cache: false
+      # Same paths and key prefix as .github/actions/go-cache, written out here
+      # because recovery runs check out tags that predate that action.
+      - id: go-cache
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-shared-${{ github.run_id }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-shared-
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -286,19 +300,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-  native-archives:
-    name: native archives
+  native-web:
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    name: native web app
     runs-on: ubuntu-22.04
-    needs: goreleaser
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.26.10"
-          cache-dependency-path: apps/openneko/go.sum
 
       - uses: pnpm/action-setup@v6
         with:
@@ -311,8 +320,92 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build the native archives
-        run: bash scripts/build-native-release.sh "${{ github.event.inputs.tag || github.event.release.tag_name }}" dist-native
+      - run: pnpm --filter @neko/web build:spa
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-web
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  # The archives build beside the images; only the publish job below waits for them.
+  native-build:
+    if: ${{ github.event_name != 'release' || !contains(github.event.release.tag_name, '-') }}
+    name: native archive (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    needs: native-web
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.10"
+          cache: false
+      # Same paths and key prefix as .github/actions/go-cache, written out here
+      # because recovery runs check out tags that predate that action.
+      - id: go-cache
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.build }}
+            ${{ steps.go-cache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-shared-${{ github.run_id }}
+          restore-keys: go-${{ runner.os }}-${{ runner.arch }}-shared-
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-web
+          path: ${{ runner.temp }}/web
+
+      - name: Build the native archive
+        env:
+          OPENNEKO_WEB_DIST: ${{ runner.temp }}/web
+        run: |
+          bash scripts/build-native-release.sh "${{ github.event.inputs.tag || github.event.release.tag_name }}" dist-native "${{ matrix.os }}/${{ matrix.arch }}"
+          mv dist-native/checksums-native.txt "dist-native/checksums-${{ matrix.os }}_${{ matrix.arch }}.part"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist-native
+          if-no-files-found: error
+          retention-days: 1
+
+  native-archives:
+    name: native archives
+    runs-on: ubuntu-22.04
+    needs: [goreleaser, native-build]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist-native
+          pattern: native-*-*
+          merge-multiple: true
+
+      - name: Join the checksums
+        run: |
+          set -euo pipefail
+          for target in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64 windows_arm64; do
+            cat "dist-native/checksums-${target}.part"
+          done > dist-native/checksums-native.txt
+          rm dist-native/checksums-*.part
+          test "$(wc -l < dist-native/checksums-native.txt)" -eq 6
+          cat dist-native/checksums-native.txt
 
       - name: Upload the native archives
         env:
