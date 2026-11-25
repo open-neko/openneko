@@ -1,5 +1,13 @@
 # Changelog
 
+## [6.2.1](https://github.com/open-neko/openneko/compare/v6.2.0...v6.2.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **llm:** meter decision model calls ([8a16339](https://github.com/open-neko/openneko/commit/8a16339e09550df477c9464e47b5414f0d3cf6f3))
+* **llm:** meter decision model calls ([8742bde](https://github.com/open-neko/openneko/commit/8742bded768f4cd51c5b4a22d769949cfb07a73b))
+
 ## [6.2.0](https://github.com/open-neko/openneko/compare/v6.1.0...v6.2.0) (2026-11-25)
 
 
