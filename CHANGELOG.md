@@ -1,5 +1,13 @@
 # Changelog
 
+## [6.1.0](https://github.com/open-neko/openneko/compare/v6.0.2...v6.1.0) (2026-11-25)
+
+
+### Features
+
+* **llm:** add decision models and the Decisions task ([bfb2d69](https://github.com/open-neko/openneko/commit/bfb2d69829f3e9df9c919d5f680ec65682a8c5c8))
+* **llm:** add decision models and the Decisions task ([3fb402f](https://github.com/open-neko/openneko/commit/3fb402fb48362a4d67f3e62bb72f8fe046fd6fa7))
+
 ## [6.0.2](https://github.com/open-neko/openneko/compare/v6.0.1...v6.0.2) (2026-11-24)
 
 
