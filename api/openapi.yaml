@@ -15,6 +15,7 @@ tags:
 - name: auth
 - name: bots
 - name: channels
+- name: decide
 - name: hooks
 - name: insights
 - name: integrations
@@ -32,6 +33,7 @@ tags:
 - name: work
 - name: workflow-runs
 - name: workflows
+- name: worlds
 components:
   securitySchemes:
     session:
@@ -6120,6 +6122,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChannelInboundResult'
+  /decide:
+    post:
+      operationId: postDecide
+      tags:
+      - decide
+      summary: Answer one closed question with the Decisions model
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signature:
+                  type: string
+                  description: An Ax signature whose outputs are all a boolean, a class or a score
+                instruction:
+                  type: string
+                values:
+                  type: object
+                  description: One value for each input of the signature
+              required:
+              - signature
+              - values
+      responses:
+        '200':
+          description: The answer
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  outputs:
+                    type: object
+                  provider:
+                    type: string
+                  model:
+                    type: string
+                  tokens:
+                    type: integer
+        '400':
+          description: No signature, no values, or an output that is not a boolean, a class or a score
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /hooks/{workflowId}:
     post:
       operationId: postHooksByWorkflowId
@@ -13504,6 +13563,116 @@ paths:
                 $ref: '#/components/schemas/Error'
         '502':
           description: The GraphJin query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /worlds/records/{name}:
+    get:
+      operationId: getWorldsRecord
+      tags:
+      - worlds
+      summary: Read a record of the world builder
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: A short lower-case name, for example mapping
+      - name: scope
+        in: query
+        required: false
+        schema:
+          type: string
+        description: mine for the record of the caller; else the record of the organization
+      responses:
+        '200':
+          description: The record
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  name:
+                    type: string
+                  value: {}
+                  updatedAt:
+                    type: string
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      operationId: putWorldsRecord
+      tags:
+      - worlds
+      summary: Save a record of the world builder
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: A short lower-case name, for example mapping
+      - name: scope
+        in: query
+        required: false
+        schema:
+          type: string
+        description: mine for the record of the caller; else the record of the organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value: {}
+              required:
+              - value
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          description: No value, or a name that is not short and lower-case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Only an admin can change a record of the organization
           content:
             application/json:
               schema:
