@@ -68,6 +68,8 @@ var Policies = []Policy{
 	{"/profile", SignedIn},
 	{"/api/v1/subscriptions", SignedIn},
 	{"/api/v1/bots", SignedIn},
+	{"/api/v1/decide", SignedIn},
+	{"/api/v1/worlds", SignedIn},
 	{"/api/v1/work", SignedIn},
 	{"/api/v1/workflow-runs", SignedIn},
 	{"/api/v1/workflows", SignedIn},

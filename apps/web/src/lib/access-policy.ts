@@ -80,6 +80,8 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/profile", rule: "signed-in" },
   { prefix: "/api/v1/subscriptions", rule: "signed-in" },
   { prefix: "/api/v1/bots", rule: "signed-in" },
+  { prefix: "/api/v1/decide", rule: "signed-in" },
+  { prefix: "/api/v1/worlds", rule: "signed-in" },
   { prefix: "/api/v1/work", rule: "signed-in" },
   { prefix: "/api/v1/workflow-runs", rule: "signed-in" },
   { prefix: "/api/v1/workflows", rule: "signed-in" },

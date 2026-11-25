@@ -19,19 +19,19 @@ func TestComposeEnvKeepsTheSandboxKeyBetweenRuns(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	s := &Supervisor{RuntimeDir: t.TempDir()}
 
-	s.composeEnv([]string{"PATH=/bin", "OPENNEKO_SANDBOX_KEY=k1"})
+	s.composeEnv([]string{"PATH=/bin", "OPENNEKO_SANDBOX_KEY=first-sandbox-key"})
 	raw, err := os.ReadFile(filepath.Join(s.RuntimeDir, optionalSecretsFile))
-	if err != nil || strings.Contains(string(raw), "k1") {
+	if err != nil || strings.Contains(string(raw), "first-sandbox-key") {
 		t.Fatalf("saved file = %q, %v; want the key encrypted", raw, err)
 	}
-	if got := s.composeEnv([]string{"PATH=/bin"}); !slices.Contains(got, "OPENNEKO_SANDBOX_KEY=k1") {
+	if got := s.composeEnv([]string{"PATH=/bin"}); !slices.Contains(got, "OPENNEKO_SANDBOX_KEY=first-sandbox-key") {
 		t.Errorf("unset variable: %v; want the saved key", got)
 	}
-	if got := s.composeEnv([]string{"OPENNEKO_SANDBOX_KEY=k2"}); !slices.Contains(got, "OPENNEKO_SANDBOX_KEY=k2") {
+	if got := s.composeEnv([]string{"OPENNEKO_SANDBOX_KEY=second-sandbox-key"}); !slices.Contains(got, "OPENNEKO_SANDBOX_KEY=second-sandbox-key") {
 		t.Errorf("new key: %v", got)
 	}
-	if got := s.composeEnv(nil); !slices.Contains(got, "OPENNEKO_SANDBOX_KEY=k2") {
-		t.Errorf("after a new key: %v; want k2", got)
+	if got := s.composeEnv(nil); !slices.Contains(got, "OPENNEKO_SANDBOX_KEY=second-sandbox-key") {
+		t.Errorf("after a new key: %v; want the second key", got)
 	}
 	s.composeEnv([]string{"OPENNEKO_SANDBOX_KEY="})
 	if got := s.composeEnv(nil); !slices.Contains(got, "OPENNEKO_SANDBOX_KEY=") {
