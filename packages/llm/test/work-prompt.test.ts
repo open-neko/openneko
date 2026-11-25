@@ -3,7 +3,6 @@ import type { AgentWorkspace } from "../src/agent-backend";
 import type { KnowledgePackContents } from "../src/knowledge-pack";
 import { buildBotSection, buildCardsSection, buildWorkPrompt } from "../src/work/prompt";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
-import { splitStablePrompt } from "../src/prompts/stable-prefix";
 
 const workspace: AgentWorkspace = {
   orgRoot: "/tmp/org",
@@ -383,9 +382,5 @@ describe("cards in the final answer", () => {
     }
     expect(first.indexOf("<workspace>")).toBeLessThan(first.indexOf("<long_term_memory>"));
     expect(first.indexOf("<long_term_memory>")).toBeLessThan(first.indexOf("<conversation_so_far>"));
-    expect(splitStablePrompt(first).stable).toBe(stable);
-    expect(splitStablePrompt(second).stable).toBe(stable);
-    expect(splitStablePrompt(second).turn).toMatch(/^<operator-profile>\nYou are working for user 2\./);
-    expect(splitStablePrompt(second).turn).toContain("question 2");
   });
 });

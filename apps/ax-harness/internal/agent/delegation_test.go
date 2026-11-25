@@ -21,9 +21,11 @@ func TestOwnedChildSharesRunBudgetAndReadScope(t *testing.T) {
 		`{"javascriptCode":"final('Find first reference',{})"}`,
 		`{"javascriptCode":"const found=catalog({key:'first'}); final('Found',{found});"}`,
 		`{"answer":"REF-1"}`,
+		`{"javascriptCode":"const two=team.worker({task:'Find second reference'}); final('Two references',{one,two});"}`,
 		`{"javascriptCode":"final('Find second reference',{})"}`,
 		`{"javascriptCode":"const found=catalog({key:'second'}); final('Found',{found});"}`,
 		`{"answer":"REF-2"}`,
+		`{"javascriptCode":"final('Two references',{one,two});"}`,
 		`{"answer":"REF-1 and REF-2"}`,
 	}
 	var modelCalls, reads, writes atomic.Int32
@@ -98,6 +100,7 @@ func TestChildToolErrorReachesTheParent(t *testing.T) {
 		`{"javascriptCode":"final('Read the reference',{})"}`,
 		`{"javascriptCode":"const found=catalog({key:'reference'}); final('Report evidence',{found});"}`,
 		`Answer: The reference is unavailable.`,
+		`{"javascriptCode":"final('Use child result',{child});"}`,
 		`Answer: The reference could not be verified.`,
 	}
 	var calls, reads atomic.Int32
@@ -143,6 +146,7 @@ func TestChildLargeResultReferenceStaysInChildRuntime(t *testing.T) {
 		`{"javascriptCode":"final('Read receipt',{});"}`,
 		`{"javascriptCode":"const ref=catalog({}); if (!ref.reference) throw new Error('missing reference'); const saved=harnessSavedOperation(1); final('Verified',{label:saved.result.label});"}`,
 		`{"answer":"REF-42"}`,
+		`{"javascriptCode":"let escaped=false; try { harnessSavedOperation(1); } catch (err) { escaped=true; } if (!escaped) throw new Error('child receipt escaped'); final('Answer',{child});"}`,
 		`{"answer":"REF-42"}`,
 	}
 	var calls, reads atomic.Int32
@@ -178,7 +182,7 @@ func TestChildLargeResultReferenceStaysInChildRuntime(t *testing.T) {
 	if err != nil || result.Status != "completed" || reads.Load() != 1 || calls.Load() != int32(len(answers)) {
 		t.Fatalf("result=%+v err=%v reads=%d calls=%d", result, err, reads.Load(), calls.Load())
 	}
-	if modelRequests != 6 {
-		t.Fatalf("model requests = %d, want 6", modelRequests)
+	if modelRequests != 7 {
+		t.Fatalf("model requests = %d, want 7", modelRequests)
 	}
 }

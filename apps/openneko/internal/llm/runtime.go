@@ -162,6 +162,10 @@ var fixedProviders = map[string][2]string{
 	"openrouter":    {"https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"},
 	"reka":          {"https://api.reka.ai/v1", "REKA_API_KEY"},
 	"x-grok":        {"https://api.x.ai/v1", "XAI_API_KEY"},
+
+	"google-gemini-decisions": {"https://generativelanguage.googleapis.com/v1beta", "GEMINI_API_KEY"},
+	"openai-decisions":        {"https://api.openai.com/v1", "OPENAI_API_KEY"},
+	"typesafe":                {"https://api.typesafe.ai", "TYPESAFE_API_KEY"},
 }
 
 func ResolveRuntime(provider, model string, config map[string]any) (Runtime, error) {

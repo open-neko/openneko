@@ -20,7 +20,8 @@
  * runs other comma-separated models with that saved key.
  */
 import { writeFile } from "node:fs/promises";
-import { resolvePrimaryProviderConfig } from "@neko/llm";
+import { pool } from "@neko/db";
+import { maybeDecryptSecret } from "@neko/llm/secrets";
 import {
   buildCardsSection,
   normalizeRenderCardsInput,
@@ -391,6 +392,17 @@ function targets(): Array<{ provider: string; model: string; key: string }> {
 
 const SAVED_PROVIDER: Record<string, string> = { "google-gemini": "gemini", anthropic: "anthropic", openai: "openai" };
 
+async function savedPrimary(orgId: string): Promise<{ provider: string; model: string; apiKey?: string }> {
+  const { rows } = await pool().query<{ provider: string; model: string; secrets: Record<string, string> | null }>(
+    "select provider, model, secrets from llm_provider_config where org_id = $1 and scope = 'primary' limit 1",
+    [orgId],
+  );
+  const row = rows[0];
+  if (!row) throw new Error(`organization ${orgId} has no saved primary provider`);
+  const key = row.secrets?.apiKey;
+  return { provider: row.provider, model: row.model, apiKey: key ? maybeDecryptSecret(key) || undefined : undefined };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const option = (name: string) => {
@@ -400,11 +412,11 @@ async function main() {
   const runs = targets();
   const orgId = option("--org");
   if (orgId) {
-    const saved = await resolvePrimaryProviderConfig(orgId);
+    const saved = await savedPrimary(orgId);
     const provider = SAVED_PROVIDER[saved.provider];
-    if (!provider || !saved.secrets.apiKey) throw new Error(`saved provider ${saved.provider} is not supported by this eval`);
+    if (!provider || !saved.apiKey) throw new Error(`saved provider ${saved.provider} is not supported by this eval`);
     const models = [saved.model, ...(option("--models") ?? "").split(",").map((value) => value.trim()).filter(Boolean)];
-    for (const model of new Set(models)) runs.push({ provider, model, key: saved.secrets.apiKey });
+    for (const model of new Set(models)) runs.push({ provider, model, key: saved.apiKey });
   }
   if (runs.length === 0) throw new Error("set a provider key and model list, or pass --org");
 

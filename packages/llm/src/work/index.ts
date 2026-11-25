@@ -1,8 +1,6 @@
 export * from "./workspace";
-export * from "./artifacts";
 export * from "./deployment-profile";
 export { buildCardsSection, buildWorkPrompt } from "./prompt";
-export { acquireAgentSlot, agentSlotUsage, ASK_DEFAULT_CONCURRENCY, setAgentSlotLimit } from "./agent-slots";
 export {
   normalizeRenderCardsInput,
   RENDER_CARDS_INPUT_SCHEMA,
@@ -19,31 +17,6 @@ export {
   type AskUserQuestionArgs,
 } from "./interaction-server";
 export {
-  buildAuditViewerServer,
-  buildChannelManagerServer,
-  buildDataSourceManagerServer,
-  buildGraphjinMcpServer,
-  buildGraphjinReadServer,
-  buildFilesServer,
-  buildPackActionServer,
-  buildRenderCardsServer,
-  buildSkillBuilderServer,
-  buildSourceConfigManagerServer,
-  buildUserManagerServer,
-  buildWorkMemoryServer,
-  buildSkillSearchServer,
-  type PackActionDescriptor,
-} from "./tools";
-export {
-  GRAPHJIN_DIRECT_GOVERNED_POLICY,
-  GRAPHJIN_TOOL_POLICY_ENV,
-  applyGraphjinMcpToolPolicy,
-  assertGraphjinMcpToolCallAllowed,
-  parseGraphjinMcpToolPolicy,
-  serializeGraphjinMcpToolPolicy,
-  type GraphjinMcpToolPolicy,
-} from "./graphjin-tool-policy";
-export {
   InProcessControlPlane,
   inProcessControlPlane,
   readSourceConfigView,
@@ -51,18 +24,6 @@ export {
   type SourceConfigPreviewResult,
   type SourceConfigViewResult,
 } from "./control-plane";
-export {
-  createAgentBroker,
-  ensureAgentBroker,
-  registerAgentBrokerEventSink,
-  shutdownAgentBroker,
-  startAgentBroker,
-  type AgentBrokerEventSink,
-  type AgentBrokerDeps,
-  type AgentBrokerHandle,
-  type RunBinding,
-  type StartAgentBrokerOptions,
-} from "./broker";
 export {
   WORK_SEMANTIC_STEP_ROWS_MAX_BYTES,
   WORK_SEMANTIC_TRACE_SCHEMA_VERSION,
@@ -84,7 +45,6 @@ export {
 export * from "./memory";
 export * from "./library";
 export * from "./store";
-export { listPackActionDescriptors } from "./pack-action-descriptors";
 export {
   detectSkillUse,
   recordSkillUsageFromEvent,
@@ -92,13 +52,6 @@ export {
   type SkillOriginKind,
   type SkillUseSource,
 } from "./skill-usage";
-export {
-  MAGENTO_LEARN_SKILLS,
-  magentoScoreImproved,
-  scoreSkillLearnWindow,
-  type SkillLearnScore,
-  type SkillLearnScoreSample,
-} from "./skill-learn-score";
 export {
   LEARNED_FILE,
   SKILL_OVERLAYS_DIR,
@@ -125,46 +78,16 @@ export {
 } from "./secret-scrubber";
 export { KNOWN_SKILL_DEPS, aggregateSkillDeps, type SkillDeps } from "./skill-deps";
 export {
-  normalizeSkillName,
-  upsertWorkSkill,
-  writeWorkSkill,
-  type WorkSkillDraft,
-} from "./skills";
-export {
   extractFrontmatterBlock,
   parseSkillFrontmatter,
   type SkillFrontmatter,
 } from "./skill-frontmatter";
-export {
-  COLUMNAR_MARKER,
-  TOOL_OUTPUT_METRICS_ENABLED,
-  compactJson,
-  createToolOutputRecorder,
-  estimateTokens,
-  expandJson,
-  measureToolResult,
-  metricsEnabled,
-  recordToolResult,
-  toolResultToText,
-  type CompactionFormat,
-  type CompactionResult,
-  type ToolOutputRecorder,
-  type ToolResultMetric,
-} from "./tool-output";
 // Last so its module load sees all the above already-evaluated barrel exports,
 // which means run-chat-turn.ts can safely import its in-package dependencies
 // from "./index" — that's what makes vi.mock("@neko/llm/work") in tests
 // intercept the helpers runChatTurn calls.
 // agent-core is imported by run-chat-turn and shares its ../workflows dep;
 // keep it in the same final tier (see the run-chat-turn note above).
-export { runAgentBackend, type RunAgentBackendInput } from "./agent-core";
-export { runChatTurn } from "./run-chat-turn";
-export type {
-  RunChannel,
-  RunChatTurnDeps,
-  RunChatTurnOptions,
-  RunChatTurnResult,
-} from "./run-chat-turn";
 export { sandboxConfig } from "./sandbox-service";
 export { orgTerminalSetting, sandboxForOrg } from "./sandbox-org";
 

@@ -31,6 +31,8 @@ type publicModel struct {
 	Config       map[string]any    `json:"config"`
 	SecretStatus map[string]string `json:"secretStatus"`
 	Price        *modelPrice       `json:"price"`
+	// Decision is true for a model that returns a choice and writes no text.
+	Decision bool `json:"decision"`
 }
 
 type publicRoute struct {
@@ -108,7 +110,8 @@ func (a *API) publicModel(m modelRow) (publicModel, error) {
 	for k, v := range secrets {
 		status[k] = llm.MaskSecret(v)
 	}
-	return publicModel{m.ID, m.Name, m.Provider, m.Model, m.Enabled, m.Config, status, m.price()}, nil
+	decision := llm.IsDecisionModel(m.Provider, m.Model, m.Config)
+	return publicModel{m.ID, m.Name, m.Provider, m.Model, m.Enabled, m.Config, status, m.price(), decision}, nil
 }
 
 // modelSettingsFor is getModelSettings() in packages/llm/src/model-routes.ts.
@@ -150,14 +153,23 @@ func (a *API) modelSettingsFor(ctx context.Context, orgID string) (*modelSetting
 	if primary, err := llm.PrimarySettings(ctx, a.DB, a.SecretsDir, orgID); err == nil {
 		out.DefaultModel.Provider, out.DefaultModel.Model, out.DefaultModel.Source = primary.Provider, primary.Model, primary.Source
 	}
-	out.Catalog.Providers = llm.PrimaryProviders
+	out.Catalog.Providers = llm.ModelProviders
 	out.Catalog.Defaults = map[string]string{}
 	out.Catalog.Fields = map[string][]llm.Field{}
-	for _, p := range llm.PrimaryProviders {
+	for _, p := range llm.ModelProviders {
 		out.Catalog.Defaults[p.Value] = llm.DefaultModel(p.Value)
 		out.Catalog.Fields[p.Value] = llm.Fields(p.Value)
 	}
 	return out, nil
+}
+
+func taskLabel(task string) string {
+	for _, t := range append([]llm.Task{llm.DefaultRoute}, llm.Tasks...) {
+		if t.Task == task {
+			return t.Label
+		}
+	}
+	return task
 }
 
 var modelName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
@@ -234,7 +246,7 @@ func (a *API) saveModel(ctx context.Context, act actor, id string, body map[stri
 	if !hasProvider && existing != nil {
 		provider = existing.Provider
 	}
-	if !llm.IsPrimaryProvider(provider) {
+	if !llm.IsModelProvider(provider) {
 		return publicModel{}, badModel("Choose a model provider from the list.")
 	}
 	providerChanged := existing == nil || existing.Provider != provider
@@ -314,6 +326,18 @@ func (a *API) saveModel(ctx context.Context, act actor, id string, body map[stri
 	}
 	if err := (llm.Settings{Source: "org", Provider: provider, Model: model, Enabled: enabled, Config: cfg, Secrets: secrets}).Validate(); err != nil {
 		return publicModel{}, badModel(err.Error())
+	}
+	if existing != nil && llm.IsDecisionModel(provider, model, cfg) {
+		var task string
+		err := a.DB.QueryRow(ctx, `select task from llm_task_route
+		  where org_id = $1 and task <> $3 and (model_id = $2::uuid or fallback_model_id = $2::uuid) order by task limit 1`,
+			act.OrgID, existing.ID, llm.DecideTask).Scan(&task)
+		if err == nil {
+			return publicModel{}, badModel("This is a decision model, and the route of " + taskLabel(task) + " uses it. A decision model can serve only Decisions. Change that route first.")
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return publicModel{}, err
+		}
 	}
 	sealed := map[string]string{}
 	for k, v := range secrets {
@@ -436,6 +460,26 @@ func (a *API) saveModelRoute(ctx context.Context, act actor, body map[string]any
 		}
 		if found != len(ids) {
 			return errNoSuchModel
+		}
+		rows, err := a.DB.Query(ctx, `select name, provider, model, config from llm_model where org_id = $1 and id = any($2::uuid[])`, act.OrgID, ids)
+		if err != nil {
+			return err
+		}
+		var name, provider, model string
+		var raw []byte
+		refused := ""
+		if _, err := pgx.ForEachRow(rows, []any{&name, &provider, &model, &raw}, func() error {
+			cfg := map[string]any{}
+			_ = json.Unmarshal(raw, &cfg)
+			if llm.CheckTaskModel(task, provider, model, cfg) != nil {
+				refused = name
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		if refused != "" {
+			return badModel(refused + " is a decision model. A decision model can serve only Decisions.")
 		}
 		_, err = a.DB.Exec(ctx, `insert into llm_task_route (org_id, task, model_id, fallback_model_id) values ($1, $2, $3::uuid, $4::uuid)
 		  on conflict (org_id, task) do update set model_id = excluded.model_id, fallback_model_id = excluded.fallback_model_id, updated_at = now()`,

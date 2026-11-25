@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import type { ModelSettings, PublicModel, PublicRoute } from "@neko/llm/model-routes";
+import { routeModels, type ModelSettings, type PublicModel, type PublicRoute } from "./types";
 import { AdminError } from "@/components/admin/AdminError";
 import { adminApi } from "@/components/admin/admin-api";
 import AppHeader from "@/components/AppHeader";
@@ -149,6 +149,7 @@ export default function ModelsForm({ initial }: { initial: ModelSettings }) {
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="font-medium">
                     {model.name}
+                    {model.decision ? <span className="ml-2 text-ui-caption text-text3">decision model</span> : null}
                     {model.enabled ? null : <span className="ml-2 text-ui-caption text-text3">off</span>}
                   </span>
                   <span className="text-ui-body-sm break-all text-text2">
@@ -178,7 +179,8 @@ export default function ModelsForm({ initial }: { initial: ModelSettings }) {
           <h2 className="settings-card-title">Task routes</h2>
           <p className="settings-card-copy">
             A task with no model of its own follows the Default route. The fallback takes a call only when the provider is
-            down, overloaded or times out; a refused key or a bad request stays an error.
+            down, overloaded or times out; a refused key or a bad request stays an error. A decision model returns a
+            choice and writes no text, so it can serve only Decisions.
           </p>
         </div>
         <ul className="flex flex-col divide-y divide-border">
@@ -196,7 +198,7 @@ export default function ModelsForm({ initial }: { initial: ModelSettings }) {
                   onChange={(e) => void saveRoute(route, { modelId: e.target.value || null })}
                 >
                   <option value="">{route.task === "default" ? defaultLabel : "Follow the Default route"}</option>
-                  {settings.models.map((model) => (
+                  {routeModels(route, settings.models).map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.name}
                     </option>
@@ -211,7 +213,7 @@ export default function ModelsForm({ initial }: { initial: ModelSettings }) {
                   onChange={(e) => void saveRoute(route, { fallbackModelId: e.target.value || null })}
                 >
                   <option value="">No fallback</option>
-                  {settings.models
+                  {routeModels(route, settings.models)
                     .filter((model) => model.id !== route.modelId)
                     .map((model) => (
                       <option key={model.id} value={model.id}>

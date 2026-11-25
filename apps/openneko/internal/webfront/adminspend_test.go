@@ -52,7 +52,7 @@ func TestAdminSpendLimits(t *testing.T) {
 		t.Errorf("workflows %v", wfs)
 	}
 	meter := got["byModel"].([]any)
-	if len(meter) != 1 || meter[0].(map[string]any)["tokens"] != 1200.0 || meter[0].(map[string]any)["task"] != "turn" {
+	if len(meter) != 1 || meter[0].(map[string]any)["tokens"] != 1200.0 || meter[0].(map[string]any)["task"] != "turn" || meter[0].(map[string]any)["taskLabel"] != "Agent turns" {
 		t.Errorf("byModel %v", meter)
 	}
 	if alerts := got["alerts"].([]any); len(alerts) != 0 {

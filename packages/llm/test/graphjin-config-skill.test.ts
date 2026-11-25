@@ -35,12 +35,8 @@ describe("graphjin-config skill", () => {
     }
     expect(withSources.length).toBeGreaterThan(0);
     const skill = await readFile(resolve(skillRoot, "SKILL.md"), "utf8");
-    const tools = await readFile(resolve(__dirname, "../src/work/tools.ts"), "utf8");
-    const toolText = tools.slice(tools.indexOf('"present_pack_setup"'), tools.indexOf("{ packId: PACK_ID_SCHEMA }"));
-    const listed = (text: string) => [...text.matchAll(/`?\b([a-z]+(?:-[a-z]+)*)\b`?/g)].map((match) => match[1]);
     for (const pack of withSources) {
       expect(skill).toContain(`\`${pack}\``);
-      expect(listed(toolText)).toContain(pack);
     }
   });
 });

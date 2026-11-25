@@ -141,7 +141,7 @@ func TaskRouteRecords(ctx context.Context, db DB, orgID, task string) (string, *
 }
 
 func routed(secretsDir string, m *ModelRecord) (*RoutedModel, error) {
-	if m == nil || !m.Enabled || !IsPrimaryProvider(m.Provider) {
+	if m == nil || !m.Enabled || !IsModelProvider(m.Provider) {
 		return nil, nil
 	}
 	secrets, err := DecryptSecrets(secretsDir, m.Sealed)
@@ -154,6 +154,25 @@ func routed(secretsDir string, m *ModelRecord) (*RoutedModel, error) {
 		return nil, err
 	}
 	return &RoutedModel{Ref: m.ID, Name: m.Name, Settings: s, Price: m.Price}, nil
+}
+
+// IsDecisionModel reports whether Ax serves the model with typed inference
+// only. Such a model returns a choice and writes no text.
+func IsDecisionModel(provider, model string, config map[string]any) bool {
+	route, err := AxRoute(Settings{Provider: provider, Model: model, Config: config})
+	return err == nil && inference.DecisionOnly(route)
+}
+
+// ErrDecisionModelOnTextTask means that a route gives a text task to a model
+// that writes no text.
+var ErrDecisionModelOnTextTask = errors.New("a decision model can serve only the Decisions task")
+
+// CheckTaskModel refuses a decision model on every task but Decisions.
+func CheckTaskModel(task, provider, model string, config map[string]any) error {
+	if task != DecideTask && IsDecisionModel(provider, model, config) {
+		return ErrDecisionModelOnTextTask
+	}
+	return nil
 }
 
 // ResolveTaskRoute is resolveTaskRoute(): an unset model means the org's
@@ -175,9 +194,17 @@ func ResolveTaskRoute(ctx context.Context, db DB, secretsDir, orgID, task string
 		}
 		primary = &RoutedModel{Ref: "default", Name: "default", Settings: s}
 	}
+	decision := func(m *RoutedModel) bool {
+		return CheckTaskModel(task, m.Settings.Provider, m.Settings.Model, m.Settings.Config) != nil
+	}
+	if decision(primary) {
+		return TaskRoute{}, fmt.Errorf("model %s on task %s: %w", primary.Name, task, ErrDecisionModelOnTextTask)
+	}
 	out.Primary = *primary
 	if fallback, err := routed(secretsDir, fallbackRec); err != nil {
 		log.Printf("[models] fallback for %s skipped: %v", task, err)
+	} else if fallback != nil && decision(fallback) {
+		log.Printf("[models] fallback for %s skipped: %v", task, ErrDecisionModelOnTextTask)
 	} else {
 		out.Fallback = fallback
 	}
@@ -206,7 +233,7 @@ func AxRoute(s Settings) (inference.Route, error) {
 		return inference.Route{}, err
 	}
 	switch s.Provider {
-	case "openai", "anthropic", "google-gemini":
+	case "openai", "anthropic", "google-gemini", "google-gemini-decisions", "openai-decisions", "typesafe":
 		return inference.Route{Provider: s.Provider, Model: rt.Model}, nil
 	case "azure-openai":
 		resource, err := requiredConfig(s.Config, "resourceName", "Azure resource name")
@@ -484,6 +511,16 @@ func (h HostCalls) Generate(ctx context.Context, orgID, task string, program Pro
 	return h.OnRoute(ctx, orgID, task, route, program, values)
 }
 
+// Decide runs a program whose outputs are all booleans, classes or scores,
+// on the route of the Decisions task. With no route for that task, the
+// default route answers it.
+func (h HostCalls) Decide(ctx context.Context, orgID string, program Program, values map[string]any) (Result, error) {
+	if err := inference.CheckDecisionSignature(program.Signature); err != nil {
+		return Result{}, err
+	}
+	return h.Generate(ctx, orgID, DecideTask, program, values)
+}
+
 // OnRoute calls the route. An empty task records no spend, as the provider
 // test does.
 func (h HostCalls) OnRoute(ctx context.Context, orgID, task string, route TaskRoute, program Program, values map[string]any) (Result, error) {
@@ -596,9 +633,23 @@ func DoorEmbedRequest(door *KeyDoor, request embedding.Request, key string, ttl 
 
 var providerTest = Program{`prompt:string -> reply:string "the word READY"`, "Reply with READY only."}
 
+// decisionTest is the provider test for a model that writes no text.
+var decisionTest = Program{`statement:string -> holds:boolean "true when the statement is correct"`, "Say if the statement is correct."}
+
 // TestPrimary is testPrimaryProvider(): one call on the settings, with no
 // task route and no spend row.
 func (h HostCalls) TestPrimary(ctx context.Context, orgID string, s Settings) error {
+	if IsDecisionModel(s.Provider, s.Model, s.Config) {
+		route := TaskRoute{Task: DecideTask, Primary: RoutedModel{Ref: "default", Name: "default", Settings: s}}
+		result, err := h.OnRoute(ctx, orgID, "", route, decisionTest, map[string]any{"statement": "Two plus two is four."})
+		if err != nil {
+			return err
+		}
+		if _, answered := result.Outputs["holds"]; !answered {
+			return errors.New("Provider test returned no decision")
+		}
+		return nil
+	}
 	result, err := h.OnRoute(ctx, orgID, "", TaskRoute{Task: "default", Primary: RoutedModel{Ref: "default", Name: "default", Settings: s}}, providerTest, map[string]any{"prompt": "Reply with READY only."})
 	if err != nil {
 		return err

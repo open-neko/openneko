@@ -38,6 +38,8 @@ const (
 	DoorAnthropic = "anthropic"
 	DoorGemini    = "gemini"
 	DoorEmbed     = "embed"
+	DoorDecisions = "decisions"
+	DoorTypesafe  = "typesafe"
 )
 
 // doorCall reports whether the route's API makes a call at tail with query.
@@ -58,6 +60,10 @@ func (r DoorRoute) doorCall(tail string, query url.Values) bool {
 			(method == "generateContent" || method == "streamGenerateContent")
 	case DoorEmbed:
 		return tail == "embeddings"
+	case DoorDecisions:
+		return tail == "decisions"
+	case DoorTypesafe:
+		return tail == "v1/systemone"
 	}
 	return tail == "chat/completions"
 }
@@ -497,14 +503,18 @@ var doorTransport = func() http.RoundTripper {
 }()
 
 var doorAPIs = map[string]string{
-	"anthropic":     DoorAnthropic,
-	"google-gemini": DoorGemini,
+	"anthropic":               DoorAnthropic,
+	"google-gemini":           DoorGemini,
+	"google-gemini-decisions": DoorDecisions,
+	"openai-decisions":        DoorDecisions,
+	"typesafe":                DoorTypesafe,
 }
 
 var doorHeaders = map[string]string{
-	"anthropic":     "x-api-key",
-	"google-gemini": "x-goog-api-key",
-	"azure-openai":  "api-key",
+	"anthropic":               "x-api-key",
+	"google-gemini":           "x-goog-api-key",
+	"google-gemini-decisions": "x-goog-api-key",
+	"azure-openai":            "api-key",
 }
 
 // DoorRouteFor is the upstream of an Ax route: the URL Ax would call when

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net"
 	"os"
@@ -220,5 +221,41 @@ func embeddingRequest() embedding.Request {
 func TestProviderTestSignatureParses(t *testing.T) {
 	if err := inference.CheckSignature(providerTest.Signature); err != nil {
 		t.Fatal(err)
+	}
+	if err := inference.CheckDecisionSignature(decisionTest.Signature); err != nil {
+		t.Fatal(err)
+	}
+	if err := inference.CheckDecisionSignature(providerTest.Signature); err == nil {
+		t.Fatal("a text program passed as a decision")
+	}
+}
+
+func TestCheckTaskModel(t *testing.T) {
+	for _, c := range []struct {
+		task, provider, model string
+		refused               bool
+	}{
+		{DecideTask, "google-gemini-decisions", "gemini-decision-1", false},
+		{DecideTask, "google-gemini", "gemini-3.8-flash", false},
+		{"turn", "google-gemini-decisions", "gemini-decision-1", true},
+		{"compact", "openai-decisions", "gpt-6-luna", true},
+		{"default", "typesafe", "jev-latest", true},
+		{"turn", "anthropic", "claude-opus-4-7", false},
+	} {
+		err := CheckTaskModel(c.task, c.provider, c.model, nil)
+		if (err != nil) != c.refused || (err != nil && !errors.Is(err, ErrDecisionModelOnTextTask)) {
+			t.Errorf("%s on %s %s: err = %v, want refused = %v", c.task, c.provider, c.model, err, c.refused)
+		}
+	}
+}
+
+func TestDecideRefusesATextProgram(t *testing.T) {
+	called := false
+	h := HostCalls{Gateway: func(context.Context, inference.Request, string, string) (inference.Result, error) {
+		called = true
+		return inference.Result{}, nil
+	}}
+	if _, err := h.Decide(context.Background(), "org-1", providerTest, map[string]any{"prompt": "x"}); err == nil || called {
+		t.Fatalf("Decide ran a text program: err = %v, called = %v", err, called)
 	}
 }

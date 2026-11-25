@@ -60,7 +60,9 @@ type spendAlert struct {
 }
 
 type spendByModelRow struct {
-	Task          *string `json:"task"`
+	Task *string `json:"task"`
+	// TaskLabel is the name of the task for a person.
+	TaskLabel     string  `json:"taskLabel"`
 	Provider      *string `json:"provider"`
 	Model         *string `json:"model"`
 	Calls         int64   `json:"calls"`
@@ -230,6 +232,10 @@ func (a *API) spendSettingsFor(ctx context.Context, orgID string, now time.Time)
 			return nil, err
 		}
 		row.Tokens, row.SpentUSD = parseNumeric(tokens), microsToUSD(parseNumeric(spent))
+		row.TaskLabel = "Not recorded"
+		if row.Task != nil && *row.Task != "" {
+			row.TaskLabel = taskLabel(*row.Task)
+		}
 		out.ByModel = append(out.ByModel, row)
 	}
 	return out, rows.Err()

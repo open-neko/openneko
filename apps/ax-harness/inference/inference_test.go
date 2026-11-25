@@ -311,3 +311,42 @@ func TestGenerateRefusesABadFallback(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+func TestDecisionOnlyFollowsAxFeatures(t *testing.T) {
+	for _, c := range []struct {
+		provider, model string
+		want            bool
+	}{
+		{"google-gemini-decisions", "gemini-decision-1", true},
+		{"openai-decisions", "gpt-6-luna", true},
+		{"typesafe", "jev-latest", true},
+		{"google-gemini", "gemini-3.8-flash", false},
+		{"anthropic", "claude-opus-4-7", false},
+		{"openai", "gpt-4.1-mini", false},
+		{"", "local-model", false},
+		{"no-such-provider", "model", false},
+		{"google-gemini-decisions", "", false},
+	} {
+		if got := DecisionOnly(Route{Provider: c.provider, Model: c.model}); got != c.want {
+			t.Errorf("%s %s: DecisionOnly = %v, want %v", c.provider, c.model, got, c.want)
+		}
+	}
+}
+
+func TestCheckDecisionSignature(t *testing.T) {
+	for signature, ok := range map[string]bool{
+		`ticket:string -> urgent:boolean`:                                          true,
+		`ticket:string -> team:class "support, billing"(evidence), urgent:boolean`: true,
+		`query:string -> relevance:score "Low, High"`:                              true,
+		`ticket:string -> reply:string`:                                            false,
+		`ticket:string -> urgent:boolean, note:string`:                             false,
+		`ticket:string -> tags:class "a, b"[]`:                                     false,
+		`ticket:string -> urgent?:boolean`:                                         false,
+		`ticket:string -> count:number`:                                            false,
+		``:                                                                         false,
+	} {
+		if err := CheckDecisionSignature(signature); (err == nil) != ok {
+			t.Errorf("%q: err = %v, want ok = %v", signature, err, ok)
+		}
+	}
+}

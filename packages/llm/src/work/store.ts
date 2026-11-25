@@ -22,8 +22,6 @@ import {
 import { createHash } from "node:crypto";
 import type { AgentBackendId } from "../agent-backend";
 import type { AgentEvent } from "../agent-backend";
-import { admitRunSpend, recordBudgetBlocked, type SpendSource } from "../spend/admission";
-import { recordUsageSpend } from "../spend/ledger";
 
 export type WorkThreadSummary = {
   id: string;
@@ -302,17 +300,11 @@ export type RunActor = {
   role: "admin" | "member" | "service";
 };
 
-export type RunSpend = {
-  source: SpendSource;
-  workflowId?: string | null;
-};
-
 export async function createWorkRun(
   orgId: string,
   threadId: string,
   backend: AgentBackendId,
   actor?: RunActor,
-  spend: RunSpend = { source: "system" },
 ) {
   const client = await pool().connect();
   let released = false;
@@ -326,18 +318,11 @@ export async function createWorkRun(
       [orgId, threadId, backend, actor?.userId ?? null, actor?.role ?? null],
     );
     rows = inserted.rows;
-    await admitRunSpend(client, {
-      orgId,
-      workflowId: spend.workflowId ?? null,
-      workRunId: rows[0].id,
-      source: spend.source,
-    });
     await client.query("commit");
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     client.release();
     released = true;
-    await recordBudgetBlocked(error);
     throw error;
   } finally {
     if (!released) client.release();
@@ -544,16 +529,6 @@ export async function appendWorkRunEvent(args: {
     })
     .returning({ id: work_run_event.id });
   const eventId = row?.id ?? 0;
-  if (args.event.type === "usage" && args.event.source === "outer" && eventId > 0) {
-    await recordUsageSpend({
-      orgId: args.orgId,
-      workRunId: args.runId,
-      usage: args.event.usage,
-      provider: args.event.provider,
-      model: args.event.model,
-      task: "turn",
-    });
-  }
   if (args.event.type === "tool_start" && eventId > 0) {
     const { recordSkillUsageFromEvent } = await import("./skill-usage");
     await recordSkillUsageFromEvent({

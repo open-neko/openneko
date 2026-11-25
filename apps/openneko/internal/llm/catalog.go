@@ -41,6 +41,23 @@ var PrimaryProviders = []ProviderOption{
 	{"vertex", "Vertex MaaS", "Vertex OpenAI-compatible endpoint via Google ADC"},
 }
 
+// RecordProviders can serve a model record and cannot be the primary
+// provider. Ax says if a model of any provider is a decision model.
+var RecordProviders = []ProviderOption{
+	{"google-gemini-decisions", "Google Gemini Decisions", "Gemini decision models via Google AI API"},
+	{"openai-decisions", "OpenAI Decisions", "Decision models via OpenAI API"},
+	{"typesafe", "Typesafe", "Jev decision models via Typesafe API"},
+}
+
+// ModelProviders is every provider that a model record can use.
+var ModelProviders = append(append([]ProviderOption{}, PrimaryProviders...), RecordProviders...)
+
+var recordDefaultModels = map[string]string{
+	"google-gemini-decisions": "gemini-decision-1",
+	"openai-decisions":        "gpt-6-luna",
+	"typesafe":                "jev-latest",
+}
+
 var defaultModels = map[string]string{
 	"openai":            "gpt-4.1-mini",
 	"anthropic":         "claude-opus-4-7",
@@ -69,7 +86,17 @@ func IsPrimaryProvider(provider string) bool {
 	return ok
 }
 
-func DefaultModel(provider string) string { return defaultModels[provider] }
+func IsModelProvider(provider string) bool {
+	_, ok := recordDefaultModels[provider]
+	return ok || IsPrimaryProvider(provider)
+}
+
+func DefaultModel(provider string) string {
+	if model, ok := recordDefaultModels[provider]; ok {
+		return model
+	}
+	return defaultModels[provider]
+}
 
 func Fields(provider string) []Field {
 	switch provider {
@@ -116,13 +143,16 @@ var DefaultRoute = Task{"default", "Default", "Every task with no route of its o
 
 var Tasks = []Task{
 	{"turn", "Agent turns", "Questions, workflows, metric runs and channel replies."},
-	{"classify", "Question classifier", "Sorts a new question before the agent starts."},
 	{"compact", "Conversation compaction", "Shortens a long conversation so the agent can go on."},
 	{"bot_instructions", "Bot instructions", "Keeps a bot's standing instructions up to date."},
 	{"bot_names", "Bot names", "Suggests a name for a new bot."},
 	{"skill_lessons", "Skill lessons", "Proposes a skill change from a finished run."},
 	{"research_mission", "Research mission", "Writes the company mission during setup."},
+	{DecideTask, "Decisions", "Answers yes-or-no and choice questions. A decision model answers them fastest."},
 }
+
+// DecideTask is the one task that a decision model can serve.
+const DecideTask = "decide"
 
 func IsTask(task string) bool {
 	for _, t := range Tasks {

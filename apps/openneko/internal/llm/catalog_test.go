@@ -1,34 +1,65 @@
 package llm
 
 import (
-	"encoding/json"
-	"os"
-	"reflect"
 	"testing"
 )
 
-func TestCatalogMatchesTypeScriptFixture(t *testing.T) {
-	raw, err := os.ReadFile("testdata/model-catalog.json")
-	if err != nil {
-		t.Fatal(err)
+func TestCatalogIsComplete(t *testing.T) {
+	seen := map[string]bool{}
+	for _, p := range ModelProviders {
+		if seen[p.Value] {
+			t.Errorf("provider %s is listed twice", p.Value)
+		}
+		seen[p.Value] = true
+		if !IsModelProvider(p.Value) || p.Label == "" || p.Description == "" {
+			t.Errorf("provider %s is not complete: %+v", p.Value, p)
+		}
+		if DefaultModel(p.Value) == "" && p.Value != "openai-compatible" {
+			t.Errorf("provider %s has no default model", p.Value)
+		}
+		if len(Fields(p.Value)) == 0 {
+			t.Errorf("provider %s has no form fields", p.Value)
+		}
 	}
-	var want, got any
-	if err := json.Unmarshal(raw, &want); err != nil {
-		t.Fatal(err)
+	if len(defaultModels) != len(PrimaryProviders) || len(recordDefaultModels) != len(RecordProviders) {
+		t.Fatalf("default models: %d for %d primary providers, %d for %d record providers",
+			len(defaultModels), len(PrimaryProviders), len(recordDefaultModels), len(RecordProviders))
 	}
-	defaults := map[string]string{}
-	fields := map[string][]Field{}
-	for _, p := range PrimaryProviders {
-		defaults[p.Value] = DefaultModel(p.Value)
-		fields[p.Value] = Fields(p.Value)
+	for _, p := range RecordProviders {
+		if IsPrimaryProvider(p.Value) {
+			t.Errorf("record provider %s can be the primary provider", p.Value)
+		}
 	}
-	mine, _ := json.Marshal(map[string]any{"providers": PrimaryProviders, "defaults": defaults, "fields": fields, "tasks": Tasks})
-	_ = json.Unmarshal(mine, &got)
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Go catalogue differs from the TypeScript fixture:\n go  %s\n ts  %s", mine, raw)
+	tasks := map[string]bool{}
+	for _, task := range Tasks {
+		if tasks[task.Task] || task.Label == "" || task.Description == "" || task.Task == DefaultRoute.Task {
+			t.Errorf("task %+v is not valid", task)
+		}
+		tasks[task.Task] = true
 	}
-	if len(defaultModels) != len(PrimaryProviders) {
-		t.Fatalf("%d default models for %d providers", len(defaultModels), len(PrimaryProviders))
+	if !IsTask(DecideTask) {
+		t.Error("the Decisions task is not in the task list")
+	}
+}
+
+func TestIsDecisionModelAsksAx(t *testing.T) {
+	for _, c := range []struct {
+		provider, model string
+		want            bool
+	}{
+		{"google-gemini-decisions", "gemini-decision-1", true},
+		{"openai-decisions", "gpt-6-luna", true},
+		{"typesafe", "jev-latest", true},
+		{"google-gemini", "gemini-3.8-flash", false},
+		{"anthropic", "claude-opus-4-7", false},
+		{"openai", "gpt-4.1-mini", false},
+	} {
+		if got := IsDecisionModel(c.provider, c.model, nil); got != c.want {
+			t.Errorf("%s %s: IsDecisionModel = %v, want %v", c.provider, c.model, got, c.want)
+		}
+	}
+	if IsDecisionModel("ollama", "llama3.2", map[string]any{"url": "http://localhost:11434"}) {
+		t.Error("an Ollama text model counts as a decision model")
 	}
 }
 

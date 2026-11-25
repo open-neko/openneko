@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import type { MetricRefresh, SpendLimitsUsd, SpendSettings, SpendWindowUsage, WorkflowSpendRow } from "@neko/llm/spend";
-import { taskLabel } from "@neko/llm/model-tasks";
+import type { MetricRefresh, SpendLimitsUsd, SpendSettings, SpendWindowUsage, WorkflowSpendRow } from "./types";
 import { AdminError } from "@/components/admin/AdminError";
 import { adminApi } from "@/components/admin/admin-api";
 import AppHeader from "@/components/AppHeader";
@@ -277,7 +276,7 @@ function SpendByModel({ settings }: { settings: SpendSettings }) {
           <TableBody>
             {settings.byModel.map((row) => (
               <TableRow key={`${row.task}:${row.provider}:${row.model}`}>
-                <TableCell>{taskLabel(row.task)}</TableCell>
+                <TableCell>{row.taskLabel}</TableCell>
                 <TableCell className="break-all">{row.provider && row.model ? `${row.provider}/${row.model}` : "Not recorded"}</TableCell>
                 <TableCell className="text-right tabular-nums">{row.calls.toLocaleString("en-US")}</TableCell>
                 <TableCell className="text-right tabular-nums">{row.tokens.toLocaleString("en-US")}</TableCell>

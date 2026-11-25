@@ -47,6 +47,10 @@ func TestKeyDoorForwardsOnlyModelCallPaths(t *testing.T) {
 			[]string{"/models/gemini-2.5-flash:countTokens", "/models/gemini-2.5-flash:batchEmbedContents", "/files", "/models/a/b:generateContent", "/models/:generateContent", "/cachedContents"}},
 		{DoorEmbed, "/v1", []string{"/embeddings"},
 			[]string{"/chat/completions", "/files", "/embeddings/x"}},
+		{DoorDecisions, "/v1beta", []string{"/decisions"},
+			[]string{"/models/gemini-decision-1:generateContent", "/chat/completions", "/decisions/x", "/files", "/cachedContents", ""}},
+		{DoorTypesafe, "", []string{"/v1/systemone"},
+			[]string{"/v1/systemone/x", "/v1/files", "/chat/completions", "/decisions"}},
 	} {
 		srv, got := upstream(t, 200, `{}`)
 		pass := issuePass(t, door, map[string]DoorRoute{"primary": {Upstream: srv.URL + c.upstreamPath, Key: "k", API: c.api}}, 100)
@@ -213,5 +217,18 @@ func TestKeyDoorRevokeCutsAStreamingCall(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Error("the upstream call was not cancelled within 5 s")
+	}
+}
+
+func TestDoorRouteForADecisionProvider(t *testing.T) {
+	for _, c := range []struct{ provider, upstream, header, api string }{
+		{"google-gemini-decisions", "https://generativelanguage.googleapis.com/v1beta", "x-goog-api-key", DoorDecisions},
+		{"openai-decisions", "https://api.openai.com/v1", "authorization", DoorDecisions},
+		{"typesafe", "https://api.typesafe.ai", "authorization", DoorTypesafe},
+	} {
+		route, err := DoorRouteFor(AxModelRoute{Provider: c.provider, Model: DefaultModel(c.provider)}, "k")
+		if err != nil || route.Upstream != c.upstream || route.Header != c.header || route.API != c.api || route.Key != "k" {
+			t.Errorf("%s: route %+v err %v", c.provider, route, err)
+		}
 	}
 }
