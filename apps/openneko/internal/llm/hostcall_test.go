@@ -259,3 +259,16 @@ func TestDecideRefusesATextProgram(t *testing.T) {
 		t.Fatalf("Decide ran a text program: err = %v, called = %v", err, called)
 	}
 }
+
+func TestDecisionCallsArePriced(t *testing.T) {
+	raw := inference.Usage{Requests: 1, Reported: 1, InputTokens: 100_000, TotalTokens: 100_000, Coverage: "complete"}
+	for _, route := range []inference.Route{
+		{Provider: "google-gemini-decisions", Model: "gemini-decision-1"},
+		{Provider: "openai-decisions", Model: "gpt-6-luna"},
+	} {
+		got := PriceUsage(raw, nil, route, time.Now())
+		if got.CostUSD == nil || *got.CostUSD != 0.01 || got.Total != 100_000 {
+			t.Errorf("%s: %+v", route.Provider, got)
+		}
+	}
+}

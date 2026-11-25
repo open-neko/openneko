@@ -40,6 +40,8 @@ func catalogProviders(provider string) []string {
 	switch provider = strings.ToLower(provider); provider {
 	case "openai-compatible", "azure-openai":
 		return []string{"openai"}
+	case "openai-decisions":
+		return []string{"openai-decisions", "openai"}
 	case "googlegeminiai":
 		return []string{"google-gemini"}
 	case "vertex-ai":

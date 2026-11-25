@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -209,6 +210,25 @@ func (u *Usage) setCoverage() {
 	}
 }
 
+var camelHump = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+
+// snakeKeys renames the camel-case keys of one JSON object to snake case.
+func snakeKeys(raw []byte) []byte {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil {
+		return raw
+	}
+	renamed := make(map[string]json.RawMessage, len(object))
+	for name, value := range object {
+		renamed[strings.ToLower(camelHump.ReplaceAllString(name, "${1}_${2}"))] = value
+	}
+	out, err := json.Marshal(renamed)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
 func Tokens(response ax.Value) (Usage, bool) {
 	value, ok := response.(map[string]ax.Value)
 	if !ok {
@@ -216,13 +236,16 @@ func Tokens(response ax.Value) (Usage, bool) {
 	}
 	model, ok := value["model_usage"].(map[string]ax.Value)
 	if !ok {
-		return Usage{}, false
+		// A decision provider reports usage with camel-case names.
+		if model, ok = value["modelUsage"].(map[string]ax.Value); !ok {
+			return Usage{}, false
+		}
 	}
 	raw, err := json.Marshal(model["tokens"])
 	if err != nil || string(raw) == "null" {
 		return Usage{}, false
 	}
-	var tokens struct {
+	var tokens, camel struct {
 		Input      *int64 `json:"prompt_tokens"`
 		Output     *int64 `json:"completion_tokens"`
 		Total      *int64 `json:"total_tokens"`
@@ -230,7 +253,16 @@ func Tokens(response ax.Value) (Usage, bool) {
 		CacheWrite *int64 `json:"cache_creation_tokens"`
 		Reasoning  *int64 `json:"reasoning_tokens"`
 	}
-	if json.Unmarshal(raw, &tokens) != nil || tokens.Input == nil || tokens.Output == nil || tokens.Total == nil {
+	if json.Unmarshal(raw, &tokens) != nil {
+		return Usage{}, false
+	}
+	if tokens.Input == nil {
+		if json.Unmarshal(snakeKeys(raw), &camel) != nil {
+			return Usage{}, false
+		}
+		tokens = camel
+	}
+	if tokens.Input == nil || tokens.Output == nil || tokens.Total == nil {
 		return Usage{}, false
 	}
 	usage := Usage{Reported: 1, InputTokens: *tokens.Input, OutputTokens: *tokens.Output, TotalTokens: *tokens.Total}
