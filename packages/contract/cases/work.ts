@@ -118,4 +118,10 @@ export const workCases: Case[] = [
   { op: "GET /work/files/{path}", name: "refuses an artifact the run did not emit", status: 404, request: (c) => ({ params: { path: `runs/${c.ids.adminWorkRunId}/artifacts/none.csv` } }) },
   { op: "GET /work/audit/export", name: "exports the audit log", status: 200 },
   { op: "GET /work/audit/export", name: "is for admins", as: "member", status: 403 },
+  { op: "POST /decide", name: "needs a signature and values", status: 400, request: { body: {} } },
+  { op: "POST /decide", name: "refuses a text output", status: 400, request: { body: { signature: "question:string -> answer:string", values: { question: "?" } } } },
+  { op: "PUT /worlds/records/{name}", name: "saves a record of the organization", status: 200, request: { params: { name: "contract-record" }, body: { value: { terrain: "arid" } } } },
+  { op: "PUT /worlds/records/{name}", name: "keeps a member from a record of the organization", as: "member", status: 403, request: { params: { name: "contract-record" }, body: { value: {} } } },
+  { op: "PUT /worlds/records/{name}", name: "needs a value", status: 400, request: { params: { name: "contract-record" }, body: {} } },
+  { op: "GET /worlds/records/{name}", name: "refuses an unknown record", status: 404, request: { params: { name: "contract-none" } } },
 ];
