@@ -1,5 +1,18 @@
 # Changelog
 
+## [6.2.0](https://github.com/open-neko/openneko/compare/v6.1.0...v6.2.0) (2026-11-25)
+
+
+### Features
+
+* **api:** add the decision endpoint and world records ([ee19a96](https://github.com/open-neko/openneko/commit/ee19a96a4b7b49e1ff7244c6168df8003e77e24f))
+* **api:** add the decision endpoint and world records ([eebb061](https://github.com/open-neko/openneko/commit/eebb0616c80a65577f028b7c8e7841ccbaa7d01a))
+
+
+### Bug Fixes
+
+* **api:** pass the caller's signature past the literal guard ([4dfd8d1](https://github.com/open-neko/openneko/commit/4dfd8d173c99c9851763cfb27ee61dc9fade4ffb))
+
 ## [6.1.0](https://github.com/open-neko/openneko/compare/v6.0.2...v6.1.0) (2026-11-25)
 
 
