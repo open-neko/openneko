@@ -1,6 +1,6 @@
 {
   "name": "@neko/web",
-  "version": "6.2.0",
+  "version": "6.2.1",
   "private": true,
   "scripts": {
     "dev": "vite --config spa.vite.config.mts",
