@@ -1,5 +1,13 @@
 # Changelog
 
+## [6.3.0](https://github.com/open-neko/openneko/compare/v6.2.1...v6.3.0) (2026-11-25)
+
+
+### Features
+
+* **api:** name the rows that a workflow output is about ([ec29562](https://github.com/open-neko/openneko/commit/ec29562ac4d09ff76ff6de5134cad943a93cdf71))
+* **api:** name the rows that a workflow output is about ([df08648](https://github.com/open-neko/openneko/commit/df086480b551a971f561481d99302403dd7deb82))
+
 ## [6.2.1](https://github.com/open-neko/openneko/compare/v6.2.0...v6.2.1) (2026-11-25)
 
 
