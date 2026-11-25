@@ -42,6 +42,14 @@ type outputIn struct {
 	TimeWindowStart     *string `json:"timeWindowStart"`
 	TimeWindowEnd       *string `json:"timeWindowEnd"`
 	FreshnessTTLSeconds *int    `json:"freshnessTtlSeconds"`
+	// Subjects names the rows that the output is about, so a view can show
+	// the output on those objects.
+	Subjects []outputSubject `json:"subjects,omitempty"`
+}
+
+type outputSubject struct {
+	Table string `json:"table"`
+	Key   string `json:"key"`
 }
 
 // packActionDescriptor is PackActionDescriptor in packages/llm/src/work/tools.ts.
@@ -148,6 +156,10 @@ var workflowOutputShape = &zObj{fields: []zField{
 	{name: "timeWindowStart", typ: &zStr{datetime: true}, optional: true},
 	{name: "timeWindowEnd", typ: &zStr{datetime: true}, optional: true},
 	{name: "freshnessTtlSeconds", typ: &zInt{positive: true, max: num(31_536_000)}, optional: true},
+	{name: "subjects", typ: &zArr{max: num(20), elem: &zObj{fields: []zField{
+		{name: "table", typ: zText(1, 120)},
+		{name: "key", typ: zText(1, 240)},
+	}}}, optional: true},
 }}
 
 func setPresent(out *jsObj, key string, from any, fromKey string) {
@@ -288,7 +300,9 @@ func outputTools(b turnBinding, be toolBackend) []toolDef {
 		description: joinWords("Persist a workflow output — the thing this run produced.",
 			"Use a descriptive kind and tag it with a scope, optional topic,",
 			"and an honest mood ('good', 'watch', or 'act') so people and",
-			"downstream workflows can discover it."),
+			"downstream workflows can discover it.",
+			"When the output is about specific rows, name each one in subjects",
+			"with its table and its primary key value."),
 		shape: workflowOutputShape,
 		call: func(ctx context.Context, args *jsObj) (toolResult, error) {
 			in := outputIn{OrgID: b.OrgID, WorkflowRunID: b.WorkflowRunID, WorkRunID: b.RunID, Kind: stringArg(args, "kind"),
@@ -297,6 +311,17 @@ func outputTools(b turnBinding, be toolBackend) []toolDef {
 				FreshnessTTLSeconds: optionalInt(args, "freshnessTtlSeconds")}
 			if payload, ok := args.vals["payload"]; ok {
 				in.Payload = payload
+			}
+			if list, ok := args.vals["subjects"].([]any); ok {
+				for _, item := range list {
+					table, _ := jsField(item, "table")
+					key, _ := jsField(item, "key")
+					if t, ok := table.(string); ok {
+						if k, ok := key.(string); ok {
+							in.Subjects = append(in.Subjects, outputSubject{Table: t, Key: k})
+						}
+					}
+				}
 			}
 			for name, field := range map[string]**string{"timeWindowStart": &in.TimeWindowStart, "timeWindowEnd": &in.TimeWindowEnd} {
 				if text := optionalString(args, name); text != nil {

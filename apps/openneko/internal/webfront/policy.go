@@ -63,6 +63,7 @@ var Policies = []Policy{
 	{"/api/v1/library", SignedIn},
 	{"/api/v1/my", SignedIn},
 	{"/api/v1/observations", SignedIn},
+	{"/api/v1/outputs", SignedIn},
 	{"/api/v1/profile", SignedIn},
 	{"/api/v1/settings/persona", SignedIn},
 	{"/profile", SignedIn},

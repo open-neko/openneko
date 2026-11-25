@@ -22,6 +22,7 @@ tags:
 - name: library
 - name: my
 - name: observations
+- name: outputs
 - name: onboarding
 - name: pack-accounts
 - name: policies
@@ -7748,6 +7749,60 @@ paths:
                     type: string
                   code:
                     type: string
+  /outputs:
+    get:
+      operationId: getOutputs
+      tags:
+      - outputs
+      summary: List the recent workflow outputs with the rows they are about
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      parameters:
+      - name: mood
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 'Filter by mood: good, watch or act'
+      - name: since
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Only outputs seen after this time, as an RFC 3339 time
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: Rows to return, 1 to 500, default 50
+      responses:
+        '200':
+          description: The visible outputs, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  outputs:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: since is not a time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /pack-accounts/{packId}/{connectionKey}:
     delete:
       operationId: deletePackAccountsByPackIdByConnectionKey
