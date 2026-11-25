@@ -138,6 +138,8 @@ export const workflowCases: Case[] = [
     check: (r, c) => expect((body(r).actions as { id: string }[]).map((a) => a.id)).toEqual([c.ids.memberActionRequestId]),
   },
   { op: "GET /observations", name: "lists the observations", status: 200 },
+  { op: "GET /outputs", name: "lists the outputs", status: 200 },
+  { op: "GET /outputs", name: "refuses a since that is not a time", status: 400, request: { query: { since: "yesterday" } } },
   { op: "POST /insights/ensure", name: "queues the insights job", status: 200, request: { body: {} } },
   { op: "DELETE /workflows/{workflowId}", name: "refuses an unknown workflow", status: 404, request: (c) => ({ params: { workflowId: c.ids.unknownId } }) },
   { op: "DELETE /workflows/{workflowId}", name: "hides another owner's workflow from a member", as: "member", status: 404, request: (c) => ({ params: workflowParams(c) }) },

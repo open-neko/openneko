@@ -75,6 +75,7 @@ export const ACCESS_POLICIES: AccessPolicy[] = [
   { prefix: "/api/v1/library", rule: "signed-in" },
   { prefix: "/api/v1/my", rule: "signed-in" },
   { prefix: "/api/v1/observations", rule: "signed-in" },
+  { prefix: "/api/v1/outputs", rule: "signed-in" },
   { prefix: "/api/v1/profile", rule: "signed-in" },
   { prefix: "/api/v1/settings/persona", rule: "signed-in", why: "each person edits their own persona; the route allows only their own row" },
   { prefix: "/profile", rule: "signed-in" },

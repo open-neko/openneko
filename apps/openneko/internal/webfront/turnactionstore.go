@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -549,6 +551,17 @@ func (r *runTools) emitOutput(ctx context.Context, in outputIn) (any, error) {
 		if payload == nil {
 			payload = &jsObj{}
 		}
+		subjects := in.Subjects
+		if len(subjects) == 0 {
+			subjects = a.triggerSubjects(ctx, in.WorkflowRunID)
+		}
+		if object, ok := payload.(*jsObj); ok && len(subjects) > 0 {
+			list := make([]any, 0, len(subjects))
+			for _, subject := range subjects {
+				list = append(list, jsObjOf("table", subject.Table, "key", subject.Key))
+			}
+			object.set("subjects", list)
+		}
 		output, err = scanOutputWire(a.DB.QueryRow(ctx, `insert into workflow_output (org_id, workflow_run_id, work_run_id, kind, title, body,
 			payload, artifact_path, scope, topic, mood, time_window_start, time_window_end, freshness_ttl_seconds, dedupe_key, last_seen_at)
 			values ($1, $2::uuid, $3::uuid, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12::timestamptz, $13::timestamptz, $14, $15, $16)
@@ -565,6 +578,32 @@ func (r *runTools) emitOutput(ctx context.Context, in outputIn) (any, error) {
 		}
 	}()
 	return output, nil
+}
+
+// triggerSubjects gives the row that started a run, for a run that a row
+// change started. An output of that run is about that row.
+func (a *API) triggerSubjects(ctx context.Context, workflowRunID string) []outputSubject {
+	var raw []byte
+	if err := a.DB.QueryRow(ctx, `select trigger_payload from workflow_run where id::text = $1`, workflowRunID).Scan(&raw); err != nil || len(raw) == 0 {
+		return nil
+	}
+	var trigger struct {
+		Table      string         `json:"table"`
+		PrimaryKey map[string]any `json:"primary_key"`
+	}
+	if json.Unmarshal(raw, &trigger) != nil || trigger.Table == "" || len(trigger.PrimaryKey) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(trigger.PrimaryKey))
+	for name := range trigger.PrimaryKey {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprint(trigger.PrimaryKey[name]))
+	}
+	return []outputSubject{{Table: trigger.Table, Key: strings.Join(parts, "|")}}
 }
 
 var pathParam = regexp.MustCompile(`\{([^}]+)\}`)

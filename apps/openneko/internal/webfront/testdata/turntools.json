@@ -1169,7 +1169,7 @@
     },
     {
      "name": "workflow_output_emit",
-     "description": "Persist a workflow output — the thing this run produced. Use a descriptive kind and tag it with a scope, optional topic, and an honest mood ('good', 'watch', or 'act') so people and downstream workflows can discover it.",
+     "description": "Persist a workflow output — the thing this run produced. Use a descriptive kind and tag it with a scope, optional topic, and an honest mood ('good', 'watch', or 'act') so people and downstream workflows can discover it. When the output is about specific rows, name each one in subjects with its table and its primary key value.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -1237,6 +1237,29 @@
         "type": "integer",
         "exclusiveMinimum": 0,
         "maximum": 31536000
+       },
+       "subjects": {
+        "maxItems": 20,
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "table": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 120
+          },
+          "key": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 240
+          }
+         },
+         "required": [
+          "table",
+          "key"
+         ]
+        }
        }
       },
       "required": [
@@ -3142,7 +3165,7 @@
     },
     {
      "name": "workflow_output_emit",
-     "description": "Persist a workflow output — the thing this run produced. Use a descriptive kind and tag it with a scope, optional topic, and an honest mood ('good', 'watch', or 'act') so people and downstream workflows can discover it.",
+     "description": "Persist a workflow output — the thing this run produced. Use a descriptive kind and tag it with a scope, optional topic, and an honest mood ('good', 'watch', or 'act') so people and downstream workflows can discover it. When the output is about specific rows, name each one in subjects with its table and its primary key value.",
      "inputSchema": {
       "type": "object",
       "properties": {
@@ -3210,6 +3233,29 @@
         "type": "integer",
         "exclusiveMinimum": 0,
         "maximum": 31536000
+       },
+       "subjects": {
+        "maxItems": 20,
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "table": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 120
+          },
+          "key": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 240
+          }
+         },
+         "required": [
+          "table",
+          "key"
+         ]
+        }
        }
       },
       "required": [
