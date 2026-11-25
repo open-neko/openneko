@@ -350,3 +350,16 @@ func TestCheckDecisionSignature(t *testing.T) {
 		}
 	}
 }
+
+func TestTokensReadsCamelCaseUsage(t *testing.T) {
+	response := map[string]any{"modelUsage": map[string]any{"tokens": map[string]any{
+		"promptTokens": 276, "completionTokens": 0, "totalTokens": 276, "cacheReadTokens": 40,
+	}}}
+	got, ok := Tokens(response)
+	if !ok || got.InputTokens != 276 || got.OutputTokens != 0 || got.TotalTokens != 276 || got.CacheReadTokens != 40 || got.Reported != 1 {
+		t.Fatalf("usage %+v %v", got, ok)
+	}
+	if _, ok := Tokens(map[string]any{"modelUsage": map[string]any{"tokens": map[string]any{"promptTokens": 5}}}); ok {
+		t.Fatal("usage with no total counted as reported")
+	}
+}
