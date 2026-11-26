@@ -40,17 +40,10 @@ func (a *API) worldsGraphQL(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	target, err := a.worldsGraphjinTarget(r.Context(), act)
-	if err != nil {
-		a.fail(w, r, err)
-		return
-	}
-	if target.endpoint == "" {
-		sendError(w, http.StatusNotFound, "No GraphJin data source is enabled.")
-		return
-	}
 	if r.Method == http.MethodGet {
-		a.worldsGraphQLSocket(w, r, target)
+		if target, ok := a.worldsTargetOrFail(w, r, act); ok {
+			a.worldsGraphQLSocket(w, r, target)
+		}
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, worldsGraphQLLimit+1))
@@ -69,6 +62,10 @@ func (a *API) worldsGraphQL(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusForbidden, err.Error())
 		return
 	}
+	target, ok := a.worldsTargetOrFail(w, r, act)
+	if !ok {
+		return
+	}
 	status, reply, err := forwardGraphQL(r.Context(), target, body)
 	if err != nil {
 		sendError(w, http.StatusBadGateway, "GraphJin did not answer: "+err.Error())
@@ -78,6 +75,20 @@ func (a *API) worldsGraphQL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_, _ = w.Write(reply)
+}
+
+// worldsTargetOrFail gives the target of a read, or sends the error.
+func (a *API) worldsTargetOrFail(w http.ResponseWriter, r *http.Request, act actor) (worldsTarget, bool) {
+	target, err := a.worldsGraphjinTarget(r.Context(), act)
+	if err != nil {
+		a.fail(w, r, err)
+		return target, false
+	}
+	if target.endpoint == "" {
+		sendError(w, http.StatusNotFound, "No GraphJin data source is enabled.")
+		return target, false
+	}
+	return target, true
 }
 
 // worldsGraphjinTarget finds the organization's GraphJin and mints a token for

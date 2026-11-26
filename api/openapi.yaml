@@ -13679,7 +13679,18 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
+                additionalProperties: false
+                properties:
+                  data:
+                    type:
+                    - object
+                    - 'null'
+                    additionalProperties: true
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
         '400':
           description: No query
           content:
