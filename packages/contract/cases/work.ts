@@ -124,4 +124,7 @@ export const workCases: Case[] = [
   { op: "PUT /worlds/records/{name}", name: "keeps a member from a record of the organization", as: "member", status: 403, request: { params: { name: "contract-record" }, body: { value: {} } } },
   { op: "PUT /worlds/records/{name}", name: "needs a value", status: 400, request: { params: { name: "contract-record" }, body: {} } },
   { op: "GET /worlds/records/{name}", name: "refuses an unknown record", status: 404, request: { params: { name: "contract-none" } } },
+  { op: "POST /worlds/graphql", name: "refuses a mutation", status: 403, request: { body: { query: "mutation { racks(delete: true) { id } }" } } },
+  { op: "POST /worlds/graphql", name: "needs a query", as: "member", status: 400, request: { body: {} } },
+  { op: "GET /worlds/graphql", name: "needs a GraphJin data source", status: 404 },
 ];
