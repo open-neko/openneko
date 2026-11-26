@@ -1,5 +1,13 @@
 # Changelog
 
+## [6.3.1](https://github.com/open-neko/openneko/compare/v6.3.0...v6.3.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **workflows:** fire a row-change watcher for each matching row ([94e6986](https://github.com/open-neko/openneko/commit/94e6986a23bb4c907ce4ce069393b39289cc3669))
+* **workflows:** fire a row-change watcher for each matching row ([4c9bc41](https://github.com/open-neko/openneko/commit/4c9bc41180fa9d31f2c0937afc6735463018f454))
+
 ## [6.3.0](https://github.com/open-neko/openneko/compare/v6.2.1...v6.3.0) (2026-11-25)
 
 
