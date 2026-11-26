@@ -56,7 +56,7 @@
         ]
       },
       "payload": {
-        "query": "subscription SourceChangeMatch {\n  product(order_by: { id: desc }, limit: 1) {\n    id\n  }\n}",
+        "query": "subscription SourceChangeMatch {\n  product(order_by: { id: desc }, limit: 1000) {\n    id\n  }\n}",
         "variables": {}
       }
     },
@@ -89,7 +89,7 @@
         }
       },
       "payload": {
-        "query": "subscription SourceChangeMatch {\n  product(where: { quantity: { lt: 5 }, name: { like: \"Mug \\\"x\\\" é\" }, ok: true, gone: null, list: [1, 2.5] }, order_by: { updated_at: desc }, limit: 1) {\n    id\n    sku\n    name\n    updated_at\n  }\n}",
+        "query": "subscription SourceChangeMatch {\n  product(where: { quantity: { lt: 5 }, name: { like: \"Mug \\\"x\\\" é\" }, ok: true, gone: null, list: [1, 2.5] }, order_by: { updated_at: desc }, limit: 1000) {\n    id\n    sku\n    name\n    updated_at\n  }\n}",
         "variables": {}
       }
     },
@@ -396,7 +396,7 @@
               "triggeredByObservationId": "74000000-0000-4000-8000-000000000009"
             },
             "opts": {
-              "dedupeKey": "70000000-0000-4000-8000-000000000001:2a553fd53e66b69f:none",
+              "dedupeKey": "70000000-0000-4000-8000-000000000001:2a553fd53e66b69f:601cfe8f8090db0c",
               "dedupeSeconds": 3600
             }
           }
@@ -455,7 +455,7 @@
               "triggeredByObservationId": "74000000-0000-4000-8000-000000000009"
             },
             "opts": {
-              "dedupeKey": "70000000-0000-4000-8000-000000000001:2a553fd53e66b69f:2a553fd53e66b69f:none",
+              "dedupeKey": "70000000-0000-4000-8000-000000000001:2a553fd53e66b69f:2a553fd53e66b69f:601cfe8f8090db0c",
               "dedupeSeconds": 3600
             }
           }
@@ -603,7 +603,7 @@
               "triggeredByObservationId": "74000000-0000-4000-8000-000000000009"
             },
             "opts": {
-              "dedupeKey": "70000000-0000-4000-8000-000000000001:f422c82d6db73d91:none",
+              "dedupeKey": "70000000-0000-4000-8000-000000000001:f422c82d6db73d91:d0bbaeb62a23b7e6",
               "dedupeSeconds": 3600
             }
           }
@@ -678,7 +678,7 @@
               "triggeredByObservationId": "74000000-0000-4000-8000-000000000009"
             },
             "opts": {
-              "dedupeKey": "70000000-0000-4000-8000-000000000001:f422c82d6db73d91:f422c82d6db73d91:none",
+              "dedupeKey": "70000000-0000-4000-8000-000000000001:f422c82d6db73d91:f422c82d6db73d91:d0bbaeb62a23b7e6",
               "dedupeSeconds": 3600
             }
           }

@@ -148,13 +148,14 @@ func TestSubscriptionMatchMatchesNode(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m, ok := parseSourceMatch(msg, sc)
-		if ok != (string(c.Parsed) != "null") {
-			t.Fatalf("source %d: parsed %v, Node %s", i, ok, c.Parsed)
+		ms, _ := parseSourceMatches(msg, sc)
+		if (len(ms) > 0) != (string(c.Parsed) != "null") {
+			t.Fatalf("source %d: parsed %d rows, want %s", i, len(ms), c.Parsed)
 		}
-		if !ok {
+		if len(ms) == 0 {
 			continue
 		}
+		m := ms[0]
 		parsed := jsObjOf("table", m.Table, "primary_key", m.PrimaryKey, "snapshot", m.Snapshot, "version_token", any(nil))
 		if m.VersionToken != nil {
 			parsed.set("version_token", *m.VersionToken)
@@ -312,11 +313,12 @@ func TestSubscriptionMatchGuards(t *testing.T) {
 	_ = json.Unmarshal(src.Filter, &f)
 	sc, _ := parseSourceChange(f)
 	msg, _ := jsParse([]byte(`{"data":{"product":[{"id":42,"name":"Mug","updated_at":"2026-11-14 10:00:00"}]}}`))
-	sm, ok := parseSourceMatch(msg, sc)
-	if !ok {
+	sms, _ := parseSourceMatches(msg, sc)
+	if len(sms) != 1 {
 		t.Fatal("source match not parsed")
 	}
-	d, err = a.handleSourceMatch(ctx, src, sm, smSource)
+	sm := sms[0]
+	d, err = a.handleSourceMatch(ctx, src, sm, smSource, 0)
 	if err != nil || d.Dropped != "" || d.JobID == "" {
 		t.Fatalf("source match: %+v %v", d, err)
 	}
@@ -327,9 +329,51 @@ func TestSubscriptionMatchGuards(t *testing.T) {
 	}
 	seed(t, db, `update workflow_run set source_writes = '[{"table": "product", "primary_key": {"id": 42}}]' where id = $1`, smRun)
 	seed(t, db, `update workflow_run set workflow_id = $1 where id = $2`, smConsumer, smRun)
-	d, err = a.handleSourceMatch(ctx, src, sm, smSource)
+	d, err = a.handleSourceMatch(ctx, src, sm, smSource, 0)
 	if err != nil || !strings.Contains(d.Dropped, "recently wrote to product:{\"id\":42}") {
 		t.Fatalf("source write cycle: %+v %v", d, err)
+	}
+}
+
+func TestSourceRowsFireOncePerChange(t *testing.T) {
+	a, db := seedSubscriptionMatch(t)
+	ctx := context.Background()
+	seed(t, db, `update subscription set filter = '{"table": "block", "primary_key": ["id"], "select": ["fill"]}' where id = $1`, smSourceSub)
+	sub := liveSub(t, a, smSourceSub)
+	var f map[string]any
+	_ = json.Unmarshal(sub.Filter, &f)
+	sc, _ := parseSourceChange(f)
+	push := func(sub liveSubscription, rows string, wantHeld bool, wantJobs, wantSeen int) {
+		t.Helper()
+		msg, _ := jsParse([]byte(`{"data":{"block":` + rows + `}}`))
+		held, err := a.handleSourceRows(ctx, sub, sc, msg)
+		if err != nil || held != wantHeld {
+			t.Fatalf("%s: held %v, error %v", rows, held, err)
+		}
+		if n := len(riverQueueJobs(t, db, "workflow_run_fire", "workflow_run")); n != wantJobs {
+			t.Fatalf("%s: %d queued runs, want %d", rows, n, wantJobs)
+		}
+		var count int
+		_ = db.QueryRow(ctx, `select count(*) from subscription_seen where subscription_id = $1::uuid`, smSourceSub).Scan(&count)
+		if count != wantSeen {
+			t.Fatalf("%s: %d seen rows, want %d", rows, count, wantSeen)
+		}
+	}
+	push(sub, `[{"id":"A1","fill":0.91},{"id":"A2","fill":0.95},{"id":"B5","fill":0.92}]`, false, 3, 3)
+	push(sub, `[{"id":"A1","fill":0.91},{"id":"A2","fill":0.95},{"id":"B5","fill":0.92}]`, false, 3, 3)
+	push(sub, `[{"id":"A1","fill":0.91},{"id":"A2","fill":0.99},{"id":"C1","fill":0.93}]`, false, 5, 3)
+	one := sub
+	one.MaxConcurrentRuns = 1
+	push(one, `[{"id":"A1","fill":0.91},{"id":"D1","fill":0.94},{"id":"D2","fill":0.96}]`, true, 6, 2)
+	push(one, `[{"id":"A1","fill":0.91},{"id":"D1","fill":0.94},{"id":"D2","fill":0.96}]`, false, 7, 3)
+	push(sub, `[]`, false, 7, 0)
+	seed(t, db, `update subscription set baseline_pending = true where id = $1`, smSourceSub)
+	old := liveSub(t, a, smSourceSub)
+	push(old, `[{"id":"A1","fill":0.91},{"id":"A2","fill":0.95}]`, false, 7, 2)
+	push(old, `[{"id":"A1","fill":0.91},{"id":"A2","fill":0.98},{"id":"E1","fill":0.93}]`, false, 9, 3)
+	msg, _ := jsParse([]byte(`{"errors":[{"message":"down"}]}`))
+	if held, err := a.handleSourceRows(ctx, sub, sc, msg); held || err != nil {
+		t.Fatalf("a push with no row list: %v %v", held, err)
 	}
 }
 

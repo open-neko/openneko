@@ -24,7 +24,10 @@ import (
 	"github.com/open-neko/neko/apps/openneko/internal/jobs"
 )
 
-var subscriptionRetryMin = 5 * time.Second
+var (
+	subscriptionRetryMin  = 5 * time.Second
+	subscriptionHeldRetry = time.Minute
+)
 
 const (
 	subscriptionRefreshEvery  = time.Minute
@@ -34,6 +37,7 @@ const (
 	subscriptionMaxFanout     = 32
 	subscriptionDedupeWindow  = time.Hour
 	subscriptionAncestorDepth = 64
+	subscriptionMatchRows     = 1000
 )
 
 type liveSubscription struct {
@@ -46,11 +50,12 @@ type liveSubscription struct {
 	MaxChainDepthOverride  *int
 	IdempotencyKeyTemplate *string
 	UpdatedAt              time.Time
+	BaselinePending        bool
 }
 
 func (a *API) enabledSubscriptions(ctx context.Context) ([]liveSubscription, error) {
 	rows, err := a.DB.Query(ctx, `select id::text, org_id, workflow_id::text, source_kind, filter::text,
-		max_concurrent_runs, max_chain_depth_override, idempotency_key_template, updated_at
+		max_concurrent_runs, max_chain_depth_override, idempotency_key_template, updated_at, baseline_pending
 		from subscription where enabled order by created_at, id`)
 	if err != nil {
 		return nil, err
@@ -77,7 +82,7 @@ func subscriptionOperation(sub liveSubscription) (string, map[string]any, bool) 
 		if !ok {
 			return "", nil, false
 		}
-		q, err := sourceChangeOperation("subscription SourceChangeMatch", sc, raw["where"], 1)
+		q, err := sourceChangeOperation("subscription SourceChangeMatch", sc, raw["where"], subscriptionMatchRows)
 		if err != nil {
 			return "", nil, false
 		}
@@ -143,7 +148,7 @@ type outputMatch struct {
 	Title, CreatedAt               string
 }
 
-func firstRow(payload any, table string) (*jsObj, bool) {
+func tableRows(payload any, table string) ([]any, bool) {
 	msg, ok := payload.(*jsObj)
 	if !ok {
 		return nil, false
@@ -153,6 +158,11 @@ func firstRow(payload any, table string) (*jsObj, bool) {
 		return nil, false
 	}
 	rows, ok := data.vals[table].([]any)
+	return rows, ok
+}
+
+func firstRow(payload any, table string) (*jsObj, bool) {
+	rows, ok := tableRows(payload, table)
 	if !ok || len(rows) == 0 {
 		return nil, false
 	}
@@ -199,14 +209,28 @@ type sourceMatch struct {
 	PrimaryKey   *jsObj
 	Snapshot     *jsObj
 	VersionToken *string
+	RowHash      string
 }
 
-// parseSourceMatch is parseSourceChangeMatch() in packages/llm.
-func parseSourceMatch(payload any, sc sourceChange) (sourceMatch, bool) {
-	row, ok := firstRow(payload, sc.Table)
+// parseSourceMatches reads each row of a push. It reports false when the
+// push holds no row list for the table.
+func parseSourceMatches(payload any, sc sourceChange) ([]sourceMatch, bool) {
+	rows, ok := tableRows(payload, sc.Table)
 	if !ok {
-		return sourceMatch{}, false
+		return nil, false
 	}
+	out := make([]sourceMatch, 0, len(rows))
+	for _, r := range rows {
+		if row, ok := r.(*jsObj); ok {
+			if m, ok := parseSourceRow(row, sc); ok {
+				out = append(out, m)
+			}
+		}
+	}
+	return out, true
+}
+
+func parseSourceRow(row *jsObj, sc sourceChange) (sourceMatch, bool) {
 	pk := &jsObj{}
 	for _, col := range sc.PrimaryKey {
 		v, ok := row.vals[col]
@@ -215,7 +239,8 @@ func parseSourceMatch(payload any, sc sourceChange) (sourceMatch, bool) {
 		}
 		pk.set(col, v)
 	}
-	m := sourceMatch{Table: sc.Table, PrimaryKey: pk, Snapshot: row}
+	sum := sha256.Sum256([]byte(jsStringify(row, false)))
+	m := sourceMatch{Table: sc.Table, PrimaryKey: pk, Snapshot: row, RowHash: hex.EncodeToString(sum[:])[:16]}
 	if sc.VersionColumn != "" {
 		if v := row.vals[sc.VersionColumn]; v != nil {
 			s := jsStringOf(v)
@@ -239,6 +264,8 @@ type matchPlan struct {
 	DedupeKey      string
 	AuditTable     string
 	Audit          func(observationID string) *jsObj
+	SeenKey        string
+	SeenRow        string
 }
 
 func outputMatchPlan(sub liveSubscription, m outputMatch) matchPlan {
@@ -264,7 +291,7 @@ func outputMatchPlan(sub liveSubscription, m outputMatch) matchPlan {
 
 func sourceMatchPlan(sub liveSubscription, m sourceMatch, dataSourceID string) matchPlan {
 	var version any
-	versionText := "none"
+	versionText := m.RowHash
 	if m.VersionToken != nil {
 		version = *m.VersionToken
 		versionText = *m.VersionToken
@@ -286,6 +313,8 @@ func sourceMatchPlan(sub liveSubscription, m sourceMatch, dataSourceID string) m
 				"primary_key", m.PrimaryKey, "snapshot", m.Snapshot, "version_token", version)
 		},
 		DedupeKey:  key,
+		SeenKey:    pkHash,
+		SeenRow:    m.RowHash,
 		AuditTable: m.Table,
 		Audit: func(obs string) *jsObj {
 			return jsObjOf("subscription_id", sub.ID, "observation_id", obs, "primary_key", m.PrimaryKey,
@@ -338,17 +367,18 @@ func scalarText(v any) string {
 
 type matchDecision struct {
 	Dropped       string
+	Held          bool
 	ObservationID string
 	JobID         string
 }
 
-func (a *API) subscriptionGuards(ctx context.Context, sub liveSubscription) (string, error) {
+func (a *API) subscriptionGuards(ctx context.Context, sub liveSubscription, queued int) (string, error) {
 	var running int
 	if err := a.DB.QueryRow(ctx, `select count(*) from workflow_run where triggered_by_subscription_id = $1 and status = 'running'`,
 		sub.ID).Scan(&running); err != nil {
 		return "", err
 	}
-	if running >= sub.MaxConcurrentRuns {
+	if running += queued; running >= sub.MaxConcurrentRuns {
 		return fmt.Sprintf("subscription %s at max_concurrent_runs (%d/%d)", sub.ID, running, sub.MaxConcurrentRuns), nil
 	}
 	var budget *int
@@ -365,7 +395,7 @@ func (a *API) subscriptionGuards(ctx context.Context, sub liveSubscription) (str
 			sub.OrgID, sub.WorkflowID, today).Scan(&ran); err != nil {
 			return "", err
 		}
-		if ran >= *budget {
+		if ran += queued; ran >= *budget {
 			return fmt.Sprintf("consumer workflow %s reached daily_run_budget (%d/%d)", sub.WorkflowID, ran, *budget), nil
 		}
 	}
@@ -417,14 +447,14 @@ func (a *API) handleOutputMatch(ctx context.Context, sub liveSubscription, m out
 	if fanout >= subscriptionMaxFanout {
 		return matchDecision{Dropped: fmt.Sprintf("fanout cap reached (%d/%d) for output %s", fanout, subscriptionMaxFanout, m.ID)}, nil
 	}
-	if reason, err := a.subscriptionGuards(ctx, sub); err != nil || reason != "" {
+	if reason, err := a.subscriptionGuards(ctx, sub, 0); err != nil || reason != "" {
 		return matchDecision{Dropped: reason}, err
 	}
 	return a.commitMatch(ctx, sub, outputMatchPlan(sub, m), "")
 }
 
 // handleSourceMatch is handleSourceChangeMatch() in packages/llm.
-func (a *API) handleSourceMatch(ctx context.Context, sub liveSubscription, m sourceMatch, dataSourceID string) (matchDecision, error) {
+func (a *API) handleSourceMatch(ctx context.Context, sub liveSubscription, m sourceMatch, dataSourceID string, queued int) (matchDecision, error) {
 	needle := jsStringify([]any{jsObjOf("table", m.Table, "primary_key", m.PrimaryKey)}, false)
 	var recent bool
 	if err := a.DB.QueryRow(ctx, `select exists (select 1 from workflow_run where workflow_id = $1::uuid
@@ -433,13 +463,103 @@ func (a *API) handleSourceMatch(ctx context.Context, sub liveSubscription, m sou
 		return matchDecision{}, err
 	}
 	if recent {
+		if _, err := a.DB.Exec(ctx, markSeenSQL, sub.ID, hashPrimaryKey(m.PrimaryKey), m.RowHash); err != nil {
+			return matchDecision{}, err
+		}
 		return matchDecision{Dropped: fmt.Sprintf("cycle detected — workflow %s recently wrote to %s:%s",
 			sub.WorkflowID, m.Table, jsStringify(m.PrimaryKey, false))}, nil
 	}
-	if reason, err := a.subscriptionGuards(ctx, sub); err != nil || reason != "" {
-		return matchDecision{Dropped: reason}, err
+	if reason, err := a.subscriptionGuards(ctx, sub, queued); err != nil || reason != "" {
+		return matchDecision{Dropped: reason, Held: reason != ""}, err
 	}
 	return a.commitMatch(ctx, sub, sourceMatchPlan(sub, m, dataSourceID), dataSourceID)
+}
+
+const markSeenSQL = `insert into subscription_seen (subscription_id, key_hash, row_hash) values ($1::uuid, $2, $3)
+	on conflict (subscription_id, key_hash) do update set row_hash = excluded.row_hash, seen_at = now()`
+
+// handleSourceRows queues one run for each row of a push that is new or
+// changed since the last push. It reports true when the run limit held a
+// row back.
+func (a *API) handleSourceRows(ctx context.Context, sub liveSubscription, sc sourceChange, payload any) (bool, error) {
+	matches, ok := parseSourceMatches(payload, sc)
+	if !ok {
+		return false, nil
+	}
+	dsID, _, err := a.orgDataSource(ctx, sub.OrgID)
+	if err != nil {
+		return false, err
+	}
+	if sub.BaselinePending {
+		if done, err := a.baselineSourceRows(ctx, sub, matches); done || err != nil {
+			return false, err
+		}
+	}
+	rows, err := a.DB.Query(ctx, `select key_hash, row_hash from subscription_seen where subscription_id = $1::uuid`, sub.ID)
+	if err != nil {
+		return false, err
+	}
+	seen := map[string]string{}
+	var k, h string
+	if _, err := pgx.ForEachRow(rows, []any{&k, &h}, func() error { seen[k] = h; return nil }); err != nil {
+		return false, err
+	}
+	keys := make([]string, len(matches))
+	queued, held, reason := 0, false, ""
+	for i, m := range matches {
+		keys[i] = hashPrimaryKey(m.PrimaryKey)
+		if held || seen[keys[i]] == m.RowHash {
+			continue
+		}
+		d, err := a.handleSourceMatch(ctx, sub, m, dsID, queued)
+		switch {
+		case err != nil:
+			return true, err
+		case d.Held:
+			held, reason = true, d.Dropped
+		case d.Dropped != "":
+			log.Printf("[subscription-manager] dropped sub=%s %s:%s: %s", sub.ID, m.Table, jsStringify(m.PrimaryKey, false), d.Dropped)
+		case d.JobID != "":
+			queued++
+		}
+	}
+	if _, err := a.DB.Exec(ctx, `delete from subscription_seen where subscription_id = $1::uuid and not (key_hash = any($2))`,
+		sub.ID, keys); err != nil {
+		return held, err
+	}
+	if len(matches) >= subscriptionMatchRows {
+		log.Printf("[subscription-manager] sub=%s matches %d rows or more; the filter is too wide and later rows get no run",
+			sub.ID, subscriptionMatchRows)
+	}
+	if queued > 0 || held {
+		log.Printf("[subscription-manager] sub=%s %s rows=%d queued=%d held=%q", sub.ID, sc.Table, len(matches), queued, reason)
+	}
+	return held, nil
+}
+
+// baselineSourceRows records the rows of the first push as seen, with no
+// run, for a subscription that is older than the seen table. It reports
+// false when the baseline is already done.
+func (a *API) baselineSourceRows(ctx context.Context, sub liveSubscription, matches []sourceMatch) (bool, error) {
+	tx, err := a.DB.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `update subscription set baseline_pending = false where id = $1::uuid and baseline_pending`, sub.ID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return false, err
+	}
+	for _, m := range matches {
+		if _, err := tx.Exec(ctx, markSeenSQL, sub.ID, hashPrimaryKey(m.PrimaryKey), m.RowHash); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	log.Printf("[subscription-manager] sub=%s %s baseline of %d rows, no run", sub.ID, sub.SourceKind, len(matches))
+	return true, nil
 }
 
 func (a *API) commitMatch(ctx context.Context, sub liveSubscription, p matchPlan, dataSourceID string) (matchDecision, error) {
@@ -454,6 +574,11 @@ func (a *API) commitMatch(ctx context.Context, sub liveSubscription, p matchPlan
 		subscription_id, title, body, mood) values ($1, $2::uuid, 'workflow', $3::uuid, $4::uuid, $5, $6, $7) returning id::text`,
 		sub.OrgID, o.SourceOutputID, sub.WorkflowID, sub.ID, o.Title, o.Body, o.Mood).Scan(&obs); err != nil {
 		return matchDecision{}, err
+	}
+	if p.SeenKey != "" {
+		if _, err := tx.Exec(ctx, markSeenSQL, sub.ID, p.SeenKey, p.SeenRow); err != nil {
+			return matchDecision{}, err
+		}
 	}
 	if p.Audit != nil {
 		if _, err := tx.Exec(ctx, `insert into source_change_log (org_id, source_id, table_name, change_kind, payload)
@@ -559,6 +684,8 @@ func (a *API) followSubscription(ctx context.Context, sub liveSubscription, acke
 		return conn.Write(connCtx, websocket.MessageText, b)
 	}
 	subID := uuid.NewString()
+	pushes := make(chan json.RawMessage, 16)
+	go a.handlePushes(connCtx, sub, sc, pushes)
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -595,7 +722,10 @@ func (a *API) followSubscription(ctx context.Context, sub liveSubscription, acke
 			}
 		case "next":
 			if msg.ID == subID {
-				a.onSubscriptionNext(ctx, sub, sc, msg.Payload)
+				select {
+				case pushes <- msg.Payload:
+				case <-connCtx.Done():
+				}
 			}
 		case "error":
 			if msg.ID == subID {
@@ -635,10 +765,36 @@ func subscriptionErrorText(payload json.RawMessage) string {
 	return "subscription error"
 }
 
-func (a *API) onSubscriptionNext(ctx context.Context, sub liveSubscription, sc sourceChange, payload json.RawMessage) {
+// handlePushes handles each push in order. It handles the last push again
+// after a wait when the run limit held a row back.
+func (a *API) handlePushes(ctx context.Context, sub liveSubscription, sc sourceChange, pushes <-chan json.RawMessage) {
+	var last json.RawMessage
+	var retry <-chan time.Time
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case last = <-pushes:
+		case <-retry:
+		}
+		retry = nil
+		if a.onSubscriptionNext(ctx, sub, sc, last) {
+			retry = time.After(subscriptionHeldRetry)
+		}
+	}
+}
+
+func (a *API) onSubscriptionNext(ctx context.Context, sub liveSubscription, sc sourceChange, payload json.RawMessage) bool {
 	msg, err := jsParse(payload)
 	if err != nil {
-		return
+		return false
+	}
+	if sub.SourceKind == "source_change" {
+		held, err := a.handleSourceRows(ctx, sub, sc, msg)
+		if err != nil && ctx.Err() == nil {
+			log.Printf("[subscription-manager] error sub=%s: %v", sub.ID, err)
+		}
+		return held
 	}
 	var d matchDecision
 	var what string
@@ -646,22 +802,12 @@ func (a *API) onSubscriptionNext(ctx context.Context, sub liveSubscription, sc s
 	case "workflow_output":
 		m, ok := parseOutputMatch(msg)
 		if !ok {
-			return
+			return false
 		}
 		what = "output=" + m.ID
 		d, err = a.handleOutputMatch(ctx, sub, m)
-	case "source_change":
-		m, ok := parseSourceMatch(msg, sc)
-		if !ok {
-			return
-		}
-		what = "source_change " + m.Table + ":" + jsStringify(m.PrimaryKey, false)
-		var dsID string
-		if dsID, _, err = a.orgDataSource(ctx, sub.OrgID); err == nil {
-			d, err = a.handleSourceMatch(ctx, sub, m, dsID)
-		}
 	default:
-		return
+		return false
 	}
 	switch {
 	case err != nil:
@@ -671,6 +817,7 @@ func (a *API) onSubscriptionNext(ctx context.Context, sub liveSubscription, sc s
 	default:
 		log.Printf("[subscription-manager] enqueued sub=%s %s obs=%s", sub.ID, what, d.ObservationID)
 	}
+	return false
 }
 
 type openSubscription struct {
