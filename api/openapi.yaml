@@ -13622,6 +13622,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /worlds/graphql:
+    get:
+      operationId: getWorldsGraphql
+      tags:
+      - worlds
+      summary: Open a GraphQL subscription socket on the organization's GraphJin
+      description: A WebSocket with the graphql-transport-ws protocol. OpenNeko puts the caller's GraphJin token in the first message, so each subscription follows the caller's grants. A mutation is refused.
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      responses:
+        '101':
+          description: The socket is open
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No GraphJin data source is enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: postWorldsGraphql
+      tags:
+      - worlds
+      summary: Read the organization's data through its GraphJin, as the caller
+      description: Passes one GraphQL query to the organization's default GraphJin with the caller's GraphJin token, so the read follows the caller's grants. A mutation or a subscription is refused.
+      x-access: signed-in
+      security:
+      - session: []
+      - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                variables:
+                  type: object
+                  additionalProperties: true
+              required:
+              - query
+      responses:
+        '200':
+          description: The answer of GraphJin
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: No query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The session or device token is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The query changes data, or it is a subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No GraphJin data source is enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: The query is too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: GraphJin did not answer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /worlds/records/{name}:
     get:
       operationId: getWorldsRecord
